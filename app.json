@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "Mint Rewards",
+    "slug": "mint-rewards",
+    "version": "2.1.1",
+    "orientation": "portrait",
+    "icon": "./assets/images/logo-fixed.png",
+    "scheme": "mintrewards",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mintrewards.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "usesEncryption": false,
+      "buildNumber": "14"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/logo-fixed.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.mintrewards.appp",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/logo-fixed.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7a49df03-9e0f-4272-acfc-5bcb7fd8e30a"
+      }
+    },
+    "owner": "mint-rewards"
+  }
+}
