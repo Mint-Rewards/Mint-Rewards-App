@@ -9,6 +9,9 @@ export const SizeConfig = {
   fontSize: width / 100,
 };
 
+// API Base URL
+export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? "https://mint-rewards-backend.vercel.app").replace(/\/$/, "");
+
 // App Constants
 export const Constants = {
   appThemeColor: "#449EB2", // Green color matching the design

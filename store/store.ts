@@ -1,9 +1,24 @@
 import { logAuthEvent, logError, logEvent } from "@/utils/logger";
 import { authenticatedFetch } from "@/utils/api";
+import { API_BASE_URL } from "@/utils/constants";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 
-const API_URL = "https://mint-rewards-mern-next-js.vercel.app";
+const API_URL = API_BASE_URL;
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 15000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ============================================================================
 // INTERFACES & TYPES
@@ -255,7 +270,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   signIn: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetch(`${API_URL}/api/users/login`, {
+      const response = await fetchWithTimeout(`${API_URL}/api/users/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -315,9 +330,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         return { Status: "Error", ErrorMessage: errorMessage };
       }
-    } catch (error) {
+    } catch (error: any) {
       const errorMessage =
-        "Network error. Please check your connection and try again.";
+        error?.name === "AbortError"
+          ? "Request timed out. Please check your connection and try again."
+          : "Network error. Please check your connection and try again.";
       set({ error: errorMessage, isLoading: false });
       await logError("signIn exception", { error });
       return { Status: "Error", ErrorMessage: errorMessage };
@@ -327,7 +344,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   signUp: async (email, password, userName, phone, province, city, town) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetch(`${API_URL}/api/users/signup`, {
+      const response = await fetchWithTimeout(`${API_URL}/api/users/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -369,9 +386,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         return { Status: "Error", ErrorMessage: errorMessage };
       }
-    } catch (error) {
+    } catch (error: any) {
       const errorMessage =
-        "Network error. Please check your connection and try again.";
+        error?.name === "AbortError"
+          ? "Request timed out. Please check your connection and try again."
+          : "Network error. Please check your connection and try again.";
       set({ error: errorMessage, isLoading: false });
       await logError("signUp exception", { error });
       return { Status: "Error", ErrorMessage: errorMessage };
