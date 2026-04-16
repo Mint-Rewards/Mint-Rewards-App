@@ -11,7 +11,7 @@ import { Constants } from "../../utils/constants";
 export default function TabLayout() {
   return (
     <View style={{ flex: 1 }}>
-      <MaintenanceBanner />
+      {/* <MaintenanceBanner /> */}
       <Tabs
       screenOptions={{
         tabBarActiveTintColor: Constants.appThemeColor,
