@@ -1,3 +1,4 @@
+import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -32,9 +33,12 @@ const EditProfile = () => {
     province: "",
     city: "",
     town: "",
+    latitude: "",
+    longitude: "",
   });
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [mapVisible, setMapVisible] = useState(false);
 
   // Initialize form with user data
   useEffect(() => {
@@ -46,6 +50,8 @@ const EditProfile = () => {
         province: user.province || "",
         city: user.city || "",
         town: user.town || "",
+        latitude: user.latitude || "",
+        longitude: user.longitude || "",
       });
     }
   }, []);
@@ -190,7 +196,50 @@ const EditProfile = () => {
             {renderInput("province", "Province", "Enter your province")}
             {renderInput("city", "City", "Enter your city")}
             {renderInput("town", "Town", "Enter your town")}
+
+            {/* Location Pin */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Exact Location (Pin)</Text>
+              <TouchableOpacity
+                style={styles.locationBtn}
+                onPress={() => setMapVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={formData.latitude ? "location" : "location-outline"}
+                  size={20}
+                  color="#00528A"
+                />
+                <Text style={styles.locationBtnText}>
+                  {formData.latitude && formData.longitude
+                    ? `${parseFloat(formData.latitude).toFixed(5)}, ${parseFloat(formData.longitude).toFixed(5)}`
+                    : "Set location on map"}
+                </Text>
+                {formData.latitude ? (
+                  <TouchableOpacity
+                    onPress={() =>
+                      setFormData((p) => ({ ...p, latitude: "", longitude: "" }))
+                    }
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="close-circle" size={18} color="#a0aec0" />
+                  </TouchableOpacity>
+                ) : (
+                  <Ionicons name="chevron-forward" size={18} color="#a0aec0" />
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
+
+          <MapPicker
+            visible={mapVisible}
+            initialLatitude={formData.latitude}
+            initialLongitude={formData.longitude}
+            onConfirm={(lat, lng) =>
+              setFormData((p) => ({ ...p, latitude: lat, longitude: lng }))
+            }
+            onClose={() => setMapVisible(false)}
+          />
 
           {/* Error Display */}
           {profileError && (
@@ -338,6 +387,22 @@ const styles = StyleSheet.create({
   inputError: {
     borderColor: "#e53e3e",
     backgroundColor: "#fef5f5",
+  },
+  locationBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f8f9fa",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 10,
+  },
+  locationBtnText: {
+    flex: 1,
+    fontSize: 16,
+    color: "#2d3748",
   },
   errorText: {
     color: "#e53e3e",

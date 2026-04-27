@@ -12,7 +12,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.mintrewards.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Mint Rewards uses your location to let you pin your exact address for waste collection pickups.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Mint Rewards uses your location to let you pin your exact address for waste collection pickups."
       },
       "usesEncryption": false,
       "buildNumber": "14"
@@ -24,7 +26,11 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.mintrewards.appp",
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -41,7 +47,13 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Mint Rewards uses your location to let you pin your exact address for waste collection pickups."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

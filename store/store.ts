@@ -58,6 +58,8 @@ export interface UserProfile {
   city: string;
   town: string;
   email: string;
+  latitude?: string;
+  longitude?: string;
 }
 
 // Campaign Types
