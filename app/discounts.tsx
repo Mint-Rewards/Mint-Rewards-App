@@ -1,288 +1,313 @@
-import Navbar from "@/components/ui/navbar";
-import { useAppStore } from "@/store/store";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+import { DiscountItem, useAppStore } from "@/store/store";
+import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+
+const isExpired = (endDate: string) => new Date(endDate) < new Date();
+
+const formatExpiry = (endDate: string) => {
+  const d = new Date(endDate);
+  return `Expires on ${d.getDate()} ${d.toLocaleString("en-US", { month: "long" }).toLowerCase()}`;
+};
 
 const DiscountsScreen = () => {
-  const { user } = useAppStore();
-  return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
+  const { getDiscounts, availDiscount, discounts, isDiscountsLoading, discountsError } = useAppStore();
+  const [modal, setModal] = useState<{ visible: boolean; code: string; brandName: string }>({
+    visible: false,
+    code: "",
+    brandName: "",
+  });
+  const [copied, setCopied] = useState(false);
 
-      <Navbar user={user} />
+  useEffect(() => {
+    getDiscounts().then((result) => {
+      console.log("[Discounts] fetched:", JSON.stringify(result?.length), "items");
+      if (result?.length === 0) console.log("[Discounts] 0 items returned — check campaign status in DB");
+    });
+  }, []);
 
-      {/* Main Content */}
-      <View style={styles.content}>
-        <View style={styles.emptyStateContainer}>
-          {/* Illustration */}
-          <View style={styles.illustrationContainer}>
-            <LinearGradient
-              colors={["#f8f9fa", "#e9ecef"]}
-              style={styles.illustrationBackground}
-            >
-              <Ionicons name="gift-outline" size={80} color="#00528A" />
-            </LinearGradient>
+  const available = discounts.filter((d) => !d.isAvailed && !isExpired(d.endDate));
+  const used = discounts.filter((d) => d.isAvailed || isExpired(d.endDate));
 
-            {/* Decorative elements */}
-            <View style={styles.sparkleContainer}>
-              <Ionicons
-                name="sparkles"
-                size={16}
-                color="#FFD700"
-                style={styles.sparkle1}
-              />
-              <Ionicons
-                name="star"
-                size={12}
-                color="#FF69B4"
-                style={styles.sparkle2}
-              />
-              <Ionicons
-                name="diamond"
-                size={14}
-                color="#00CED1"
-                style={styles.sparkle3}
-              />
+  const handleAvail = async (item: DiscountItem) => {
+    const code = await availDiscount(item._id);
+    if (code) {
+      setCopied(false);
+      setModal({ visible: true, code, brandName: item.brand.companyName });
+    } else {
+      Alert.alert("Error", "Could not retrieve discount code. Please try again.");
+    }
+  };
+
+  const handleCopy = async () => {
+    await Clipboard.setStringAsync(modal.code);
+    setCopied(true);
+  };
+
+  const renderCard = (item: DiscountItem, disabled: boolean) => {
+    const percentage = item.discountPercentage;
+    const title = percentage
+      ? `Enjoy ${percentage}% off on ${item.brand.companyName} deals`
+      : `Exclusive deal from ${item.brand.companyName}`;
+
+    return (
+      <View key={item._id} style={[styles.card, disabled && styles.cardDisabled]}>
+        <View style={styles.cardBody}>
+          {item.brand.logo ? (
+            <Image source={{ uri: item.brand.logo }} style={styles.logo} resizeMode="contain" />
+          ) : (
+            <View style={styles.logoPlaceholder}>
+              <Text style={styles.logoPlaceholderText}>
+                {item.brand.companyName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <View style={styles.cardInfo}>
+            <Text style={[styles.cardTitle, disabled && styles.textDisabled]} numberOfLines={2}>
+              {title}
+            </Text>
+            <View style={[styles.expiryPill, disabled && styles.expiryPillDisabled]}>
+              <Text style={[styles.expiryText, disabled && styles.textDisabled]}>
+                {isExpired(item.endDate) ? "Expired" : formatExpiry(item.endDate)}
+              </Text>
             </View>
           </View>
+        </View>
 
-          {/* Text Content */}
-          <View style={styles.textContainer}>
-            <Text style={styles.title}>No Discounts Available</Text>
-            <Text style={styles.subtitle}>
-              Unfortunately, there are no discounts available for you at the
-              moment.
-            </Text>
-            <Text style={styles.description}>
-              Keep collecting points and check back soon for exciting new offers
-              and rewards!
-            </Text>
+        <View style={styles.divider} />
+
+        <TouchableOpacity
+          style={styles.availRow}
+          disabled={disabled}
+          onPress={() => handleAvail(item)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.availText, disabled && styles.availTextDisabled]}>
+            {item.isAvailed ? "Used" : isExpired(item.endDate) ? "Expired" : "Avail Offer"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      <StatusBar style="dark" />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={22} color="#333" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Discounts</Text>
+        <View style={{ width: 36 }} />
+      </View>
+
+      {isDiscountsLoading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#449EB2" />
+        </View>
+      ) : discountsError ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="warning-outline" size={48} color="#e53e3e" />
+          <Text style={[styles.emptyTitle, { color: "#e53e3e", fontSize: 16, marginTop: 12 }]}>
+            {discountsError}
+          </Text>
+        </View>
+      ) : discounts.length === 0 ? (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIconCircle}>
+            <Ionicons name="pricetag-outline" size={60} color="#449EB2" />
           </View>
+          <Text style={styles.emptyTitle}>No Discounts Available{"\n"}Right Now</Text>
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+        >
+          {available.map((item) => renderCard(item, false))}
+          {used.length > 0 && available.length > 0 && <View style={styles.sectionGap} />}
+          {used.map((item) => renderCard(item, true))}
+        </ScrollView>
+      )}
 
-          {/* Action Buttons */}
-          <View style={styles.actionButtons}>
+      {/* Code Modal */}
+      <Modal
+        visible={modal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModal({ ...modal, visible: false })}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.modalCard}>
             <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => router.push("/(tabs)/home")}
-              activeOpacity={0.8}
+              style={styles.modalClose}
+              onPress={() => setModal({ ...modal, visible: false })}
             >
-              <LinearGradient
-                colors={["#00528A", "#00528A"]}
-                style={styles.gradientButton}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <Ionicons name="home" size={20} color="#ffffff" />
-                <Text style={styles.primaryButtonText}>Go to Home</Text>
-              </LinearGradient>
+              <Ionicons name="close" size={24} color="#666" />
             </TouchableOpacity>
 
+            <View style={styles.modalIconCircle}>
+              <Ionicons name="gift" size={32} color="#449EB2" />
+            </View>
+            <Text style={styles.modalTitle}>Your Discount Code</Text>
+            <Text style={styles.modalBrand}>{modal.brandName}</Text>
+
+            <View style={styles.codeBox}>
+              <Text style={styles.codeText}>{modal.code}</Text>
+            </View>
+
             <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => router.push("/(tabs)/profile")}
-              activeOpacity={0.8}
+              style={[styles.copyBtn, copied && styles.copyBtnCopied]}
+              onPress={handleCopy}
             >
-              <Ionicons name="person-outline" size={20} color="#00528A" />
-              <Text style={styles.secondaryButtonText}>View Profile</Text>
+              <Ionicons name={copied ? "checkmark" : "copy-outline"} size={20} color="#fff" />
+              <Text style={styles.copyBtnText}>{copied ? "Copied!" : "Copy Code"}</Text>
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </Modal>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-  },
-  headerSection: {
-    backgroundColor: "#00528A",
-    paddingBottom: 20,
-  },
+  container: { flex: 1, backgroundColor: "#ffffff" },
   header: {
-    paddingTop: 50,
-    paddingHorizontal: 20,
-    paddingBottom: 15,
-    zIndex: 10,
-  },
-  headerGradient: {
-    borderRadius: 20,
-    padding: 15,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 56,
+    paddingBottom: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: "#333" },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyState: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 40 },
+  emptyIconCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#e8f6fb",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  emptyTitle: { fontSize: 20, fontWeight: "700", color: "#333", textAlign: "center", lineHeight: 28 },
+  list: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 },
+  sectionGap: { height: 8 },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.2)",
-    marginRight: 15,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#ffffff",
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
-  },
-  emptyStateContainer: {
-    alignItems: "center",
-    maxWidth: 320,
-  },
-  illustrationContainer: {
-    position: "relative",
-    marginBottom: 40,
-  },
-  illustrationBackground: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  sparkleContainer: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    top: -20,
-    left: -20,
-  },
-  sparkle1: {
-    position: "absolute",
-    top: 20,
-    right: 30,
-  },
-  sparkle2: {
-    position: "absolute",
-    bottom: 40,
-    left: 20,
-  },
-  sparkle3: {
-    position: "absolute",
-    top: 60,
-    left: 30,
-  },
-  textContainer: {
-    alignItems: "center",
-    marginBottom: 40,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#2d3748",
-    textAlign: "center",
+    borderColor: "#e8e8e8",
     marginBottom: 12,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#4a5568",
-    textAlign: "center",
-    marginBottom: 8,
-    lineHeight: 24,
-  },
-  description: {
-    fontSize: 14,
-    color: "#718096",
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  actionButtons: {
-    width: "100%",
-    marginBottom: 40,
-  },
-  primaryButton: {
-    marginBottom: 12,
-    borderRadius: 16,
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  gradientButton: {
-    flexDirection: "row",
-    alignItems: "center",
+  cardDisabled: { opacity: 0.5 },
+  cardBody: { flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
+  logo: { width: 48, height: 48, borderRadius: 24 },
+  logoPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#449EB2",
     justifyContent: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    gap: 10,
-  },
-  primaryButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  secondaryButton: {
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#ffffff",
-    paddingVertical: 16,
-    borderRadius: 16,
+  },
+  logoPlaceholderText: { color: "#fff", fontSize: 20, fontWeight: "700" },
+  cardInfo: { flex: 1, gap: 8 },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: "#222", lineHeight: 20 },
+  textDisabled: { color: "#999" },
+  expiryPill: {
+    alignSelf: "flex-start",
+    backgroundColor: "#e8f6fb",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
     borderWidth: 1,
-    borderColor: "#00528A",
-    gap: 10,
+    borderColor: "#449EB2",
   },
-  secondaryButtonText: {
-    color: "#00528A",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  tipsContainer: {
-    width: "100%",
-    backgroundColor: "#f8f9fa",
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  tipsTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#2d3748",
-    marginBottom: 16,
-    textAlign: "center",
-  },
-  tipsList: {
-    gap: 12,
-  },
-  tipItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  tipText: {
-    fontSize: 14,
-    color: "#4a5568",
+  expiryPillDisabled: { borderColor: "#ccc", backgroundColor: "#f5f5f5" },
+  expiryText: { fontSize: 12, color: "#449EB2", fontWeight: "500" },
+  divider: { height: 1, backgroundColor: "#f0f0f0", marginHorizontal: 14 },
+  availRow: { alignItems: "center", paddingVertical: 12 },
+  availText: { fontSize: 15, fontWeight: "600", color: "#449EB2" },
+  availTextDisabled: { color: "#aaa" },
+
+  // Modal
+  overlay: {
     flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 30,
   },
+  modalCard: { backgroundColor: "#fff", borderRadius: 24, padding: 28, width: "100%", alignItems: "center" },
+  modalClose: { position: "absolute", top: 14, right: 14 },
+  modalIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#e8f6fb",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  modalTitle: { fontSize: 20, fontWeight: "700", color: "#222", marginBottom: 4 },
+  modalBrand: { fontSize: 14, color: "#718096", marginBottom: 20 },
+  codeBox: {
+    backgroundColor: "#f5f6fa",
+    borderWidth: 2,
+    borderColor: "#449EB2",
+    borderStyle: "dashed",
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    marginBottom: 18,
+    width: "100%",
+    alignItems: "center",
+  },
+  codeText: { fontSize: 22, fontWeight: "700", color: "#449EB2", letterSpacing: 3 },
+  copyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#449EB2",
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 8,
+    width: "100%",
+  },
+  copyBtnCopied: { backgroundColor: "#38a169" },
+  copyBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });
 
 export default DiscountsScreen;

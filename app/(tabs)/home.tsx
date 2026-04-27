@@ -104,7 +104,12 @@ export default function HomeScreen() {
       <View style={styles.contentSection}>
         {/* Your Coupons */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Your Coupons</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Your Coupons</Text>
+            <TouchableOpacity onPress={() => router.push("/discounts")}>
+              <Text style={styles.seeAllText}>View all discounts</Text>
+            </TouchableOpacity>
+          </View>
 
           <View style={{ height: 15 }}></View>
         </View>
