@@ -1,5 +1,6 @@
 import Navbar from "@/components/ui/navbar";
 import { BrandTheme, useAppStore } from "@/store/store";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -19,6 +20,7 @@ const CARD_HEIGHT = 150;
 
 export default function HomeScreen() {
   const { user, wasteToCo2, getBrandsWithCampaigns } = useAppStore();
+  const hasLocation = !!(user?.latitude && user?.longitude);
 
   const [brands, setBrands] = React.useState<BrandTheme[]>([]);
 
@@ -79,24 +81,42 @@ export default function HomeScreen() {
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Upcoming Collections</Text>
-            <TouchableOpacity onPress={() => router.push("/collections")}>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
+            {hasLocation && (
+              <TouchableOpacity onPress={() => router.push("/collections")}>
+                <Text style={styles.seeAllText}>See All</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          <View style={styles.collectionCard}>
-            <View style={styles.collectionInfo}>
-              <Text style={styles.collectionTitle}>
-                Your next collection is on
-              </Text>
-              <Text style={styles.collectionDate}>Yet to be scheduled</Text>
+          {hasLocation ? (
+            <View style={styles.collectionCard}>
+              <View style={styles.collectionInfo}>
+                <Text style={styles.collectionTitle}>
+                  Your next collection is on
+                </Text>
+                <Text style={styles.collectionDate}>Yet to be scheduled</Text>
+              </View>
+              <Image
+                source={require("../../assets/images/Group 1597880836.png")}
+                style={styles.collectionImage}
+                resizeMode="contain"
+              />
             </View>
-            <Image
-              source={require("../../assets/images/Group 1597880836.png")}
-              style={styles.collectionImage}
-              resizeMode="contain"
-            />
-          </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.locationPromptCard}
+              onPress={() => router.push("/editProfile")}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="location-outline" size={28} color="#449EB2" />
+              <Text style={styles.locationPromptTitle}>Location not set</Text>
+              <Text style={styles.locationPromptText}>
+                Set your exact location so we can schedule waste collections near
+                you.
+              </Text>
+              <Text style={styles.locationPromptLink}>Set Location →</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -360,6 +380,33 @@ const styles = StyleSheet.create({
   collectionImage: {
     borderRadius: 8,
     height: 70,
+  },
+  locationPromptCard: {
+    backgroundColor: "#F0F8FF",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#D0E8F5",
+    borderStyle: "dashed",
+  },
+  locationPromptTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333333",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  locationPromptText: {
+    fontSize: 13,
+    color: "#666666",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  locationPromptLink: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#449EB2",
   },
   couponCard: {
     width: "100%",
