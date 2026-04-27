@@ -33,6 +33,7 @@ const EditProfile = () => {
     province: "",
     city: "",
     town: "",
+    address: "",
     latitude: "",
     longitude: "",
   });
@@ -50,6 +51,7 @@ const EditProfile = () => {
         province: user.province || "",
         city: user.city || "",
         town: user.town || "",
+        address: user.address || "",
         latitude: user.latitude || "",
         longitude: user.longitude || "",
       });
@@ -90,6 +92,10 @@ const EditProfile = () => {
 
     if (!formData.town?.trim()) {
       newErrors.town = "Town is required";
+    }
+
+    if (!formData.address?.trim()) {
+      newErrors.address = "Address is required";
     }
 
     setErrors(newErrors);
@@ -141,6 +147,7 @@ const EditProfile = () => {
     label: string,
     placeholder: string,
     keyboardType: "default" | "email-address" | "phone-pad" = "default",
+    multiline = false,
   ) => (
     <View style={styles.inputContainer}>
       <Text style={styles.label}>{label}</Text>
@@ -148,17 +155,18 @@ const EditProfile = () => {
         style={[
           styles.input,
           errors[field] && styles.inputError,
-          {
-            backgroundColor: field === "email" ? "#e2e8f0" : "#f8f9fa",
-          },
+          { backgroundColor: field === "email" ? "#e2e8f0" : "#f8f9fa" },
+          multiline && styles.inputMultiline,
         ]}
         value={formData[field] || ""}
         onChangeText={(value) => handleUpdateField(field, value)}
         placeholder={placeholder}
         placeholderTextColor="#a0aec0"
         keyboardType={keyboardType}
-        autoCapitalize={keyboardType === "email-address" ? "none" : "words"}
+        autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
         readOnly={field === "email"}
+        multiline={multiline}
+        textAlignVertical={multiline ? "top" : "center"}
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
     </View>
@@ -196,6 +204,13 @@ const EditProfile = () => {
             {renderInput("province", "Province", "Enter your province")}
             {renderInput("city", "City", "Enter your city")}
             {renderInput("town", "Town", "Enter your town")}
+            {renderInput(
+              "address",
+              "Street Address",
+              "e.g. 12 Main Street, Suburb",
+              "default",
+              true,
+            )}
 
             {/* Location Pin */}
             <View style={styles.inputContainer}>
@@ -387,6 +402,10 @@ const styles = StyleSheet.create({
   inputError: {
     borderColor: "#e53e3e",
     backgroundColor: "#fef5f5",
+  },
+  inputMultiline: {
+    height: 90,
+    paddingTop: 14,
   },
   locationBtn: {
     flexDirection: "row",

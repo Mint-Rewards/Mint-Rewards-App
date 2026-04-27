@@ -57,6 +57,7 @@ export interface UserProfile {
   province: string;
   city: string;
   town: string;
+  address: string;
   email: string;
   latitude?: string;
   longitude?: string;

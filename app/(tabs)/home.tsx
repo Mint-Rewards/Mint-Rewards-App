@@ -21,6 +21,7 @@ const CARD_HEIGHT = 150;
 export default function HomeScreen() {
   const { user, wasteToCo2, getBrandsWithCampaigns } = useAppStore();
   const hasLocation = !!(user?.latitude && user?.longitude);
+  const hasAddress = !!user?.address;
 
   const [brands, setBrands] = React.useState<BrandTheme[]>([]);
 
@@ -88,7 +89,7 @@ export default function HomeScreen() {
             )}
           </View>
 
-          {hasLocation ? (
+          {(hasLocation && hasAddress) ? (
             <View style={styles.collectionCard}>
               <View style={styles.collectionInfo}>
                 <Text style={styles.collectionTitle}>
