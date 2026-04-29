@@ -118,6 +118,16 @@ export interface BrandTheme {
   status?: string;
 }
 
+export interface DiscountItem {
+  _id: string;
+  name?: string;
+  discountPercentage?: string;
+  brand: { _id: string; companyName: string; logo?: string; themeColor?: string; category?: string };
+  startDate: string;
+  endDate: string;
+  isAvailed: boolean;
+}
+
 // ============================================================================
 // STORE INTERFACES
 // ============================================================================
@@ -183,6 +193,14 @@ interface ProfileSlice {
   }>;
 }
 
+interface DiscountSlice {
+  discounts: DiscountItem[];
+  isDiscountsLoading: boolean;
+  discountsError: string | null;
+  getDiscounts: () => Promise<DiscountItem[]>;
+  availDiscount: (discountId: string) => Promise<string | null>;
+}
+
 interface CampaignSlice {
   campaigns: Campaign[];
   isCampaignLoading: boolean;
@@ -216,7 +234,7 @@ interface CampaignSlice {
 // ============================================================================
 // STORE
 // ============================================================================
-type AppStore = UserSlice & ProfileSlice & CampaignSlice;
+type AppStore = UserSlice & ProfileSlice & CampaignSlice & DiscountSlice;
 
 export const useAppStore = create<AppStore>((set, get) => ({
   // ========================================================================
@@ -828,4 +846,63 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setCampaignLoading: (loading: boolean) => set({ isCampaignLoading: loading }),
   setCampaignError: (error: string | null) => set({ campaignError: error }),
+
+  // ========================================================================
+  // DISCOUNT SLICE
+  // ========================================================================
+  discounts: [],
+  isDiscountsLoading: false,
+  discountsError: null,
+
+  getDiscounts: async () => {
+    set({ isDiscountsLoading: true, discountsError: null });
+    try {
+      const token = get().token || get().user?.token;
+      console.log("[getDiscounts] token:", token);
+      const response = await authenticatedFetch(`${API_URL}/api/users/my-discounts`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: token } : {}),
+        },
+      });
+      const data = await response.json();
+      console.log("[getDiscounts] status:", response.status, "body:", JSON.stringify(data));
+      if (response.ok) {
+        set({ discounts: data.discounts || [], isDiscountsLoading: false });
+        return data.discounts || [];
+      }
+      set({ discountsError: data.error || "Failed to fetch discounts.", isDiscountsLoading: false });
+      return [];
+    } catch {
+      set({ discountsError: "Network error. Please try again.", isDiscountsLoading: false });
+      return [];
+    }
+  },
+
+  availDiscount: async (discountId) => {
+    try {
+      const token = get().token || get().user?.token;
+      const response = await authenticatedFetch(`${API_URL}/api/users/my-discounts`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: token } : {}),
+        },
+        body: JSON.stringify({ discountId }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        set((state) => ({
+          discounts: state.discounts.map((d) =>
+            d._id === discountId ? { ...d, isAvailed: true } : d,
+          ),
+        }));
+        return data.code;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  },
 }));

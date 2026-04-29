@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mint Rewards",
     "slug": "mint-rewards",
-    "version": "2.1.3",
+    "version": "2.1.3~",
     "orientation": "portrait",
     "icon": "./assets/images/logo-fixed.png",
     "scheme": "mintrewards",
@@ -12,7 +12,14 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.mintrewards.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        }
       },
       "usesEncryption": false,
       "buildNumber": "14"
