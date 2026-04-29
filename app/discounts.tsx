@@ -26,12 +26,12 @@ const formatExpiry = (endDate: string) => {
 type FilterType = "all" | "active";
 
 const DiscountsScreen = () => {
-  const { getDiscounts, availDiscount, discounts, isDiscountsLoading, discountsError } = useAppStore();
+  const { getDiscounts, availDiscount, markDiscountUsed, discounts, isDiscountsLoading, discountsError } = useAppStore();
   const [filter, setFilter] = useState<FilterType>("active");
-  const [modal, setModal] = useState<{ visible: boolean; code: string; brandName: string }>({
+  const [modal, setModal] = useState<{ visible: boolean; code: string; item: DiscountItem | null }>({
     visible: false,
     code: "",
-    brandName: "",
+    item: null,
   });
   const [copied, setCopied] = useState(false);
 
@@ -49,7 +49,7 @@ const DiscountsScreen = () => {
     const code = await availDiscount(item._id);
     if (code) {
       setCopied(false);
-      setModal({ visible: true, code, brandName: item.brand.companyName });
+      setModal({ visible: true, code, item });
     } else {
       Alert.alert("Error", "Could not retrieve discount code. Please try again.");
     }
@@ -57,6 +57,7 @@ const DiscountsScreen = () => {
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(modal.code);
+    if (modal.item) await markDiscountUsed(modal.item._id);
     setCopied(true);
   };
 
@@ -205,12 +206,45 @@ const DiscountsScreen = () => {
               <Ionicons name="close" size={24} color="#666" />
             </TouchableOpacity>
 
-            <View style={styles.modalIconCircle}>
-              <Ionicons name="gift" size={32} color="#449EB2" />
-            </View>
-            <Text style={styles.modalTitle}>Your Discount Code</Text>
-            <Text style={styles.modalBrand}>{modal.brandName}</Text>
+            {/* Brand logo */}
+            {modal.item?.brand.logo ? (
+              <Image source={{ uri: modal.item.brand.logo }} style={styles.modalLogo} resizeMode="contain" />
+            ) : (
+              <View style={styles.modalIconCircle}>
+                <Text style={styles.modalLogoPlaceholderText}>
+                  {modal.item?.brand.companyName?.charAt(0).toUpperCase() ?? "?"}
+                </Text>
+              </View>
+            )}
 
+            {/* Brand name */}
+            <Text style={styles.modalBrandName}>{modal.item?.brand.companyName}</Text>
+
+            {/* Campaign name */}
+            {modal.item?.name ? (
+              <Text style={styles.modalCampaignName}>{modal.item.name}</Text>
+            ) : null}
+
+            {/* Discount + expiry row */}
+            <View style={styles.modalMetaRow}>
+              {modal.item?.discountPercentage ? (
+                <View style={styles.discountBadge}>
+                  <Text style={styles.discountBadgeText}>{modal.item.discountPercentage}% OFF</Text>
+                </View>
+              ) : null}
+              {modal.item?.endDate ? (
+                <View style={styles.modalExpiryPill}>
+                  <Ionicons name="time-outline" size={12} color="#449EB2" />
+                  <Text style={styles.modalExpiryText}>
+                    {formatExpiry(modal.item.endDate)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.modalDivider} />
+
+            <Text style={styles.modalCodeLabel}>Your Discount Code</Text>
             <View style={styles.codeBox}>
               <Text style={styles.codeText}>{modal.code}</Text>
             </View>
@@ -364,17 +398,41 @@ const styles = StyleSheet.create({
   },
   modalCard: { backgroundColor: "#fff", borderRadius: 24, padding: 28, width: "100%", alignItems: "center" },
   modalClose: { position: "absolute", top: 14, right: 14 },
+  modalLogo: { width: 72, height: 72, borderRadius: 36, marginBottom: 12 },
   modalIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#e8f6fb",
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#449EB2",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 14,
+    marginBottom: 12,
   },
-  modalTitle: { fontSize: 20, fontWeight: "700", color: "#222", marginBottom: 4 },
-  modalBrand: { fontSize: 14, color: "#718096", marginBottom: 20 },
+  modalLogoPlaceholderText: { color: "#fff", fontSize: 28, fontWeight: "700" },
+  modalBrandName: { fontSize: 20, fontWeight: "700", color: "#222", marginBottom: 4 },
+  modalCampaignName: { fontSize: 14, color: "#718096", textAlign: "center", marginBottom: 12 },
+  modalMetaRow: { flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 16 },
+  discountBadge: {
+    backgroundColor: "#449EB2",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  discountBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  modalExpiryPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#e8f6fb",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: "#449EB2",
+  },
+  modalExpiryText: { fontSize: 12, color: "#449EB2", fontWeight: "500" },
+  modalDivider: { height: 1, backgroundColor: "#f0f0f0", width: "100%", marginBottom: 16 },
+  modalCodeLabel: { fontSize: 13, color: "#718096", fontWeight: "600", marginBottom: 8 },
   codeBox: {
     backgroundColor: "#f5f6fa",
     borderWidth: 2,

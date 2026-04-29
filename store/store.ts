@@ -199,6 +199,7 @@ interface DiscountSlice {
   discountsError: string | null;
   getDiscounts: () => Promise<DiscountItem[]>;
   availDiscount: (discountId: string) => Promise<string | null>;
+  markDiscountUsed: (discountId: string) => Promise<void>;
 }
 
 interface CampaignSlice {
@@ -892,17 +893,37 @@ export const useAppStore = create<AppStore>((set, get) => ({
         body: JSON.stringify({ discountId }),
       });
       const data = await response.json();
+      console.log("[availDiscount] status:", response.status, "body:", JSON.stringify(data));
+      if (response.ok) {
+        return data.code ?? data.discountCode ?? null;
+      }
+      return null;
+    } catch (e) {
+      console.log("[availDiscount] exception:", e);
+      return null;
+    }
+  },
+
+  markDiscountUsed: async (discountId) => {
+    try {
+      const token = get().token || get().user?.token;
+      const response = await authenticatedFetch(`${API_URL}/api/users/my-discounts`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: token } : {}),
+        },
+        body: JSON.stringify({ discountId }),
+      });
       if (response.ok) {
         set((state) => ({
           discounts: state.discounts.map((d) =>
             d._id === discountId ? { ...d, isAvailed: true } : d,
           ),
         }));
-        return data.code;
       }
-      return null;
     } catch {
-      return null;
+      // best-effort — local state remains unchanged until next refresh
     }
   },
 }));
