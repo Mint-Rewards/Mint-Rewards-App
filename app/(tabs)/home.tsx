@@ -122,7 +122,7 @@ export default function HomeScreen() {
           style={{ flex: 1 }}
         >
           {brands &&
-            brands.map((brand, index) => {
+            brands.filter((b) => (b as any).status === "PENDING").map((brand, index) => {
               return (
                 <View
                   key={brand._id}
