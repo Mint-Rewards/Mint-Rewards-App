@@ -74,7 +74,7 @@ const DiscountsScreen = () => {
           ) : (
             <View style={styles.logoPlaceholder}>
               <Text style={styles.logoPlaceholderText}>
-                {item.brand.companyName.charAt(0).toUpperCase()}
+                {item.brand.companyName?.charAt(0).toUpperCase() ?? "?"}
               </Text>
             </View>
           )}
