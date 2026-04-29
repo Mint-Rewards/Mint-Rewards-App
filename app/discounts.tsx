@@ -23,8 +23,11 @@ const formatExpiry = (endDate: string) => {
   return `Expires on ${d.getDate()} ${d.toLocaleString("en-US", { month: "long" }).toLowerCase()}`;
 };
 
+type FilterType = "all" | "active";
+
 const DiscountsScreen = () => {
   const { getDiscounts, availDiscount, discounts, isDiscountsLoading, discountsError } = useAppStore();
+  const [filter, setFilter] = useState<FilterType>("active");
   const [modal, setModal] = useState<{ visible: boolean; code: string; brandName: string }>({
     visible: false,
     code: "",
@@ -116,6 +119,28 @@ const DiscountsScreen = () => {
         <View style={{ width: 36 }} />
       </View>
 
+      {/* Filter Row */}
+      <View style={styles.filterRow}>
+        <TouchableOpacity
+          style={[styles.filterPill, filter === "active" && styles.filterPillActive]}
+          onPress={() => setFilter("active")}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.filterPillText, filter === "active" && styles.filterPillTextActive]}>
+            Active
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterPill, filter === "all" && styles.filterPillActive]}
+          onPress={() => setFilter("all")}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.filterPillText, filter === "all" && styles.filterPillTextActive]}>
+            All
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {isDiscountsLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#449EB2" />
@@ -134,14 +159,33 @@ const DiscountsScreen = () => {
           </View>
           <Text style={styles.emptyTitle}>No Discounts Available{"\n"}Right Now</Text>
         </View>
+      ) : available.length === 0 && filter === "active" ? (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIconCircle}>
+            <Ionicons name="pricetag-outline" size={60} color="#449EB2" />
+          </View>
+          <Text style={styles.emptyTitle}>No Active Coupons</Text>
+          <Text style={styles.emptySubtitle}>
+            All your coupons have expired or been used.
+          </Text>
+          <TouchableOpacity
+            style={styles.showAllButton}
+            onPress={() => setFilter("all")}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.showAllButtonText}>Show All Coupons</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
         >
           {available.map((item) => renderCard(item, false))}
-          {used.length > 0 && available.length > 0 && <View style={styles.sectionGap} />}
-          {used.map((item) => renderCard(item, true))}
+          {filter === "all" && used.length > 0 && available.length > 0 && (
+            <View style={styles.sectionGap} />
+          )}
+          {filter === "all" && used.map((item) => renderCard(item, true))}
         </ScrollView>
       )}
 
@@ -205,6 +249,54 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: { fontSize: 18, fontWeight: "700", color: "#333" },
+  filterRow: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  filterPill: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#d0d0d0",
+    backgroundColor: "#ffffff",
+  },
+  filterPillActive: {
+    backgroundColor: "#449EB2",
+    borderColor: "#449EB2",
+  },
+  filterPillText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#718096",
+  },
+  filterPillTextActive: {
+    color: "#ffffff",
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: "#718096",
+    textAlign: "center",
+    lineHeight: 20,
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  showAllButton: {
+    borderWidth: 1.5,
+    borderColor: "#449EB2",
+    borderRadius: 14,
+    paddingVertical: 11,
+    paddingHorizontal: 22,
+  },
+  showAllButtonText: {
+    color: "#449EB2",
+    fontSize: 14,
+    fontWeight: "600",
+  },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
   emptyState: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 40 },
   emptyIconCircle: {

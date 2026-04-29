@@ -12,7 +12,14 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.mintrewards.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        }
       },
       "usesEncryption": false,
       "buildNumber": "14"
