@@ -57,7 +57,7 @@ const DiscountsScreen = () => {
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(modal.code);
-    if (modal.item) await markDiscountUsed(modal.item._id);
+    // if (modal.item) await markDiscountUsed(modal.item._id);
     setCopied(true);
   };
 
