@@ -7,7 +7,7 @@ import { Platform } from "react-native";
 // ============================================================================
 
 const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? "https://mint-rewards-mern-next-js.vercel.app";
+  process.env.EXPO_PUBLIC_API_URL ?? "https://mint-rewards-backend.vercel.app";
 // const API_URL =
 //   process.env.EXPO_PUBLIC_API_URL ?? "http://192.168.18.82:3000";
 

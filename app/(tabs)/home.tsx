@@ -1,5 +1,6 @@
 import Navbar from "@/components/ui/navbar";
 import { BrandTheme, useAppStore } from "@/store/store";
+import { Ionicons } from "@expo/vector-icons";
 import { logEvent } from "@/utils/logger";
 import { Constants } from "../../utils/constants";
 import { LinearGradient } from "expo-linear-gradient";
@@ -121,6 +122,9 @@ const BrandCard = React.memo(({ brand, index, scrollY, onPress }: BrandCardProps
 
 export default function HomeScreen() {
   const { user, wasteToCo2, getBrandsWithCampaigns } = useAppStore();
+  const hasLocation = !!(user?.latitude && user?.longitude);
+  const hasAddress = !!user?.address;
+
   const [brands, setBrands] = React.useState<BrandTheme[]>([]);
   const [co2, setCo2] = React.useState(0);
 
@@ -163,23 +167,51 @@ export default function HomeScreen() {
       </View>
 
       {/* Upcoming Collections */}
-      <View style={styles.upcomingSection}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Upcoming Collections</Text>
-          <Text style={styles.seeAllText} onPress={() => router.push("/collections")}>
-            See All
-          </Text>
-        </View>
-        <View style={styles.collectionCard}>
-          <View style={styles.collectionInfo}>
-            <Text style={styles.collectionTitle}>Your next collection is on</Text>
-            <Text style={styles.collectionDate}>Yet to be scheduled</Text>
+      <View
+        style={{
+          paddingHorizontal: 20,
+          paddingTop: 20,
+        }}
+      >
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Upcoming Collections</Text>
+            {hasLocation && (
+              <TouchableOpacity onPress={() => router.push("/collections")}>
+                <Text style={styles.seeAllText}>See All</Text>
+              </TouchableOpacity>
+            )}
           </View>
-          <Image
-            source={require("../../assets/images/Group 1597880836.png")}
-            style={styles.collectionImage}
-            resizeMode="contain"
-          />
+
+          {(hasLocation && hasAddress) ? (
+            <View style={styles.collectionCard}>
+              <View style={styles.collectionInfo}>
+                <Text style={styles.collectionTitle}>
+                  Your next collection is on
+                </Text>
+                <Text style={styles.collectionDate}>Yet to be scheduled</Text>
+              </View>
+              <Image
+                source={require("../../assets/images/Group 1597880836.png")}
+                style={styles.collectionImage}
+                resizeMode="contain"
+              />
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.locationPromptCard}
+              onPress={() => router.push("/editProfile")}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="location-outline" size={28} color="#449EB2" />
+              <Text style={styles.locationPromptTitle}>Location not set</Text>
+              <Text style={styles.locationPromptText}>
+                Set your exact location so we can schedule waste collections near
+                you.
+              </Text>
+              <Text style={styles.locationPromptLink}>Set Location →</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -261,14 +293,62 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  collectionInfo: { flex: 1 },
-  collectionTitle: { fontSize: 14, color: "#666666", marginBottom: 4 },
-  collectionDate: { fontSize: 16, fontWeight: "bold", color: "#333333" },
-  collectionImage: { borderRadius: 8, height: 70 },
-  carouselContainer: { paddingTop: 4 },
-  cardWrapper: {
-    width: "100%",
-    marginBottom: -OVERLAP,
+  collectionInfo: {
+    flex: 1,
+  },
+  collectionTitle: {
+    fontSize: 14,
+    color: "#666666",
+    marginBottom: 4,
+  },
+  collectionDate: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#333333",
+    marginBottom: 12,
+  },
+  skipButton: {
+    backgroundColor: Constants.appThemeColor,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: "flex-start",
+  },
+  skipButtonText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  collectionImage: {
+    borderRadius: 8,
+    height: 70,
+  },
+  locationPromptCard: {
+    backgroundColor: "#F0F8FF",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#D0E8F5",
+    borderStyle: "dashed",
+  },
+  locationPromptTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333333",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  locationPromptText: {
+    fontSize: 13,
+    color: "#666666",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  locationPromptLink: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#449EB2",
   },
   couponCard: {
     width: "100%",
