@@ -10,21 +10,18 @@ import React, { useEffect } from "react";
 import {
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import Animated, {
-  Extrapolation,
-  interpolate,
-  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
   withSpring,
   withTiming,
-  SharedValue,
 } from "react-native-reanimated";
 
 const CARD_HEIGHT = 160;
@@ -43,11 +40,10 @@ function isLightColor(hex: string): boolean {
 type BrandCardProps = {
   brand: BrandTheme & { status?: string };
   index: number;
-  scrollY: SharedValue<number>;
   onPress: () => void;
 };
 
-const BrandCard = React.memo(({ brand, index, scrollY, onPress }: BrandCardProps) => {
+const BrandCard = React.memo(({ brand, index, onPress }: BrandCardProps) => {
   const offsetY = useSharedValue(80);
   const entryOpacity = useSharedValue(0);
   const pressScale = useSharedValue(1);
@@ -58,31 +54,19 @@ const BrandCard = React.memo(({ brand, index, scrollY, onPress }: BrandCardProps
     entryOpacity.value = withDelay(delay, withTiming(1, { duration: 260 }));
   }, []);
 
-  const animatedStyle = useAnimatedStyle(() => {
-    const cardTopY = index * VISIBLE;
-
-    // Extra upward push as the card scrolls off the top.
-    const collapseY = interpolate(
-      scrollY.value,
-      [cardTopY, cardTopY + VISIBLE],
-      [0, -VISIBLE * 0.2],
-      Extrapolation.CLAMP,
-    );
-
-    return {
-      opacity: entryOpacity.value,
-      transform: [
-        { translateY: offsetY.value + collapseY },
-        { scale: pressScale.value },
-      ],
-    };
-  });
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: entryOpacity.value,
+    transform: [
+      { translateY: offsetY.value },
+      { scale: pressScale.value },
+    ],
+  }));
 
   const isLight = isLightColor(brand.themeColor);
   const textColor = isLight ? "#333333" : "#ffffff";
 
   return (
-    <Animated.View style={[styles.cardWrapper, { zIndex: index }, animatedStyle]}>
+    <Animated.View style={[styles.cardWrapper, { zIndex: index, top: index * VISIBLE }, animatedStyle]}>
       <Pressable
         onPress={onPress}
         onPressIn={() => {
@@ -129,13 +113,6 @@ export default function HomeScreen() {
   const [brands, setBrands] = React.useState<BrandTheme[]>([]);
   const [co2, setCo2] = React.useState(0);
 
-  const scrollY = useSharedValue(0);
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
-    },
-  });
-
   useEffect(() => {
     wasteToCo2().then((value: number) => setCo2(value));
     getBrandsWithCampaigns().then((result) => {
@@ -144,6 +121,7 @@ export default function HomeScreen() {
   }, [wasteToCo2, getBrandsWithCampaigns]);
 
   const pendingBrands = brands.filter((b) => (b as any).status === "PENDING");
+  const cardsContainerHeight = pendingBrands.length * VISIBLE + OVERLAP + 80;
 
   return (
     <View style={styles.container}>
@@ -151,30 +129,28 @@ export default function HomeScreen() {
 
       <Navbar user={user} />
 
-      {/* Stats */}
-      <View style={styles.statsContainer}>
-        <LinearGradient colors={["#00528A", "#97DBAD"]} style={styles.statCard}>
-          <Text style={styles.statLabel}>Mint Rewards</Text>
-          <Text style={styles.statValue}>{user?.points}</Text>
-        </LinearGradient>
-        <LinearGradient colors={["#73C1A6", "#AFDEF2"]} style={styles.statCard}>
-          <Text style={styles.statLabel}>Recycled waste collected</Text>
-          <Text style={styles.statValue}>{user?.totalWasteCollected || 0}kg</Text>
-        </LinearGradient>
-        <LinearGradient colors={["#82A599", "#C6F2C0"]} style={styles.statCard}>
-          <Text style={styles.statLabel}>CO₂ Saved</Text>
-          <Text style={styles.statValue}>{co2 || 0}%</Text>
-        </LinearGradient>
-      </View>
-
-      {/* Upcoming Collections */}
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingTop: 20,
-        }}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
       >
-        <View style={styles.sectionContainer}>
+        {/* Stats */}
+        <View style={styles.statsContainer}>
+          <LinearGradient colors={["#00528A", "#97DBAD"]} style={styles.statCard}>
+            <Text style={styles.statLabel}>Mint Rewards</Text>
+            <Text style={styles.statValue}>{user?.points}</Text>
+          </LinearGradient>
+          <LinearGradient colors={["#73C1A6", "#AFDEF2"]} style={styles.statCard}>
+            <Text style={styles.statLabel}>Recycled waste collected</Text>
+            <Text style={styles.statValue}>{user?.totalWasteCollected || 0}kg</Text>
+          </LinearGradient>
+          <LinearGradient colors={["#82A599", "#C6F2C0"]} style={styles.statCard}>
+            <Text style={styles.statLabel}>CO₂ Saved</Text>
+            <Text style={styles.statValue}>{co2 || 0}%</Text>
+          </LinearGradient>
+        </View>
+
+        {/* Upcoming Collections */}
+        <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Upcoming Collections</Text>
             {hasLocation && (
@@ -214,56 +190,50 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
         </View>
-      </View>
 
-      {/* Coupons */}
-      <View style={styles.contentSection}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Your Coupons</Text>
-          <Text style={styles.seeAllText} onPress={() => router.push("/discounts")}>
-            View all discounts
-          </Text>
+        {/* Coupons */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Your Coupons</Text>
+            <Text style={styles.seeAllText} onPress={() => router.push("/discounts")}>
+              View all discounts
+            </Text>
+          </View>
+
+          <View style={{ height: cardsContainerHeight, position: "relative" }}>
+            {pendingBrands.map((brand, index) => (
+              <BrandCard
+                key={brand._id}
+                brand={brand as BrandTheme & { status?: string }}
+                index={index}
+                onPress={() => {
+                  logEvent("BRAND_VIEWED", {
+                    userId: user?._id,
+                    userEmail: user?.email,
+                    extra: {
+                      brandId: brand._id,
+                      brandName: brand.companyName,
+                      brandCategory: brand.category,
+                    },
+                  });
+                  router.push(`/redeem?brandId=${brand._id}`);
+                }}
+              />
+            ))}
+          </View>
         </View>
-
-        <Animated.ScrollView
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.carouselContainer}
-          style={{ flex: 1 }}
-        >
-          {pendingBrands.map((brand, index) => (
-            <BrandCard
-              key={brand._id}
-              brand={brand as BrandTheme & { status?: string }}
-              index={index}
-              scrollY={scrollY}
-              onPress={() => {
-                logEvent("BRAND_VIEWED", {
-                  userId: user?._id,
-                  userEmail: user?.email,
-                  extra: {
-                    brandId: brand._id,
-                    brandName: brand.companyName,
-                    brandCategory: brand.category,
-                  },
-                });
-                router.push(`/redeem?brandId=${brand._id}`);
-              }}
-            />
-          ))}
-          <View style={{ height: OVERLAP + 80 }} />
-        </Animated.ScrollView>
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#ffffff" },
+  scrollContent: { paddingBottom: 40 },
   statsContainer: {
     flexDirection: "row",
     paddingHorizontal: 10,
+    paddingTop: 16,
     justifyContent: "space-between",
   },
   statCard: {
@@ -276,8 +246,7 @@ const styles = StyleSheet.create({
   },
   statLabel: { color: "#ffffff", fontSize: 12, marginBottom: 8, lineHeight: 16 },
   statValue: { color: "#ffffff", fontSize: 28, fontWeight: "900" },
-  upcomingSection: { paddingHorizontal: 20, paddingTop: 20, marginBottom: 4 },
-  contentSection: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
+  section: { paddingHorizontal: 20, paddingTop: 20 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -307,18 +276,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#333333",
     marginBottom: 12,
-  },
-  skipButton: {
-    backgroundColor: Constants.appThemeColor,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    alignSelf: "flex-start",
-  },
-  skipButtonText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "500",
   },
   collectionImage: {
     borderRadius: 8,
@@ -350,6 +307,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#449EB2",
+  },
+  cardWrapper: {
+    width: "100%",
+    height: CARD_HEIGHT,
+    position: "absolute",
   },
   couponCard: {
     width: "100%",
