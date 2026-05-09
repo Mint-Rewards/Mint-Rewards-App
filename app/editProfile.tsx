@@ -148,9 +148,12 @@ const EditProfile = () => {
     placeholder: string,
     keyboardType: "default" | "email-address" | "phone-pad" = "default",
     multiline = false,
+    required = false,
   ) => (
     <View style={styles.inputContainer}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label}>
+        {label}{required && <Text style={styles.asterisk}> *</Text>}
+      </Text>
       <TextInput
         style={[
           styles.input,
@@ -193,28 +196,17 @@ const EditProfile = () => {
 
           {/* Form Fields */}
           <View style={styles.formSection}>
-            {renderInput("userName", "Username", "Enter your username")}
-            {renderInput("email", "Email", "Enter your email", "email-address")}
-            {renderInput(
-              "phone",
-              "Phone Number",
-              "Enter your phone number",
-              "phone-pad",
-            )}
-            {renderInput("province", "Province", "Enter your province")}
-            {renderInput("city", "City", "Enter your city")}
-            {renderInput("town", "Town", "Enter your town")}
-            {renderInput(
-              "address",
-              "Street Address",
-              "e.g. 12 Main Street, Suburb",
-              "default",
-              true,
-            )}
+            {renderInput("userName", "Username", "Enter your username", "default", false, true)}
+            {renderInput("email", "Email", "Enter your email", "email-address", false, true)}
+            {renderInput("phone", "Phone Number", "Enter your phone number", "phone-pad", false, true)}
+            {renderInput("province", "Province", "Enter your province", "default", false, true)}
+            {renderInput("city", "City", "Enter your city", "default", false, true)}
+            {renderInput("town", "Town", "Enter your town", "default", false, true)}
+            {renderInput("address", "Street Address", "e.g. 12 Main Street, Suburb", "default", true, true)}
 
             {/* Location Pin */}
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Exact Location (Pin)</Text>
+              <Text style={styles.label}>Exact Location (Pin)<Text style={styles.asterisk}> *</Text></Text>
               <TouchableOpacity
                 style={styles.locationBtn}
                 onPress={() => setMapVisible(true)}
@@ -388,6 +380,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#2d3748",
     marginBottom: 8,
+  },
+  asterisk: {
+    color: "#e53e3e",
+    fontWeight: "700",
   },
   input: {
     backgroundColor: "#f8f9fa",

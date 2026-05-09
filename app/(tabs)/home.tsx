@@ -41,9 +41,10 @@ type BrandCardProps = {
   brand: BrandTheme & { status?: string };
   index: number;
   onPress: () => void;
+  locked?: boolean;
 };
 
-const BrandCard = React.memo(({ brand, index, onPress }: BrandCardProps) => {
+const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps) => {
   const offsetY = useSharedValue(80);
   const entryOpacity = useSharedValue(0);
   const pressScale = useSharedValue(1);
@@ -70,7 +71,7 @@ const BrandCard = React.memo(({ brand, index, onPress }: BrandCardProps) => {
       <Pressable
         onPress={onPress}
         onPressIn={() => {
-          pressScale.value = withSpring(0.96, { damping: 20, stiffness: 400 });
+          if (!locked) pressScale.value = withSpring(0.96, { damping: 20, stiffness: 400 });
         }}
         onPressOut={() => {
           pressScale.value = withSpring(1, { damping: 20, stiffness: 400 });
@@ -81,6 +82,7 @@ const BrandCard = React.memo(({ brand, index, onPress }: BrandCardProps) => {
             styles.couponCard,
             { backgroundColor: brand.themeColor },
             isLight && styles.couponCardLight,
+            locked && styles.couponCardLocked,
           ]}
         >
           <View style={styles.couponTextBlock}>
@@ -99,6 +101,13 @@ const BrandCard = React.memo(({ brand, index, onPress }: BrandCardProps) => {
               resizeMode="contain"
             />
           </View>
+
+          {locked && (
+            <View style={styles.lockedOverlay}>
+              <Ionicons name="lock-closed" size={28} color="#ffffff" />
+              <Text style={styles.lockedText}>Complete your profile to unlock</Text>
+            </View>
+          )}
         </View>
       </Pressable>
     </Animated.View>
@@ -109,6 +118,11 @@ export default function HomeScreen() {
   const { user, wasteToCo2, getBrandsWithCampaigns } = useAppStore();
   const hasLocation = !!(user?.latitude && user?.longitude);
   const hasAddress = !!user?.address;
+  const isProfileComplete = !!(
+    user?.phone?.trim() &&
+    user?.province?.trim() &&
+    user?.city?.trim()
+  );
 
   const [brands, setBrands] = React.useState<BrandTheme[]>([]);
   const [co2, setCo2] = React.useState(0);
@@ -200,13 +214,32 @@ export default function HomeScreen() {
             </Text>
           </View>
 
+          {!isProfileComplete && (
+            <TouchableOpacity
+              style={styles.profilePromptCard}
+              onPress={() => router.push("/editProfile")}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="person-circle-outline" size={22} color="#449EB2" />
+              <Text style={styles.profilePromptText}>
+                Complete your profile to unlock coupons
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#449EB2" />
+            </TouchableOpacity>
+          )}
+
           <View style={{ height: cardsContainerHeight, position: "relative" }}>
             {pendingBrands.map((brand, index) => (
               <BrandCard
                 key={brand._id}
                 brand={brand as BrandTheme & { status?: string }}
                 index={index}
+                locked={!isProfileComplete}
                 onPress={() => {
+                  if (!isProfileComplete) {
+                    router.push("/editProfile");
+                    return;
+                  }
                   logEvent("BRAND_VIEWED", {
                     userId: user?._id,
                     userEmail: user?.email,
@@ -338,4 +371,39 @@ const styles = StyleSheet.create({
   couponName: { fontSize: 26, fontWeight: "700", letterSpacing: -0.3 },
   couponLogoWrapper: { width: 110, height: 110, alignItems: "center", justifyContent: "center" },
   couponLogo: { width: 110, height: 110 },
+  couponCardLocked: {
+    opacity: 0.45,
+  },
+  lockedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  lockedText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+    paddingHorizontal: 20,
+  },
+  profilePromptCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0F8FF",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#D0E8F5",
+    gap: 8,
+  },
+  profilePromptText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#449EB2",
+    fontWeight: "500",
+  },
 });
