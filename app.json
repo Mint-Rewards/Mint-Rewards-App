@@ -5,7 +5,7 @@
     "version": "2.1.4",
     "orientation": "portrait",
     "icon": "./assets/images/logo-fixed.png",
-    "scheme": "mintrewards",
+    "scheme": "mint-rewards",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -65,7 +65,8 @@
         {
           "locationWhenInUsePermission": "Mint Rewards uses your location to let you pin your exact address for waste collection pickups."
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
