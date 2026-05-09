@@ -46,9 +46,13 @@ const ProfileScreen = () => {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            // Handle account deletion
-            await deleteAccount();
-            router.replace("/login");
+            const result = await deleteAccount();
+            if (result.Status === "Success") {
+              await signOut();
+              router.replace("/login");
+            } else {
+              Alert.alert("Error", result.ErrorMessage || "Account deletion failed. Please try again.");
+            }
           },
         },
       ],

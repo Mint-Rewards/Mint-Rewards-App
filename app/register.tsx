@@ -1,13 +1,10 @@
-import { LocationPicker } from "@/components/ui/LocationPicker";
 import { useAppStore } from "@/store/store";
+import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Formik } from "formik";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,360 +12,254 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import * as Yup from "yup";
-import { Constants } from "../utils/constants";
-import {
-  cityHasTowns,
-  getCitiesForProvince,
-  getTownsForCity,
-  PAKISTAN_LOCATIONS,
-} from "../utils/pakistanLocations";
+import Svg, { Path } from "react-native-svg";
+import * as SecureStore from "expo-secure-store";
+import { Constants, Utils, API_BASE_URL } from "../utils/constants";
 
-const registrationSchema = Yup.object().shape({
-  userName: Yup.string().trim().required("Please enter your name"),
-  phone: Yup.string()
-    .trim()
-    .matches(/^3\d{2}\s?\d{7}$/, "Phone must be in the format 3XX XXXXXXX")
-    .required("Please enter your phone number"),
-  province: Yup.string().trim(),
-  city: Yup.string().trim(),
-  town: Yup.string().trim(),
-  email: Yup.string()
-    .trim()
-    .email("Please enter a valid email address")
-    .required("Please enter your email address"),
-  password: Yup.string()
-    .min(8, "Password should be at least 8 characters")
-    .required("Please enter a password"),
-});
+const GoogleIcon = ({ size = 20, opacity = 1 }: { size?: number; opacity?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 48 48">
+    <Path fill={`rgba(234,67,53,${opacity})`} d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+    <Path fill={`rgba(66,133,244,${opacity})`} d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+    <Path fill={`rgba(251,188,5,${opacity})`} d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+    <Path fill={`rgba(52,168,83,${opacity})`} d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+  </Svg>
+);
 
 const RegisterScreen = () => {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [hidePassword, setHidePassword] = useState(true);
-  const [manualTown, setManualTown] = useState("");
-  const { signUp } = useAppStore();
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const handleRegister = async (values: {
-    userName: string;
-    email: string;
-    password: string;
-    phone: string;
-    province: string;
-    city: string;
-    town: string;
-  }) => {
+  const { signUp, signIn } = useAppStore();
+
+  const handleGoogleSignUp = async () => {
+    setGoogleLoading(true);
     try {
-      const result = await signUp(
-        values.email.trim(),
-        values.password,
-        values.userName.trim(),
-        `+92${values.phone.trim().replace(/\s/g, "")}`,
-        values.province.trim(),
-        values.city.trim(),
-        values.town.trim(),
-      );
+      configureGoogleSignIn();
+      const result = await signInWithGoogle();
 
-      if (result.Status === "Success") {
-        Constants.showDialog(
-          "Account created successfully! You can now log in.",
-        );
-        setTimeout(() => router.replace("/login"), 2000);
-      } else {
-        Constants.showDialog(result.ErrorMessage || "Registration failed");
+      if (result.success && result.data) {
+        const { idToken } = result.data;
+
+        const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken }),
+        });
+
+        const data = await res.json();
+
+        if (data.Status === "Success") {
+          const userData = data.data;
+          const user = {
+            _id: userData._id,
+            token: userData.token || "",
+            email: userData.email,
+            userName: userData.userName,
+            phone: userData.phone || "",
+            isAdmin: userData.isAdmin || false,
+            avatar: userData.avatar || userData.picture || "",
+            address: userData.address || "",
+            province: userData.province || "",
+            city: userData.city || "",
+            town: userData.town || "",
+            mintId: userData.mintId,
+            latitude: userData.latitude || "",
+            longitude: userData.longitude || "",
+            deviceToken: userData.deviceToken || "",
+            points: userData.points || 0,
+            totalCollections: userData.totalCollections || "",
+            totalWasteCollected: userData.totalWasteCollected || "",
+            referrals: userData.referrals || [],
+            firstTimeLogin: userData.firstTimeLogin || false,
+            emailVerified: userData.emailVerified || false,
+            pickupHistory: userData.pickupHistory || [],
+          };
+
+          useAppStore.setState({ user, token: userData.token || null });
+          await SecureStore.setItemAsync("userToken", userData.token || "");
+          await SecureStore.setItemAsync("userEmail", userData.email);
+          await SecureStore.setItemAsync("userName", userData.userName);
+          await SecureStore.setItemAsync("userPoints", String(userData.points || 0));
+
+          router.replace("/(tabs)/home");
+        } else {
+          Constants.showDialog(data.ErrorMessage || "Google sign-up failed.");
+        }
+      } else if (result.error !== "cancelled") {
+        Constants.showDialog(result.error || "Google sign-up failed.");
       }
-    } catch (error) {
+    } catch {
       Constants.showDialog("An error occurred. Please try again.");
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleSignUp = async () => {
+    if (name.trim() === "") {
+      Constants.showDialog("Please enter your name");
+    } else if (email.trim() === "") {
+      Constants.showDialog("Please enter your email address");
+    } else if (!Utils.isEmail(email)) {
+      Constants.showDialog("Please enter a valid email address");
+    } else if (password.length < 8) {
+      Constants.showDialog("Password must be at least 8 characters");
+    } else {
+      setLoading(true);
+      try {
+        const result = await signUp(email.trim(), password, name.trim(), "", "", "", "");
+        if (result.Status === "Success") {
+          // signUp doesn't issue a token — sign in immediately to get one
+          const loginResult = await signIn(email.trim(), password);
+          if (loginResult.Status === "Success") {
+            router.replace("/(tabs)/home");
+          } else {
+            Constants.showDialog("Account created! Please sign in.");
+            router.replace("/login");
+          }
+        } else {
+          Constants.showDialog(result.ErrorMessage || "Registration failed");
+        }
+      } catch {
+        Constants.showDialog("An error occurred. Please try again.");
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
   return (
-    <Formik
-      initialValues={{
-        userName: "",
-        email: "",
-        password: "",
-        phone: "",
-        province: "",
-        city: "",
-        town: "",
-      }}
-      validationSchema={registrationSchema}
-      onSubmit={handleRegister}
-    >
-      {({
-        handleChange,
-        handleBlur,
-        handleSubmit,
-        setFieldValue,
-        values,
-        errors,
-        touched,
-        isSubmitting,
-      }) => (
-        <View style={styles.container}>
-          {/* Green Header Section */}
-          <View style={styles.headerSection}>
-            <View style={styles.welcomeSection}>
-              <Text style={styles.welcomeTitle}>Join Mint Rewards!</Text>
-              <Text style={styles.welcomeSubtitle}>
-                Start recycling and earning rewards{"\n"}today
-              </Text>
+    <View style={styles.container}>
+      <View style={styles.headerSection}>
+        <View style={styles.welcomeSection}>
+          <Text style={styles.welcomeTitle}>Join Mint Rewards!</Text>
+          <Text style={styles.welcomeSubtitle}>
+            Start recycling and earning rewards{"\n"}today
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.contentSection}>
+        <ScrollView
+          style={{ flex: 1 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Name</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.textInput}
+                value={name}
+                onChangeText={setName}
+                autoCapitalize="words"
+                autoCorrect={false}
+                placeholder="Your name"
+                placeholderTextColor="#999999"
+              />
             </View>
           </View>
 
-          {/* White Content Section */}
-          <View style={styles.contentSection}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : "height"}
-              style={{ flex: 1 }}
-              keyboardVerticalOffset={90}
-            >
-              <ScrollView
-                style={{ flex: 1 }}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
-                {/* Name Input */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Name</Text>
-                  <View
-                    style={[
-                      styles.inputContainer,
-                      touched.userName && errors.userName && styles.inputError,
-                    ]}
-                  >
-                    <TextInput
-                      style={styles.textInput}
-                      value={values.userName}
-                      onChangeText={handleChange("userName")}
-                      onBlur={handleBlur("userName")}
-                      autoCapitalize="words"
-                      autoCorrect={false}
-                      placeholder="Name"
-                      placeholderTextColor="#999999"
-                      testID="nameInput"
-                    />
-                  </View>
-                  {touched.userName && errors.userName && (
-                    <Text style={styles.errorText}>{errors.userName}</Text>
-                  )}
-                </View>
-
-                {/* Phone Input */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Phone</Text>
-                  <View
-                    style={[
-                      styles.inputContainer,
-                      touched.phone && errors.phone && styles.inputError,
-                    ]}
-                  >
-                    <Text style={styles.countryCode}>+92</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={values.phone}
-                      onChangeText={handleChange("phone")}
-                      onBlur={handleBlur("phone")}
-                      keyboardType="phone-pad"
-                      autoCorrect={false}
-                      placeholder="3XX XXXXXXX"
-                      placeholderTextColor="#999999"
-                      maxLength={11}
-                      testID="phoneInput"
-                    />
-                  </View>
-                  {touched.phone && errors.phone && (
-                    <Text style={styles.errorText}>{errors.phone}</Text>
-                  )}
-                </View>
-
-                {/* Province Dropdown */}
-                <LocationPicker
-                  label="Province"
-                  placeholder="Select Province"
-                  options={PAKISTAN_LOCATIONS.provinces}
-                  value={values.province}
-                  onChange={(val) => {
-                    setFieldValue("province", val);
-                    // Reset city and town when province changes
-                    setFieldValue("city", "");
-                    setFieldValue("town", "");
-                  }}
-                  hasError={!!(touched.province && errors.province)}
-                  testID="provinceInput"
-                />
-
-                {/* City Dropdown — disabled until province is selected */}
-                <LocationPicker
-                  label="City"
-                  placeholder={
-                    values.province ? "Select City" : "Select a province first"
-                  }
-                  options={getCitiesForProvince(values.province)}
-                  value={values.city}
-                  onChange={(val) => {
-                    setFieldValue("city", val);
-                    // Reset town when city changes
-                    setFieldValue("town", "");
-                  }}
-                  disabled={!values.province}
-                  hasError={!!(touched.city && errors.city)}
-                  testID="cityInput"
-                />
-                {values.city && (
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Town</Text>
-                    
-                    {/* Show dropdown if city has towns AND user hasn't chosen manual entry */}
-                    {cityHasTowns(values.city) && values.town !== "__manual__" ? (
-                      <LocationPicker
-                        label=""
-                        placeholder="Select Town"
-                        options={[
-                          ...getTownsForCity(values.city),
-                          "Type manually...",
-                        ]}
-                        value={values.town}
-                        onChange={(val) => {
-                          if (val === "Type manually...") {
-                            setFieldValue("town", "__manual__");
-                          } else {
-                            setFieldValue("town", val);
-                          }
-                        }}
-                        hasError={!!(touched.town && errors.town)}
-                        testID="townInput"
-                      />
-                    ) : (
-                      <View
-                        style={[
-                          styles.inputContainer,
-                          touched.town && errors.town && styles.inputError,
-                        ]}
-                      >
-                        <TextInput
-                          style={styles.textInput}
-                          value={manualTown}
-                          onChangeText={(text) => setManualTown(text)}  // local state only
-                          onBlur={() => {
-                            setFieldValue("town", manualTown);  // commit to Formik on blur
-                            handleBlur("town");
-                          }}
-                          autoCapitalize="words"
-                          autoCorrect={false}
-                          placeholder="Type your town"
-                          placeholderTextColor="#999999"
-                          autoFocus
-                          testID="townCustomInput"
-                        />
-                        {/* Back to dropdown option */}
-                        {cityHasTowns(values.city) && (
-                          <TouchableOpacity onPress={() => setFieldValue("town", "")}>
-                            <Ionicons name="chevron-down-outline" size={20} color="#999999" />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    )}
-
-                    {touched.town && errors.town && (
-                      <Text style={styles.errorText}>{errors.town}</Text>
-                    )}
-                  </View>
-                )}
-
-                {/* Email Input */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Email</Text>
-                  <View
-                    style={[
-                      styles.inputContainer,
-                      touched.email && errors.email && styles.inputError,
-                    ]}
-                  >
-                    <TextInput
-                      style={styles.textInput}
-                      value={values.email}
-                      onChangeText={handleChange("email")}
-                      onBlur={handleBlur("email")}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      placeholder="Email"
-                      placeholderTextColor="#999999"
-                      testID="emailInput"
-                    />
-                  </View>
-                  {touched.email && errors.email && (
-                    <Text style={styles.errorText}>{errors.email}</Text>
-                  )}
-                </View>
-
-                {/* Password Input */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Password</Text>
-                  <View
-                    style={[
-                      styles.inputContainer,
-                      touched.password && errors.password && styles.inputError,
-                    ]}
-                  >
-                    <TextInput
-                      style={styles.passwordTextInput}
-                      value={values.password}
-                      onChangeText={handleChange("password")}
-                      onBlur={handleBlur("password")}
-                      secureTextEntry={hidePassword}
-                      placeholder="Password"
-                      placeholderTextColor="#999999"
-                      testID="passwordInput"
-                    />
-                    <TouchableOpacity
-                      style={styles.eyeIconButton}
-                      onPress={() => setHidePassword(!hidePassword)}
-                    >
-                      <Ionicons
-                        name={hidePassword ? "eye-off-outline" : "eye-outline"}
-                        size={20}
-                        color="#999999"
-                      />
-                    </TouchableOpacity>
-                  </View>
-                  {touched.password && errors.password && (
-                    <Text style={styles.errorText}>{errors.password}</Text>
-                  )}
-                </View>
-
-                {/* Sign Up Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.signUpButton,
-                    isSubmitting && styles.signUpButtonDisabled,
-                  ]}
-                  onPress={() => handleSubmit()}
-                  disabled={isSubmitting}
-                  testID="signUpButton"
-                >
-                  {isSubmitting ? (
-                    <ActivityIndicator color="#ffffff" size="small" />
-                  ) : (
-                    <Text style={styles.signUpButtonText}>Sign up</Text>
-                  )}
-                </TouchableOpacity>
-              </ScrollView>
-            </KeyboardAvoidingView>
-
-            {/* Bottom Login Link */}
-            <View style={styles.bottomSection}>
-              <View style={styles.loginContainer}>
-                <Text style={styles.loginText}>Already Have an Account? </Text>
-                <TouchableOpacity onPress={() => router.replace("/login")}>
-                  <Text style={styles.loginLinkText}>Login</Text>
-                </TouchableOpacity>
-              </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Email</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.textInput}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="your@email.com"
+                placeholderTextColor="#999999"
+              />
             </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.passwordTextInput}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={hidePassword}
+                placeholder="Min. 8 characters"
+                placeholderTextColor="#999999"
+              />
+              <TouchableOpacity
+                style={styles.eyeIconButton}
+                onPress={() => setHidePassword(!hidePassword)}
+              >
+                <Ionicons
+                  name={hidePassword ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#999999"
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.signUpButton}
+            onPress={handleSignUp}
+            disabled={loading || googleLoading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <Text style={styles.signUpButtonText}>Create Account</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.dividerContainer}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.googleButton,
+              (loading || googleLoading) && styles.googleButtonDisabled,
+            ]}
+            onPress={handleGoogleSignUp}
+            disabled={loading || googleLoading}
+            activeOpacity={0.9}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color="#1f1f1f" size="small" />
+            ) : (
+              <View style={styles.googleButtonContent}>
+                <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
+                <Text
+                  style={[
+                    styles.googleButtonText,
+                    loading && styles.googleButtonTextDisabled,
+                  ]}
+                  numberOfLines={1}
+                >
+                  Sign up with Google
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+
+        <View style={styles.bottomSection}>
+          <View style={styles.loginContainer}>
+            <Text style={styles.loginText}>Already have an account? </Text>
+            <TouchableOpacity onPress={() => router.replace("/login")}>
+              <Text style={styles.loginLinkText}>Sign in</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      )}
-    </Formik>
+      </View>
+    </View>
   );
 };
 
@@ -407,7 +298,7 @@ const styles = StyleSheet.create({
     paddingTop: 30,
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   inputLabel: {
     fontSize: 16,
@@ -424,25 +315,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FAFAFA",
     flexDirection: "row",
     alignItems: "center",
-  },
-  inputError: {
-    borderColor: "#E53935",
-    borderWidth: 1.5,
-  },
-  countryCode: {
-    fontSize: 16,
-    color: "#333333",
-    fontWeight: "500",
-    marginRight: 8,
-    paddingRight: 8,
-    borderRightWidth: 1,
-    borderRightColor: "#E0E0E0",
-  },
-  errorText: {
-    color: "#E53935",
-    fontSize: 13,
-    marginTop: 4,
-    marginLeft: 4,
   },
   textInput: {
     flex: 1,
@@ -465,15 +337,60 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 30,
-  },
-  signUpButtonDisabled: {
-    opacity: 0.7,
+    marginTop: 10,
   },
   signUpButtonText: {
     color: "#ffffff",
     fontSize: 18,
     fontWeight: "600",
+  },
+  dividerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E0E0E0",
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    fontSize: 14,
+    color: "#999999",
+  },
+  googleButton: {
+    height: 52,
+    backgroundColor: "#f2f2f2",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+    width: "100%",
+    maxWidth: 400,
+    alignSelf: "center",
+  },
+  googleButtonDisabled: {
+    backgroundColor: "rgba(255, 255, 255, 0.38)",
+  },
+  googleButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    gap: 10,
+  },
+  googleButtonText: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "500",
+    color: "#1f1f1f",
+    letterSpacing: 0.25,
+    textAlign: "center",
+  },
+  googleButtonTextDisabled: {
+    opacity: 0.38,
   },
   bottomSection: {
     paddingBottom: 30,

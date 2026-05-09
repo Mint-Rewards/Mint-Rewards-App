@@ -423,29 +423,34 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const token = get().token || get().user?.token;
+      const email = get().user?.email;
       const response = await authenticatedFetch(`${API_URL}/api/users/delete-account`, {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: token } : {}),
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ email }),
       });
-      await response.json();
+
+      let data: any = {};
+      try {
+        data = await response.json();
+      } catch {
+        // 204 No Content or empty body — treat as success if response.ok
+      }
 
       if (response.ok) {
         const user = get().user;
-
-        // ✅ Log account deletion
         await logEvent("ACCOUNT_DELETED", {
           userId: user?.mintId,
           userEmail: user?.email,
         });
-
         set({ isLoading: false, error: null });
         return { Status: "Success", Message: "Account deleted successfully" };
       } else {
-        const errorMessage = "Account deletion failed. Please try again.";
+        const errorMessage = data?.error || data?.message || `Deletion failed (${response.status})`;
+        console.log("[deleteAccount] failed:", response.status, JSON.stringify(data));
         set({ error: errorMessage, isLoading: false });
         return { Status: "Error", ErrorMessage: errorMessage };
       }
