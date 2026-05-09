@@ -66,7 +66,12 @@
           "locationWhenInUsePermission": "Mint Rewards uses your location to let you pin your exact address for waste collection pickups."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@react-native-google-signin/google-signin", {
+          "iosUrlScheme": "com.googleusercontent.apps.490896222696-4jtrnrbi9uhn98q2ukjb68f2cd45dq2v"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

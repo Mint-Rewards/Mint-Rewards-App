@@ -1,32 +1,79 @@
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
+// import * as AuthSession from 'expo-auth-session';
+// import * as WebBrowser from 'expo-web-browser';
 
-WebBrowser.maybeCompleteAuthSession();
+// WebBrowser.maybeCompleteAuthSession();
 
-const GOOGLE_CLIENT_ID = '490896222696-muv8atf5l0f2a2d9fjp6n0s31rd1bubv.apps.googleusercontent.com';
+// const GOOGLE_CLIENT_ID = '490896222696-4jtrnrbi9uhn98q2ukjb68f2cd45dq2v.apps.googleusercontent.com';
 
-const discovery = {
-  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-  tokenEndpoint: 'https://oauth2.googleapis.com/token',
-  revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
+// const discovery = {
+//   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+//   tokenEndpoint: 'https://oauth2.googleapis.com/token',
+//   revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
+// };
+
+// const redirectUri = 'https://auth.expo.io/@mint-rewards/mint-rewards';
+
+// // const redirectUri = AuthSession.makeRedirectUri({
+// //   scheme: 'mint-rewards',
+// //   path: 'auth',
+// // });
+
+// export const useGoogleAuth = () => {
+//   const [request, response, promptAsync] = AuthSession.useAuthRequest(
+//     {
+//       clientId: GOOGLE_CLIENT_ID,
+//       redirectUri,
+//       scopes: ['openid', 'profile', 'email'],
+//       responseType: AuthSession.ResponseType.Code,
+//       usePKCE: false,
+//     },
+//     discovery
+//   );
+
+//   return { request, response, promptAsync, redirectUri };
+// };
+
+// export const fetchGoogleUser = async (accessToken: string) => {
+//   const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+//     headers: { Authorization: `Bearer ${accessToken}` },
+//   });
+//   return res.json();
+// };
+
+import {
+  GoogleSignin,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
+
+export const configureGoogleSignIn = () => {
+  GoogleSignin.configure({
+    iosClientId: '490896222696-4jtrnrbi9uhn98q2ukjb68f2cd45dq2v.apps.googleusercontent.com',
+    webClientId: '490896222696-3umgevhg0eqtkg03cfs7saa19i0g8qir.apps.googleusercontent.com',
+    offlineAccess: true,
+    scopes: ['profile', 'email'],
+  });
 };
 
-const redirectUri = AuthSession.makeRedirectUri({
-  scheme: 'mint-rewards',
-  path: 'auth',
-});
+export const signInWithGoogle = async () => {
+  try {
+    await GoogleSignin.hasPlayServices();
+    const response = await GoogleSignin.signIn();
+    return { success: true, data: response.data };
+  } catch (error: any) {
+    if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+      return { success: false, error: 'cancelled' };
+    } else if (error.code === statusCodes.IN_PROGRESS) {
+      return { success: false, error: 'in_progress' };
+    }
+    return { success: false, error: error.message };
+  }
+};
 
-export const useGoogleAuth = () => {
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: GOOGLE_CLIENT_ID,
-      redirectUri,
-      scopes: ['openid', 'profile', 'email'],
-      responseType: AuthSession.ResponseType.Code,
-      usePKCE: true,
-    },
-    discovery
-  );
-
-  return { request, response, promptAsync, redirectUri };
+export const signOutGoogle = async () => {
+  try {
+    await GoogleSignin.signOut();
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
 };

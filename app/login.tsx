@@ -280,7 +280,7 @@
 // export default LoginScreen;
 
 import { useAppStore } from "@/store/store";
-import { useGoogleAuth } from "@/utils/googleAuth";
+import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -295,6 +295,7 @@ import {
   View,
 } from "react-native";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
+import * as SecureStore from 'expo-secure-store';
 
 const GoogleIcon = ({ size = 20, opacity = 1 }: { size?: number; opacity?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 48 48">
@@ -313,48 +314,78 @@ const LoginScreen = () => {
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const { signIn } = useAppStore();
-  const { request, response, promptAsync } = useGoogleAuth();
-
-  // Handle Google Sign-In response
-  useEffect(() => {
-    if (response?.type === "success") {
-      const { code } = response.params;
-      handleGoogleBackendAuth(code);
-    } else if (response?.type === "error") {
-      Constants.showDialog("Google Sign-In failed. Please try again.");
-      setGoogleLoading(false);
-    } else if (response?.type === "cancel") {
-      setGoogleLoading(false);
-    }
-  }, [response]);
-
-  const handleGoogleBackendAuth = async (code: string) => {
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/auth/google`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code }),
-        }
-      );
-      const data = await res.json();
-
-      if (data.Status === "Success") {
-        router.replace("/(tabs)/home");
-      } else {
-        Constants.showDialog(data.ErrorMessage || "Google Sign-In failed.");
-      }
-    } catch (error) {
-      Constants.showDialog("An error occurred. Please try again.");
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
-    await promptAsync();
+    try {
+      configureGoogleSignIn();
+      const result = await signInWithGoogle();
+
+      if (result.success && result.data) {
+        const { idToken, user } = result.data;
+        console.log('Google user:', JSON.stringify(user));
+        console.log('idToken exists:', !!idToken);
+        console.log('Hitting URL:', `${API_BASE_URL}/api/auth/google`);
+
+        const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+        });
+        
+        console.log('Response status:', res.status);
+        const data = await res.json();
+        console.log('Response data:', JSON.stringify(data));
+
+        if (data.Status === 'Success') {
+          const userData = data.data;
+
+          // Mirror exactly what signIn() does
+          const user = {
+            _id: userData._id,
+            token: userData.token || '',
+            email: userData.email,
+            userName: userData.userName,
+            phone: userData.phone || '',
+            isAdmin: userData.isAdmin || false,
+            avatar: userData.avatar || userData.picture || '',
+            address: userData.address || '',
+            province: userData.province || '',
+            city: userData.city || '',
+            town: userData.town || '',
+            mintId: userData.mintId,
+            latitude: userData.latitude || '',
+            longitude: userData.longitude || '',
+            deviceToken: userData.deviceToken || '',
+            points: userData.points || 0,
+            totalCollections: userData.totalCollections || '',
+            totalWasteCollected: userData.totalWasteCollected || '',
+            referrals: userData.referrals || [],
+            firstTimeLogin: userData.firstTimeLogin || false,
+            emailVerified: userData.emailVerified || false,
+            pickupHistory: userData.pickupHistory || [],
+          };
+
+          useAppStore.setState({ user, token: userData.token || null });
+
+          await SecureStore.setItemAsync('userToken', userData.token || '');
+          await SecureStore.setItemAsync('userEmail', userData.email);
+          await SecureStore.setItemAsync('userName', userData.userName);
+          await SecureStore.setItemAsync('userPoints', String(userData.points || 0));
+
+          router.replace('/(tabs)/home');
+        } else {
+          Constants.showDialog(data.ErrorMessage || 'Google Sign-In failed.');
+        }
+      } else if (result.error !== 'cancelled') {
+        Constants.showDialog(result.error || 'Google Sign-In failed.');
+      }
+    } catch (error: any) {
+      console.log('Full error:', error.message, error.stack);
+      Constants.showDialog('An error occurred. Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
   };
 
   const loginPressed = async () => {
@@ -474,24 +505,21 @@ const LoginScreen = () => {
           <TouchableOpacity
             style={[
               styles.googleButton,
-              (!request || loading || googleLoading) && styles.googleButtonDisabled,
+              (loading || googleLoading) && styles.googleButtonDisabled,
             ]}
             onPress={handleGoogleSignIn}
-            disabled={!request || loading || googleLoading}
+            disabled={loading || googleLoading}
             activeOpacity={0.9}
           >
             {googleLoading ? (
               <ActivityIndicator color="#1f1f1f" size="small" />
             ) : (
               <View style={styles.googleButtonContent}>
-                <GoogleIcon
-                  size={20}
-                  opacity={!request || loading ? 0.38 : 1}
-                />
+                <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
                 <Text
                   style={[
                     styles.googleButtonText,
-                    (!request || loading) && styles.googleButtonTextDisabled,
+                    loading && styles.googleButtonTextDisabled,
                   ]}
                   numberOfLines={1}
                 >

@@ -10,6 +10,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore } from "@/store/store";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useRef } from "react";
+import { configureGoogleSignIn } from '@/utils/googleAuth';
 import { logScreenView } from "@/utils/logger";
 
 export default function RootLayout() {
@@ -42,6 +43,7 @@ export default function RootLayout() {
       }
     };
     checkAuth();
+    configureGoogleSignIn();
   }, []);
 
   return (
