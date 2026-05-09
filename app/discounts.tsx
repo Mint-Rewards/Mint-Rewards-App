@@ -26,7 +26,8 @@ const formatExpiry = (endDate: string) => {
 type FilterType = "all" | "active";
 
 const DiscountsScreen = () => {
-  const { getDiscounts, availDiscount, markDiscountUsed, discounts, isDiscountsLoading, discountsError } = useAppStore();
+  const { user, getDiscounts, availDiscount, markDiscountUsed, discounts, isDiscountsLoading, discountsError } = useAppStore();
+  const isProfileComplete = !!(user?.phone?.trim() && user?.province?.trim() && user?.city?.trim());
   const [filter, setFilter] = useState<FilterType>("active");
   const [modal, setModal] = useState<{ visible: boolean; code: string; item: DiscountItem | null }>({
     visible: false,
@@ -61,14 +62,14 @@ const DiscountsScreen = () => {
     setCopied(true);
   };
 
-  const renderCard = (item: DiscountItem, disabled: boolean) => {
+  const renderCard = (item: DiscountItem, disabled: boolean, locked = false) => {
     const percentage = item.discountPercentage;
     const title = percentage
       ? `Enjoy ${percentage}% off on ${item.brand.companyName} deals`
       : `Exclusive deal from ${item.brand.companyName}`;
 
     return (
-      <View key={item._id} style={[styles.card, disabled && styles.cardDisabled]}>
+      <View key={item._id} style={[styles.card, (disabled || locked) && styles.cardDisabled]}>
         <View style={styles.cardBody}>
           {item.brand.logo ? (
             <Image source={{ uri: item.brand.logo }} style={styles.logo} resizeMode="contain" />
@@ -80,11 +81,11 @@ const DiscountsScreen = () => {
             </View>
           )}
           <View style={styles.cardInfo}>
-            <Text style={[styles.cardTitle, disabled && styles.textDisabled]} numberOfLines={2}>
+            <Text style={[styles.cardTitle, (disabled || locked) && styles.textDisabled]} numberOfLines={2}>
               {title}
             </Text>
-            <View style={[styles.expiryPill, disabled && styles.expiryPillDisabled]}>
-              <Text style={[styles.expiryText, disabled && styles.textDisabled]}>
+            <View style={[styles.expiryPill, (disabled || locked) && styles.expiryPillDisabled]}>
+              <Text style={[styles.expiryText, (disabled || locked) && styles.textDisabled]}>
                 {isExpired(item.endDate) ? "Expired" : formatExpiry(item.endDate)}
               </Text>
             </View>
@@ -96,12 +97,19 @@ const DiscountsScreen = () => {
         <TouchableOpacity
           style={styles.availRow}
           disabled={disabled}
-          onPress={() => handleAvail(item)}
+          onPress={() => locked ? router.push("/editProfile") : handleAvail(item)}
           activeOpacity={0.7}
         >
-          <Text style={[styles.availText, disabled && styles.availTextDisabled]}>
-            {item.isAvailed ? "Used" : isExpired(item.endDate) ? "Expired" : "Avail Offer"}
-          </Text>
+          {locked ? (
+            <View style={styles.lockedRow}>
+              <Ionicons name="lock-closed" size={14} color="#aaa" />
+              <Text style={styles.availTextDisabled}>Complete profile to unlock</Text>
+            </View>
+          ) : (
+            <Text style={[styles.availText, disabled && styles.availTextDisabled]}>
+              {item.isAvailed ? "Used" : isExpired(item.endDate) ? "Expired" : "Avail Offer"}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
     );
@@ -141,6 +149,20 @@ const DiscountsScreen = () => {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {!isProfileComplete && (
+        <TouchableOpacity
+          style={styles.profilePromptCard}
+          onPress={() => router.push("/editProfile")}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="person-circle-outline" size={22} color="#449EB2" />
+          <Text style={styles.profilePromptText}>
+            Complete your profile to unlock discounts
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color="#449EB2" />
+        </TouchableOpacity>
+      )}
 
       {isDiscountsLoading ? (
         <View style={styles.centered}>
@@ -182,7 +204,7 @@ const DiscountsScreen = () => {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
         >
-          {available.map((item) => renderCard(item, false))}
+          {available.map((item) => renderCard(item, false, !isProfileComplete))}
           {filter === "all" && used.length > 0 && available.length > 0 && (
             <View style={styles.sectionGap} />
           )}
@@ -358,6 +380,25 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardDisabled: { opacity: 0.5 },
+  lockedRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  profilePromptCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0F8FF",
+    borderRadius: 10,
+    padding: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#D0E8F5",
+    gap: 8,
+  },
+  profilePromptText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#449EB2",
+    fontWeight: "500",
+  },
   cardBody: { flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
   logo: { width: 48, height: 48, borderRadius: 24 },
   logoPlaceholder: {
