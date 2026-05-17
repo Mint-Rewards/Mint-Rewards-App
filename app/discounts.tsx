@@ -1,5 +1,4 @@
 import { DiscountItem, useAppStore } from "@/store/store";
-import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
@@ -15,57 +14,71 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useCouponDownload } from "@/hooks/useCouponDownload";
 
 const isExpired = (endDate: string) => new Date(endDate) < new Date();
 
 const formatExpiry = (endDate: string) => {
   const d = new Date(endDate);
-  return `Expires on ${d.getDate()} ${d.toLocaleString("en-US", { month: "long" }).toLowerCase()}`;
+  return `Expires ${d.getDate()} ${d.toLocaleString("en-US", { month: "long" })} ${d.getFullYear()}`;
 };
 
 type FilterType = "all" | "active";
 
 const DiscountsScreen = () => {
-  const { user, getDiscounts, availDiscount, markDiscountUsed, discounts, isDiscountsLoading, discountsError } = useAppStore();
+  const { user, getDiscounts, discounts, isDiscountsLoading, discountsError } = useAppStore();
   const isProfileComplete = !!(user?.phone?.trim() && user?.province?.trim() && user?.city?.trim());
+
   const [filter, setFilter] = useState<FilterType>("active");
-  const [modal, setModal] = useState<{ visible: boolean; code: string; item: DiscountItem | null }>({
-    visible: false,
-    code: "",
-    item: null,
-  });
-  const [copied, setCopied] = useState(false);
+  const [couponModal, setCouponModal] = useState<{
+    visible: boolean;
+    item: DiscountItem | null;
+  }>({ visible: false, item: null });
+
+  const { downloadCoupon, isDownloading } = useCouponDownload();
 
   useEffect(() => {
     getDiscounts().then((result) => {
-      console.log("[Discounts] fetched:", JSON.stringify(result?.length), "items");
-      if (result?.length === 0) console.log("[Discounts] 0 items returned — check campaign status in DB");
+      console.log("[Discounts] fetched:", result?.length, "items");
     });
   }, []);
 
   const available = discounts.filter((d) => !d.isAvailed && !isExpired(d.endDate));
   const used = discounts.filter((d) => d.isAvailed || isExpired(d.endDate));
 
-  const handleAvail = async (item: DiscountItem) => {
-    const code = await availDiscount(item._id);
-    if (code) {
-      setCopied(false);
-      setModal({ visible: true, code, item });
-    } else {
-      Alert.alert("Error", "Could not retrieve discount code. Please try again.");
-    }
+  const handleAvail = (item: DiscountItem) => {
+    setCouponModal({ visible: true, item });
   };
 
-  const handleCopy = async () => {
-    await Clipboard.setStringAsync(modal.code);
-    // if (modal.item) await markDiscountUsed(modal.item._id);
-    setCopied(true);
+  const closeCouponModal = () =>
+    setCouponModal({ visible: false, item: null });
+
+  const handleDownloadPress = () => {
+    if (!couponModal.item) return;
+    const brandName = couponModal.item.brand.companyName;
+    Alert.alert(
+      "Download & Mark as Used?",
+      `⚠️ This ${brandName} coupon is SINGLE USE. Once downloaded it will be marked as used and cannot be redeemed again.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Yes, Download",
+          style: "destructive",
+          onPress: async () => {
+            const success = await downloadCoupon(couponModal.item!);
+            if (success) {
+              closeCouponModal();
+              await getDiscounts();
+            }
+          },
+        },
+      ],
+    );
   };
 
   const renderCard = (item: DiscountItem, disabled: boolean, locked = false) => {
-    const percentage = item.discountPercentage;
-    const title = percentage
-      ? `Enjoy ${percentage}% off on ${item.brand.companyName} deals`
+    const title = item.discountPercentage
+      ? `Enjoy ${item.discountPercentage}% off on ${item.brand.companyName} deals`
       : `Exclusive deal from ${item.brand.companyName}`;
 
     return (
@@ -130,24 +143,18 @@ const DiscountsScreen = () => {
 
       {/* Filter Row */}
       <View style={styles.filterRow}>
-        <TouchableOpacity
-          style={[styles.filterPill, filter === "active" && styles.filterPillActive]}
-          onPress={() => setFilter("active")}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.filterPillText, filter === "active" && styles.filterPillTextActive]}>
-            Active
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterPill, filter === "all" && styles.filterPillActive]}
-          onPress={() => setFilter("all")}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.filterPillText, filter === "all" && styles.filterPillTextActive]}>
-            All
-          </Text>
-        </TouchableOpacity>
+        {(["active", "all"] as FilterType[]).map((f) => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.filterPill, filter === f && styles.filterPillActive]}
+            onPress={() => setFilter(f)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.filterPillText, filter === f && styles.filterPillTextActive]}>
+              {f === "active" ? "Active" : "All"}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {!isProfileComplete && (
@@ -188,9 +195,7 @@ const DiscountsScreen = () => {
             <Ionicons name="pricetag-outline" size={60} color="#449EB2" />
           </View>
           <Text style={styles.emptyTitle}>No Active Coupons</Text>
-          <Text style={styles.emptySubtitle}>
-            All your coupons have expired or been used.
-          </Text>
+          <Text style={styles.emptySubtitle}>All your coupons have expired or been used.</Text>
           <TouchableOpacity
             style={styles.showAllButton}
             onPress={() => setFilter("all")}
@@ -200,10 +205,7 @@ const DiscountsScreen = () => {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           {available.map((item) => renderCard(item, false, !isProfileComplete))}
           {filter === "all" && used.length > 0 && available.length > 0 && (
             <View style={styles.sectionGap} />
@@ -212,81 +214,100 @@ const DiscountsScreen = () => {
         </ScrollView>
       )}
 
-      {/* Code Modal */}
+      {/* ── Step 1: Coupon detail modal ── */}
       <Modal
-        visible={modal.visible}
+        visible={couponModal.visible}
         transparent
-        animationType="fade"
-        onRequestClose={() => setModal({ ...modal, visible: false })}
+        animationType="slide"
+        onRequestClose={closeCouponModal}
       >
-        <View style={styles.overlay}>
-          <View style={styles.modalCard}>
-            <TouchableOpacity
-              style={styles.modalClose}
-              onPress={() => setModal({ ...modal, visible: false })}
-            >
-              <Ionicons name="close" size={24} color="#666" />
-            </TouchableOpacity>
+        <View style={styles.modalOverlay}>
+          <View style={styles.couponSheet}>
 
-            {/* Brand logo */}
-            {modal.item?.brand.logo ? (
-              <Image source={{ uri: modal.item.brand.logo }} style={styles.modalLogo} resizeMode="contain" />
-            ) : (
-              <View style={styles.modalIconCircle}>
-                <Text style={styles.modalLogoPlaceholderText}>
-                  {modal.item?.brand.companyName?.charAt(0).toUpperCase() ?? "?"}
-                </Text>
-              </View>
-            )}
-
-            {/* Brand name */}
-            <Text style={styles.modalBrandName}>{modal.item?.brand.companyName}</Text>
-
-            {/* Campaign name */}
-            {modal.item?.name ? (
-              <Text style={styles.modalCampaignName}>{modal.item.name}</Text>
-            ) : null}
-
-            {/* Discount + expiry row */}
-            <View style={styles.modalMetaRow}>
-              {modal.item?.discountPercentage ? (
-                <View style={styles.discountBadge}>
-                  <Text style={styles.discountBadgeText}>{modal.item.discountPercentage}% OFF</Text>
+            {/* Teal header */}
+            <View style={styles.couponHeader}>
+              <Text style={styles.couponAppName}>MINT REWARDS</Text>
+              {couponModal.item?.brand.logo ? (
+                <Image
+                  source={{ uri: couponModal.item.brand.logo }}
+                  style={styles.couponLogo}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.couponLogoPlaceholder}>
+                  <Text style={styles.couponLogoInitial}>
+                    {couponModal.item?.brand.companyName?.charAt(0).toUpperCase() ?? "?"}
+                  </Text>
                 </View>
-              ) : null}
-              {modal.item?.endDate ? (
-                <View style={styles.modalExpiryPill}>
-                  <Ionicons name="time-outline" size={12} color="#449EB2" />
-                  <Text style={styles.modalExpiryText}>
-                    {formatExpiry(modal.item.endDate)}
+              )}
+              <Text style={styles.couponBrandName}>{couponModal.item?.brand.companyName}</Text>
+              {couponModal.item?.discountPercentage ? (
+                <View style={styles.couponBadge}>
+                  <Text style={styles.couponBadgeText}>
+                    {couponModal.item.discountPercentage}% OFF
                   </Text>
                 </View>
               ) : null}
             </View>
 
-            <View style={styles.modalDivider} />
-
-            <Text style={styles.modalCodeLabel}>Your Discount Code</Text>
-            <View style={styles.codeBox}>
-              <Text style={styles.codeText}>{modal.code}</Text>
+            {/* Perforation */}
+            <View style={styles.perfRow}>
+              <View style={styles.perfCircleLeft} />
+              <View style={styles.perfDash} />
+              <View style={styles.perfCircleRight} />
             </View>
 
-            <TouchableOpacity
-              style={[styles.copyBtn, copied && styles.copyBtnCopied]}
-              onPress={handleCopy}
-            >
-              <Ionicons name={copied ? "checkmark" : "copy-outline"} size={20} color="#fff" />
-              <Text style={styles.copyBtnText}>{copied ? "Copied!" : "Copy Code"}</Text>
-            </TouchableOpacity>
+            {/* Body */}
+            <View style={styles.couponBody}>
+              {couponModal.item?.endDate ? (
+                <View style={styles.expiryRow}>
+                  <Ionicons name="time-outline" size={14} color="#718096" />
+                  <Text style={styles.couponExpiry}>
+                    {formatExpiry(couponModal.item.endDate)}
+                  </Text>
+                </View>
+              ) : null}
+
+              <View style={styles.termsDivider} />
+
+              <Text style={styles.termsHeading}>Terms & Conditions</Text>
+              <Text style={styles.termsText}>
+                • Valid for one-time use only.{"\n"}
+                • One coupon per member, per order.{"\n"}
+                • Cannot be combined with other promotions.{"\n"}
+                • Excludes gift cards and sale items.{"\n"}
+                • Mint Rewards reserves the right to modify or cancel this offer at any time.
+              </Text>
+
+              <TouchableOpacity
+                style={[styles.downloadBtn, isDownloading && styles.downloadBtnDisabled]}
+                onPress={handleDownloadPress}
+                disabled={isDownloading}
+                activeOpacity={0.8}
+              >
+                {isDownloading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Ionicons name="download-outline" size={18} color="#fff" />}
+                <Text style={styles.downloadBtnText}>
+                  {isDownloading ? "Generating PDF…" : "Download Coupon"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.closeBtn} onPress={closeCouponModal}>
+                <Text style={styles.closeBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
+
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#ffffff" },
+  container: { flex: 1, backgroundColor: "#fff" },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -305,6 +326,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: { fontSize: 18, fontWeight: "700", color: "#333" },
+
   filterRow: {
     flexDirection: "row",
     paddingHorizontal: 16,
@@ -319,20 +341,38 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: "#d0d0d0",
-    backgroundColor: "#ffffff",
+    backgroundColor: "#fff",
   },
-  filterPillActive: {
-    backgroundColor: "#449EB2",
-    borderColor: "#449EB2",
+  filterPillActive: { backgroundColor: "#449EB2", borderColor: "#449EB2" },
+  filterPillText: { fontSize: 14, fontWeight: "600", color: "#718096" },
+  filterPillTextActive: { color: "#fff" },
+
+  profilePromptCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0F8FF",
+    borderRadius: 10,
+    padding: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#D0E8F5",
+    gap: 8,
   },
-  filterPillText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#718096",
+  profilePromptText: { flex: 1, fontSize: 13, color: "#449EB2", fontWeight: "500" },
+
+  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyState: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 40 },
+  emptyIconCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#e8f6fb",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
   },
-  filterPillTextActive: {
-    color: "#ffffff",
-  },
+  emptyTitle: { fontSize: 20, fontWeight: "700", color: "#333", textAlign: "center", lineHeight: 28 },
   emptySubtitle: {
     fontSize: 14,
     color: "#718096",
@@ -348,25 +388,11 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 22,
   },
-  showAllButtonText: {
-    color: "#449EB2",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
-  emptyState: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 40 },
-  emptyIconCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "#e8f6fb",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  emptyTitle: { fontSize: 20, fontWeight: "700", color: "#333", textAlign: "center", lineHeight: 28 },
+  showAllButtonText: { color: "#449EB2", fontSize: 14, fontWeight: "600" },
+
   list: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 },
   sectionGap: { height: 8 },
+
   card: {
     backgroundColor: "#fff",
     borderRadius: 12,
@@ -380,25 +406,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardDisabled: { opacity: 0.5 },
-  lockedRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  profilePromptCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F0F8FF",
-    borderRadius: 10,
-    padding: 12,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: "#D0E8F5",
-    gap: 8,
-  },
-  profilePromptText: {
-    flex: 1,
-    fontSize: 13,
-    color: "#449EB2",
-    fontWeight: "500",
-  },
   cardBody: { flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
   logo: { width: 48, height: 48, borderRadius: 24 },
   logoPlaceholder: {
@@ -425,69 +432,125 @@ const styles = StyleSheet.create({
   expiryPillDisabled: { borderColor: "#ccc", backgroundColor: "#f5f5f5" },
   expiryText: { fontSize: 12, color: "#449EB2", fontWeight: "500" },
   divider: { height: 1, backgroundColor: "#f0f0f0", marginHorizontal: 14 },
+  lockedRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   availRow: { alignItems: "center", paddingVertical: 12 },
   availText: { fontSize: 15, fontWeight: "600", color: "#449EB2" },
   availTextDisabled: { color: "#aaa" },
 
-  // Modal
-  overlay: {
+  // ── Coupon detail modal ──
+  modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "flex-end",
+  },
+  couponSheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  couponHeader: {
+    backgroundColor: "#449EB2",
+    alignItems: "center",
+    paddingTop: 28,
+    paddingBottom: 24,
+    paddingHorizontal: 24,
+  },
+  couponAppName: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 3,
+    marginBottom: 14,
+  },
+  couponLogo: { width: 68, height: 68, borderRadius: 34, backgroundColor: "#fff" },
+  couponLogoPlaceholder: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "rgba(255,255,255,0.25)",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 30,
   },
-  modalCard: { backgroundColor: "#fff", borderRadius: 24, padding: 28, width: "100%", alignItems: "center" },
-  modalClose: { position: "absolute", top: 14, right: 14 },
-  modalLogo: { width: 72, height: 72, borderRadius: 36, marginBottom: 12 },
-  modalIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#449EB2",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
+  couponLogoInitial: { color: "#fff", fontSize: 26, fontWeight: "700" },
+  couponBrandName: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "700",
+    marginTop: 10,
+    marginBottom: 8,
   },
-  modalLogoPlaceholderText: { color: "#fff", fontSize: 28, fontWeight: "700" },
-  modalBrandName: { fontSize: 20, fontWeight: "700", color: "#222", marginBottom: 4 },
-  modalCampaignName: { fontSize: 14, color: "#718096", textAlign: "center", marginBottom: 12 },
-  modalMetaRow: { flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 16 },
-  discountBadge: {
-    backgroundColor: "#449EB2",
+  couponBadge: {
+    backgroundColor: "#fff",
     borderRadius: 20,
-    paddingHorizontal: 10,
+    paddingHorizontal: 14,
     paddingVertical: 4,
   },
-  discountBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  modalExpiryPill: {
+  couponBadgeText: { color: "#449EB2", fontSize: 14, fontWeight: "700" },
+
+  perfRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff" },
+  perfCircleLeft: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(0,0,0,0.52)",
+    marginLeft: -11,
+  },
+  perfDash: {
+    flex: 1,
+    height: 1.5,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderStyle: "dashed",
+    marginVertical: 11,
+  },
+  perfCircleRight: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(0,0,0,0.52)",
+    marginRight: -11,
+  },
+
+  couponBody: {
+    backgroundColor: "#fff",
+    paddingHorizontal: 24,
+    paddingBottom: 36,
+    paddingTop: 4,
+  },
+  expiryRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "#e8f6fb",
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: "#449EB2",
+    gap: 5,
+    paddingVertical: 12,
   },
-  modalExpiryText: { fontSize: 12, color: "#449EB2", fontWeight: "500" },
-  modalDivider: { height: 1, backgroundColor: "#f0f0f0", width: "100%", marginBottom: 16 },
-  modalCodeLabel: { fontSize: 13, color: "#718096", fontWeight: "600", marginBottom: 8 },
-  codeBox: {
-    backgroundColor: "#f5f6fa",
-    borderWidth: 2,
-    borderColor: "#449EB2",
-    borderStyle: "dashed",
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    marginBottom: 18,
-    width: "100%",
-    alignItems: "center",
+  couponExpiry: {
+    fontSize: 13,
+    color: "#718096",
   },
-  codeText: { fontSize: 22, fontWeight: "700", color: "#449EB2", letterSpacing: 3 },
-  copyBtn: {
+  termsDivider: {
+    height: 1,
+    backgroundColor: "#f0f0f0",
+    marginBottom: 14,
+  },
+  termsHeading: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 8,
+  },
+  termsText: {
+    fontSize: 12,
+    color: "#718096",
+    lineHeight: 20,
+    marginBottom: 22,
+  },
+  downloadBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -496,9 +559,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     gap: 8,
     width: "100%",
+    marginBottom: 10,
   },
-  copyBtnCopied: { backgroundColor: "#38a169" },
-  copyBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  downloadBtnDisabled: { opacity: 0.65 },
+  downloadBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  closeBtn: { paddingVertical: 12, width: "100%", alignItems: "center" },
+  closeBtnText: { color: "#999", fontSize: 14, fontWeight: "500" },
 });
 
 export default DiscountsScreen;

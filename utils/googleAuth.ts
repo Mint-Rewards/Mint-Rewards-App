@@ -40,12 +40,21 @@
 //   return res.json();
 // };
 
-import {
-  GoogleSignin,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
+// Loaded lazily so a missing native binary doesn't crash the whole app at
+// module evaluation time (same pattern used for expo-print).
+let GoogleSignin: any;
+let statusCodes: any;
+
+try {
+  const lib = require('@react-native-google-signin/google-signin');
+  GoogleSignin = lib.GoogleSignin;
+  statusCodes = lib.statusCodes;
+} catch {
+  console.warn('[googleAuth] RNGoogleSignin native module not found — rebuild the app with `cd ios && pod install && cd .. && npx expo run:ios`');
+}
 
 export const configureGoogleSignIn = () => {
+  if (!GoogleSignin) return;
   GoogleSignin.configure({
     iosClientId: '490896222696-4jtrnrbi9uhn98q2ukjb68f2cd45dq2v.apps.googleusercontent.com',
     webClientId: '490896222696-3umgevhg0eqtkg03cfs7saa19i0g8qir.apps.googleusercontent.com',
@@ -55,6 +64,9 @@ export const configureGoogleSignIn = () => {
 };
 
 export const signInWithGoogle = async () => {
+  if (!GoogleSignin) {
+    return { success: false, error: 'Google Sign-In is not available on this build.' };
+  }
   try {
     await GoogleSignin.hasPlayServices();
     const response = await GoogleSignin.signIn();
@@ -70,6 +82,7 @@ export const signInWithGoogle = async () => {
 };
 
 export const signOutGoogle = async () => {
+  if (!GoogleSignin) return { success: true };
   try {
     await GoogleSignin.signOut();
     return { success: true };
