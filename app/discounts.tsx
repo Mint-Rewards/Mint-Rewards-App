@@ -58,7 +58,7 @@ const DiscountsScreen = () => {
     const brandName = couponModal.item.brand.companyName;
     Alert.alert(
       "Download & Mark as Used?",
-      `⚠️ This ${brandName} coupon is SINGLE USE. Once downloaded it will be marked as used and cannot be redeemed again.`,
+      `This ${brandName} coupon is SINGLE USE. Once downloaded it will be marked as used and cannot be redeemed again.`,
       [
         { text: "Cancel", style: "cancel" },
         {
