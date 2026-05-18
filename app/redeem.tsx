@@ -284,7 +284,7 @@ const RedeemScreen = () => {
                   ? <ActivityIndicator size="small" color="#fff" />
                   : <Ionicons name="download-outline" size={18} color="#fff" />}
                 <Text style={styles.downloadBtnText}>
-                  {isDownloading ? "Generating PDF…" : "Download Coupon"}
+                  {isDownloading ? "Downloading…" : "Download Coupon"}
                 </Text>
               </TouchableOpacity>
 
