@@ -124,6 +124,7 @@ export const PAKISTAN_LOCATIONS: LocationData = {
       "Defence",
       "Bahria Town",
       "Scheme 33",
+      "Federal B Area",
     ],
     // Islamabad
     Islamabad: [
