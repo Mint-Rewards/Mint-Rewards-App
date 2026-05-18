@@ -26,8 +26,11 @@ const isExpired = (endDate: string) => new Date(endDate) < new Date();
 
 const RedeemScreen = () => {
   const { brandId } = useLocalSearchParams();
-  const { brandsWithCampaigns } = useAppStore();
+  const { user, brandsWithCampaigns, getBrandsWithCampaigns } = useAppStore();
   const { downloadCoupon, isDownloading } = useCouponDownload();
+
+  const isUsedByUser = (campaign: Campaign) =>
+    !!(user?._id && campaign.users?.includes(user._id));
 
   const [brand, setBrand] = useState<(BrandTheme & { campaigns: Campaign[] }) | null>(null);
   const [detailModal, setDetailModal] = useState<{
@@ -36,18 +39,17 @@ const RedeemScreen = () => {
   }>({ visible: false, campaign: null });
 
   useEffect(() => {
-    if (brandId && brandsWithCampaigns.length > 0) {
-      const found = brandsWithCampaigns.find((d) => d._id === brandId);
-      if (found) {
-        setBrand(found);
-      }
+    if (!brandsWithCampaigns.length) return; // still loading
+    const found = brandsWithCampaigns.find((d) => d._id === brandId);
+    if (found) {
+      setBrand(found);
     } else {
       setBrand(null);
       Alert.alert("Error", "Invalid brand", [
         { text: "OK", onPress: () => router.back() },
       ]);
     }
-  }, []);
+  }, [brandsWithCampaigns]);
 
   const getDaysLeft = (endDate: string) => {
     const diff = new Date(endDate).getTime() - Date.now();
@@ -93,7 +95,10 @@ const RedeemScreen = () => {
           onPress: async () => {
             const item = toDiscountItem(detailModal.campaign!);
             const success = await downloadCoupon(item);
-            if (success) closeDetailModal();
+            if (success) {
+              closeDetailModal();
+              await getBrandsWithCampaigns();
+            }
           },
         },
       ],
@@ -138,12 +143,13 @@ const RedeemScreen = () => {
           brand.campaigns.map((campaign) => {
             const daysLeft = getDaysLeft(campaign.endDate);
             const expired = isExpired(campaign.endDate);
+            const used = isUsedByUser(campaign);
             return (
               <TouchableOpacity
                 key={campaign._id}
-                style={[styles.campaignCard, expired && styles.campaignCardExpired]}
+                style={[styles.campaignCard, (expired || used) && styles.campaignCardExpired]}
                 activeOpacity={0.7}
-                disabled={expired}
+                disabled={expired || used}
                 onPress={() => handleCampaignPress(campaign)}
               >
                 <View style={styles.campaignHeader}>
@@ -186,13 +192,20 @@ const RedeemScreen = () => {
                 </View>
 
                 <View style={styles.campaignFooter}>
-                  <View style={styles.daysLeftBadge}>
-                    <Ionicons name="time-outline" size={14} color={expired ? "#aaa" : "#e67e22"} />
-                    <Text style={[styles.daysLeftText, expired && { color: "#aaa" }]}>
-                      {expired ? "Expired" : daysLeft > 0 ? `${daysLeft} days left` : "Ending soon"}
-                    </Text>
-                  </View>
-                  {!expired && (
+                  {used ? (
+                    <View style={styles.usedBadge}>
+                      <Ionicons name="checkmark-circle" size={14} color="#38a169" />
+                      <Text style={styles.usedBadgeText}>Used</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.daysLeftBadge}>
+                      <Ionicons name="time-outline" size={14} color={expired ? "#aaa" : "#e67e22"} />
+                      <Text style={[styles.daysLeftText, expired && { color: "#aaa" }]}>
+                        {expired ? "Expired" : daysLeft > 0 ? `${daysLeft} days left` : "Ending soon"}
+                      </Text>
+                    </View>
+                  )}
+                  {!expired && !used && (
                     <View style={styles.redeemCta}>
                       <Text style={styles.redeemCtaText}>View Offer</Text>
                       <Ionicons name="chevron-forward" size={16} color="#00528A" />
@@ -274,6 +287,14 @@ const RedeemScreen = () => {
                 • Mint Rewards reserves the right to modify or cancel this offer at any time.
               </Text>
 
+              {detailModal.campaign && isUsedByUser(detailModal.campaign) ? (
+                <View style={styles.alreadyUsedBox}>
+                  <Ionicons name="checkmark-circle" size={20} color="#38a169" />
+                  <Text style={styles.alreadyUsedText}>
+                    You have already downloaded and used this coupon.
+                  </Text>
+                </View>
+              ) : (
               <TouchableOpacity
                 style={[styles.downloadBtn, isDownloading && styles.downloadBtnDisabled]}
                 onPress={handleDownloadPress}
@@ -287,6 +308,7 @@ const RedeemScreen = () => {
                   {isDownloading ? "Downloading…" : "Download Coupon"}
                 </Text>
               </TouchableOpacity>
+              )}
 
               <TouchableOpacity style={styles.closeBtn} onPress={closeDetailModal}>
                 <Text style={styles.closeBtnText}>Close</Text>
@@ -511,6 +533,31 @@ const styles = StyleSheet.create({
   },
   downloadBtnDisabled: { opacity: 0.65 },
   downloadBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  usedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#f0fff4",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#c6f6d5",
+  },
+  usedBadgeText: { fontSize: 12, fontWeight: "600", color: "#38a169" },
+  alreadyUsedBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#f0fff4",
+    borderWidth: 1,
+    borderColor: "#c6f6d5",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  alreadyUsedText: { flex: 1, fontSize: 14, color: "#276749", lineHeight: 20 },
   closeBtn: { paddingVertical: 12, width: "100%", alignItems: "center" },
   closeBtnText: { color: "#999", fontSize: 14, fontWeight: "500" },
 });
