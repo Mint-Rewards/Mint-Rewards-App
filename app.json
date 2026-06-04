@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mint Rewards",
     "slug": "mint-rewards",
-    "version": "2.1.4",
+    "version": "2.1.5",
     "orientation": "portrait",
     "icon": "./assets/images/logo-fixed.png",
     "scheme": "mint-rewards",
@@ -23,7 +23,6 @@
         "NSLocationWhenInUseUsageDescription": "Mint Rewards uses your location to let you pin your exact address for waste collection pickups.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Mint Rewards uses your location to let you pin your exact address for waste collection pickups."
       },
-      "usesEncryption": false,
       "buildNumber": "14"
     },
     "android": {
@@ -67,6 +66,7 @@
         }
       ],
       "expo-web-browser",
+      "expo-apple-authentication",
       [
         "@react-native-google-signin/google-signin", {
           "iosUrlScheme": "com.googleusercontent.apps.490896222696-4jtrnrbi9uhn98q2ukjb68f2cd45dq2v"

@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store/store";
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
+import AppleSignInButton from "@/components/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
@@ -15,6 +16,8 @@ import {
 import Svg, { Path } from "react-native-svg";
 import * as SecureStore from "expo-secure-store";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
+import { AppleAuthenticationButtonType } from 'expo-apple-authentication';
+import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
 
 const GoogleIcon = ({ size = 20, opacity = 1 }: { size?: number; opacity?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 48 48">
@@ -94,6 +97,72 @@ const RegisterScreen = () => {
       }
     } catch {
       Constants.showDialog("An error occurred. Please try again.");
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignUp = async (credential: AppleAuthenticationCredential) => {
+    setGoogleLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/apple`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identityToken: credential.identityToken,
+          fullName: credential.fullName,
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server error ${res.status}: ${text}`);
+      }
+
+      const data = await res.json();
+
+      if (data.Status === 'Success') {
+        const userData = data.data;
+
+        const user = {
+          _id: userData._id,
+          token: userData.token || '',
+          email: userData.email,
+          userName: userData.userName,
+          phone: userData.phone || '',
+          isAdmin: userData.isAdmin || false,
+          avatar: userData.avatar || '',
+          address: userData.address || '',
+          province: userData.province || '',
+          city: userData.city || '',
+          town: userData.town || '',
+          mintId: userData.mintId,
+          latitude: userData.latitude || '',
+          longitude: userData.longitude || '',
+          deviceToken: userData.deviceToken || '',
+          points: userData.points || 0,
+          totalCollections: userData.totalCollections || '',
+          totalWasteCollected: userData.totalWasteCollected || '',
+          referrals: userData.referrals || [],
+          firstTimeLogin: userData.firstTimeLogin || false,
+          emailVerified: userData.emailVerified || false,
+          pickupHistory: userData.pickupHistory || [],
+        };
+
+        useAppStore.setState({ user, token: userData.token || null });
+
+        await SecureStore.setItemAsync('userToken', userData.token || '');
+        await SecureStore.setItemAsync('userEmail', userData.email);
+        await SecureStore.setItemAsync('userName', userData.userName);
+        await SecureStore.setItemAsync('userPoints', String(userData.points || 0));
+
+        router.replace('/(tabs)/home');
+      } else {
+        Constants.showDialog(data.ErrorMessage || 'Apple Sign-Up failed.');
+      }
+    } catch (error: any) {
+      console.log('Apple Sign-Up error:', error.message, error.stack);
+      Constants.showDialog('An error occurred. Please try again.');
     } finally {
       setGoogleLoading(false);
     }
@@ -248,6 +317,17 @@ const RegisterScreen = () => {
               </View>
             )}
           </TouchableOpacity>
+          <View style={{ marginBottom: 8 }}>
+            <AppleSignInButton
+              onCredential={handleAppleSignUp}
+              onError={(e: unknown) => {
+                console.warn('Apple Sign-Up error', e);
+                Constants.showDialog('Apple Sign-Up failed. Please try again.');
+              }}
+              disabled={loading || googleLoading}
+              buttonType={AppleAuthenticationButtonType.SIGN_UP}
+            />
+          </View>
         </ScrollView>
 
         <View style={styles.bottomSection}>

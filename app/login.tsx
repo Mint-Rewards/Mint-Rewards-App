@@ -281,6 +281,7 @@
 
 import { useAppStore } from "@/store/store";
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
+import AppleSignInButton from "@/components/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -296,6 +297,7 @@ import {
 } from "react-native";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
 import * as SecureStore from 'expo-secure-store';
+import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
 
 const GoogleIcon = ({ size = 20, opacity = 1 }: { size?: number; opacity?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 48 48">
@@ -382,6 +384,72 @@ const LoginScreen = () => {
       }
     } catch (error: any) {
       console.log('Full error:', error.message, error.stack);
+      Constants.showDialog('An error occurred. Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async (credential: AppleAuthenticationCredential) => {
+    setGoogleLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/apple`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identityToken: credential.identityToken,
+          fullName: credential.fullName,
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server error ${res.status}: ${text}`);
+      }
+
+      const data = await res.json();
+
+      if (data.Status === 'Success') {
+        const userData = data.data;
+
+        const user = {
+          _id: userData._id,
+          token: userData.token || '',
+          email: userData.email,
+          userName: userData.userName,
+          phone: userData.phone || '',
+          isAdmin: userData.isAdmin || false,
+          avatar: userData.avatar || '',
+          address: userData.address || '',
+          province: userData.province || '',
+          city: userData.city || '',
+          town: userData.town || '',
+          mintId: userData.mintId,
+          latitude: userData.latitude || '',
+          longitude: userData.longitude || '',
+          deviceToken: userData.deviceToken || '',
+          points: userData.points || 0,
+          totalCollections: userData.totalCollections || '',
+          totalWasteCollected: userData.totalWasteCollected || '',
+          referrals: userData.referrals || [],
+          firstTimeLogin: userData.firstTimeLogin || false,
+          emailVerified: userData.emailVerified || false,
+          pickupHistory: userData.pickupHistory || [],
+        };
+
+        useAppStore.setState({ user, token: userData.token || null });
+
+        await SecureStore.setItemAsync('userToken', userData.token || '');
+        await SecureStore.setItemAsync('userEmail', userData.email);
+        await SecureStore.setItemAsync('userName', userData.userName);
+        await SecureStore.setItemAsync('userPoints', String(userData.points || 0));
+
+        router.replace('/(tabs)/home');
+      } else {
+        Constants.showDialog(data.ErrorMessage || 'Apple Sign-In failed.');
+      }
+    } catch (error: any) {
+      console.log('Apple Sign-In error:', error.message, error.stack);
       Constants.showDialog('An error occurred. Please try again.');
     } finally {
       setGoogleLoading(false);
@@ -528,6 +596,17 @@ const LoginScreen = () => {
               </View>
             )}
           </TouchableOpacity>
+          {/* Apple Sign-In Button */}
+          <View style={{ marginBottom: 8 }}>
+            <AppleSignInButton
+              onCredential={handleAppleSignIn}
+              onError={(e) => {
+              console.warn('Apple Sign-In error', e);
+              Constants.showDialog('Apple Sign-In failed. Please try again.');
+            }}
+              disabled={loading || googleLoading}
+            />
+          </View>
         </ScrollView>
 
         {/* Bottom Register Link */}
