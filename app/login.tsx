@@ -293,6 +293,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
@@ -309,6 +310,9 @@ const GoogleIcon = ({ size = 20, opacity = 1 }: { size?: number; opacity?: numbe
 );
 
 const LoginScreen = () => {
+  const { height } = useWindowDimensions();
+  const isSmallScreen = height < 700;
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [hidePassword, setHidePassword] = useState(true);
@@ -494,7 +498,7 @@ const LoginScreen = () => {
   return (
     <View style={styles.container}>
       {/* Green Header Section */}
-      <View style={styles.headerSection}>
+      <View style={[styles.headerSection, isSmallScreen && styles.headerSectionSmall]}>
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Welcome Back!</Text>
           <Text style={styles.welcomeSubtitle}>
@@ -504,14 +508,14 @@ const LoginScreen = () => {
       </View>
 
       {/* White Content Section */}
-      <View style={styles.contentSection}>
+      <View style={[styles.contentSection, isSmallScreen && styles.contentSectionSmall]}>
         <ScrollView
           style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
           {/* Email Input */}
-          <View style={styles.inputGroup}>
+          <View style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}>
             <Text style={styles.inputLabel}>Email</Text>
             <View style={styles.inputContainer}>
               <TextInput
@@ -528,7 +532,7 @@ const LoginScreen = () => {
           </View>
 
           {/* Password Input */}
-          <View style={styles.inputGroup}>
+          <View style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}>
             <Text style={styles.inputLabel}>Password</Text>
             <View style={styles.inputContainer}>
               <TextInput
@@ -554,7 +558,7 @@ const LoginScreen = () => {
 
           {/* Forgot Password */}
           <TouchableOpacity
-            style={styles.forgotPasswordContainer}
+            style={[styles.forgotPasswordContainer, isSmallScreen && styles.forgotPasswordContainerSmall]}
             onPress={() => router.push("/forgot-password")}
           >
             <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
@@ -574,51 +578,52 @@ const LoginScreen = () => {
           </TouchableOpacity>
 
           {/* Divider */}
-          <View style={styles.dividerContainer}>
+          <View style={[styles.dividerContainer, isSmallScreen && styles.dividerContainerSmall]}>
             <View style={styles.dividerLine} />
             <Text style={styles.dividerText}>or</Text>
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Google Sign-In Button */}
-          <TouchableOpacity
-            style={[
-              styles.googleButton,
-              (loading || googleLoading) && styles.googleButtonDisabled,
-            ]}
-            onPress={handleGoogleSignIn}
-            disabled={loading || googleLoading}
-            activeOpacity={0.9}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color="#1f1f1f" size="small" />
-            ) : (
-              <View style={styles.googleButtonContent}>
-                <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
-                <Text
-                  style={[
-                    styles.googleButtonText,
-                    loading && styles.googleButtonTextDisabled,
-                  ]}
-                  numberOfLines={1}
-                >
-                  Sign in with Google
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          {/* Apple Sign-In Button */}
-          <View style={{ marginBottom: 8 }}>
-            <AppleSignInButton
-              onCredential={handleAppleSignIn}
-              onError={(e) => {
-              console.warn('Apple Sign-In error', e);
-              Constants.showDialog('Apple Sign-In failed. Please try again.');
-            }}
-              disabled={loading || googleLoading}
-            />
-          </View>
         </ScrollView>
+
+        {/* Google Sign-In Button */}
+        <TouchableOpacity
+          style={[
+            styles.googleButton,
+            (loading || googleLoading) && styles.googleButtonDisabled,
+          ]}
+          onPress={handleGoogleSignIn}
+          disabled={loading || googleLoading}
+          activeOpacity={0.9}
+        >
+          {googleLoading ? (
+            <ActivityIndicator color="#1f1f1f" size="small" />
+          ) : (
+            <View style={styles.googleButtonContent}>
+              <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
+              <Text
+                style={[
+                  styles.googleButtonText,
+                  loading && styles.googleButtonTextDisabled,
+                ]}
+                numberOfLines={1}
+              >
+                Sign in with Google
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+        {/* Apple Sign-In Button */}
+        <View style={{ marginBottom: 8 }}>
+          <AppleSignInButton
+            onCredential={handleAppleSignIn}
+            onError={(e) => {
+            console.warn('Apple Sign-In error', e);
+            Constants.showDialog('Apple Sign-In failed. Please try again.');
+          }}
+            disabled={loading || googleLoading}
+          />
+        </View>
 
         {/* Bottom Register Link */}
         <View style={styles.bottomSection}>
@@ -649,6 +654,10 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
   },
+  headerSectionSmall: {
+    paddingTop: 56,
+    paddingBottom: 16,
+  },
   welcomeSection: {
     marginTop: 10,
   },
@@ -670,8 +679,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 30,
   },
+  contentSectionSmall: {
+    paddingTop: 16,
+  },
   inputGroup: {
     marginBottom: 20,
+  },
+  inputGroupSmall: {
+    marginBottom: 12,
   },
   inputLabel: {
     fontSize: 16,
@@ -709,6 +724,10 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     marginTop: 10,
   },
+  forgotPasswordContainerSmall: {
+    marginBottom: 16,
+    marginTop: 6,
+  },
   forgotPasswordText: {
     color: Constants.appThemeColor,
     fontSize: 14,
@@ -731,6 +750,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginVertical: 24,
+  },
+  dividerContainerSmall: {
+    marginVertical: 12,
   },
   dividerLine: {
     flex: 1,
