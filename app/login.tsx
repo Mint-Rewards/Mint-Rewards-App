@@ -393,12 +393,23 @@ const LoginScreen = () => {
   const handleAppleSignIn = async (credential: AppleAuthenticationCredential) => {
     setGoogleLoading(true);
     try {
+      // Apple only sends fullName on the very first sign-in; cache it for future logins.
+      const cacheKey = `appleFullName_${credential.user}`;
+      if (credential.fullName?.givenName || credential.fullName?.familyName) {
+        await SecureStore.setItemAsync(cacheKey, JSON.stringify(credential.fullName));
+      }
+      let fullName = credential.fullName;
+      if (!fullName?.givenName && !fullName?.familyName) {
+        const cached = await SecureStore.getItemAsync(cacheKey);
+        if (cached) fullName = JSON.parse(cached);
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/auth/apple`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           identityToken: credential.identityToken,
-          fullName: credential.fullName,
+          fullName,
         }),
       });
 
