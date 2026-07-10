@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mint Rewards",
     "slug": "mint-rewards",
-    "version": "2.1.5",
+    "version": "2.1.6",
     "orientation": "portrait",
     "icon": "./assets/images/logo-fixed.png",
     "scheme": "mint-rewards",
