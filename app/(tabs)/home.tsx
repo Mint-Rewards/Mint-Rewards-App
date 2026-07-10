@@ -178,12 +178,12 @@ export default function HomeScreen() {
             <View style={styles.collectionCard}>
               <View style={styles.collectionInfo}>
                 <Text style={styles.collectionTitle}>
-                  Your next collection is on
+                  Warming Up!
                 </Text>
-                <Text style={styles.collectionDate}>Yet to be scheduled</Text>
+                <Text style={styles.collectionDate}>We'll notify you once your area is unlocked.</Text>
               </View>
               <Image
-                source={require("../../assets/images/Group 1597880836.png")}
+                source={require("../../assets/images/upcoming-collections.png")}
                 style={styles.collectionImage}
                 resizeMode="contain"
               />
@@ -311,8 +311,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   collectionImage: {
-    borderRadius: 8,
-    height: 70,
+    borderRadius: 10,
+    height: 75,
   },
   locationPromptCard: {
     backgroundColor: "#F0F8FF",
