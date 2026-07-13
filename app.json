@@ -7,7 +7,6 @@
     "icon": "./assets/images/logo-fixed.png",
     "scheme": "mint-rewards",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mintrewards.app",
@@ -30,7 +29,6 @@
         "foregroundImage": "./assets/images/logo-fixed.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.mintrewards.appp",
       "predictiveBackGestureEnabled": false,
       "permissions": [
