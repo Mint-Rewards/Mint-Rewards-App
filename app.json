@@ -68,10 +68,32 @@
       "expo-web-browser",
       "expo-apple-authentication",
       [
-        "@react-native-google-signin/google-signin", {
+        "@react-native-google-signin/google-signin",
+        {
           "iosUrlScheme": "com.googleusercontent.apps.490896222696-4jtrnrbi9uhn98q2ukjb68f2cd45dq2v"
         }
-      ]
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              {
+                "name": "GoogleUtilities",
+                "modular_headers": true
+              },
+              {
+                "name": "RecaptchaInterop",
+                "modular_headers": true
+              }
+            ]
+          }
+        }
+      ],
+      "expo-font",
+      "expo-image",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   lockedOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.35)",
     borderRadius: 22,
     alignItems: "center",
