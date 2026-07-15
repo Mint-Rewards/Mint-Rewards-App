@@ -22,7 +22,8 @@
         "NSLocationWhenInUseUsageDescription": "Mint Rewards uses your location to let you pin your exact address for waste collection pickups.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Mint Rewards uses your location to let you pin your exact address for waste collection pickups."
       },
-      "buildNumber": "14"
+      "buildNumber": "14",
+      "googleServicesFile": "./firebase/GoogleService-Info.plist"
     },
     "android": {
       "adaptiveIcon": {
@@ -39,7 +40,8 @@
         "googleMaps": {
           "apiKey": "AIzaSyDVEXV--vTFsh2p9P3udhSjGgWYRaWBNCE"
         }
-      }
+      },
+      "googleServicesFile": "./firebase/google-services.json"
     },
     "web": {
       "output": "static",
@@ -47,6 +49,7 @@
     },
     "plugins": [
       "expo-router",
+      "@react-native-firebase/app",
       [
         "expo-splash-screen",
         {
@@ -75,6 +78,7 @@
         "expo-build-properties",
         {
           "ios": {
+            "useFrameworks": "static",
             "extraPods": [
               {
                 "name": "GoogleUtilities",
