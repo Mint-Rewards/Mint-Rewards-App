@@ -17,9 +17,9 @@ import { Constants } from "../utils/constants";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
-const OtpScreen = () => {
+const VerifyEmailScreen = () => {
   const { email } = useLocalSearchParams<{ email: string }>();
-  const { verifyOTP, forgotPassword } = useAppStore();
+  const { verifyEmailOtp, resendVerificationOtp } = useAppStore();
 
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
@@ -48,7 +48,7 @@ const OtpScreen = () => {
     }
   };
 
-  const verifyOtpPressed = async () => {
+  const verifyPressed = async () => {
     if (otp.length < 6) {
       Constants.showDialog("Please enter the complete 6-digit code");
       return;
@@ -56,11 +56,11 @@ const OtpScreen = () => {
 
     setLoading(true);
     try {
-      const result = await verifyOTP(email, otp);
+      const result = await verifyEmailOtp(email, otp);
 
-      if (result.Status === "Success" && result.resetToken) {
-        AccessibilityInfo.announceForAccessibility("Code verified.");
-        router.push(`/change-password?resetToken=${encodeURIComponent(result.resetToken)}`);
+      if (result.Status === "Success") {
+        AccessibilityInfo.announceForAccessibility("Email verified successfully.");
+        router.replace("/(tabs)/home");
         return;
       }
 
@@ -88,7 +88,7 @@ const OtpScreen = () => {
   const resendPressed = async () => {
     setResending(true);
     try {
-      const result = await forgotPassword(email);
+      const result = await resendVerificationOtp(email);
 
       if (result.code === "RATE_LIMITED") {
         setRateLimitMessage(result.ErrorMessage || "Too many requests. Please try again later.");
@@ -96,6 +96,16 @@ const OtpScreen = () => {
         return;
       }
 
+      if (result.Status !== "Success") {
+        setHasError(true);
+        setInlineError(result.ErrorMessage || "Couldn't send a new code. Please try again.");
+        AccessibilityInfo.announceForAccessibility(
+          result.ErrorMessage || "Couldn't send a new code.",
+        );
+        return;
+      }
+
+      // Server responds 200 regardless of account state; assume the code was sent.
       setLocked(false);
       setHasError(false);
       setInlineError(null);
@@ -109,18 +119,16 @@ const OtpScreen = () => {
 
   return (
     <View style={styles.container}>
-      {/* Green Header Section */}
       <View style={styles.headerSection}>
-        {/* Welcome Section */}
         <View style={styles.welcomeSection}>
-          <Text style={styles.welcomeTitle}>Enter Code</Text>
+          <Text style={styles.welcomeTitle}>Verify Your Email</Text>
           <Text style={styles.welcomeSubtitle}>
-            Please enter the 6-digit verification code sent to your email address.
+            We&apos;ve sent a 6-digit code to{"\n"}
+            {email}
           </Text>
         </View>
       </View>
 
-      {/* White Content Section */}
       <View style={styles.contentSection}>
         <ScrollView
           style={{ flex: 1 }}
@@ -140,7 +148,6 @@ const OtpScreen = () => {
             />
           )}
 
-          {/* OTP Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Verification Code</Text>
             <OtpInput
@@ -188,21 +195,16 @@ const OtpScreen = () => {
           ) : (
             <TouchableOpacity
               style={[styles.verifyButton, !canSubmit && styles.verifyButtonDisabled]}
-              onPress={verifyOtpPressed}
+              onPress={verifyPressed}
               disabled={loading || !canSubmit}
             >
               {loading ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <Text style={styles.verifyButtonText}>Verify Code</Text>
+                <Text style={styles.verifyButtonText}>Verify Email</Text>
               )}
             </TouchableOpacity>
           )}
-
-          {/* Back to Forgot Password */}
-          <TouchableOpacity style={styles.backToLoginContainer} onPress={() => router.back()}>
-            <Text style={styles.backToLoginText}>← Back to Forgot Password</Text>
-          </TouchableOpacity>
         </ScrollView>
       </View>
     </View>
@@ -216,7 +218,7 @@ const styles = StyleSheet.create({
   },
   headerSection: {
     backgroundColor: Constants.appThemeColor,
-    paddingTop: 100, // For status bar
+    paddingTop: 100,
     paddingBottom: 30,
     paddingHorizontal: 20,
     borderBottomLeftRadius: 25,
@@ -296,17 +298,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
   },
-  backToLoginContainer: {
-    alignSelf: "center",
-    marginTop: 20,
-    marginBottom: 30,
-    padding: 10,
-  },
-  backToLoginText: {
-    color: Constants.appThemeColor,
-    fontSize: 14,
-    fontWeight: "500",
-  },
 });
 
-export default OtpScreen;
+export default VerifyEmailScreen;

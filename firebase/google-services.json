@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "78392867949",
+    "project_id": "mint-rewards-eb254",
+    "storage_bucket": "mint-rewards-eb254.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:78392867949:android:1646be32d2db4a305cd364",
+        "android_client_info": {
+          "package_name": "com.mintrewards.appp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4pKi-q2icvOZprH8yUPYRuwpS6Z431Mo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,4 +1,5 @@
 import { useAppStore } from "@/store/store";
+import { formatCountdown } from "@/hooks/useCountdown";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -26,17 +27,17 @@ const ForgotPasswordScreen = () => {
     } else {
       setLoading(true);
       try {
-        const result = await forgotPassword(email);
+        const trimmedEmail = email.trim();
+        const result = await forgotPassword(trimmedEmail);
 
         if (result.Status === "Success") {
+          router.push(`/otp-screen?email=${encodeURIComponent(trimmedEmail)}`);
+        } else if (result.code === "RATE_LIMITED") {
           Constants.showDialog(
-            "We have sent you an OTP. Please check your email!"
+            `Too many requests. Please try again in ${formatCountdown(result.retryAfterSeconds || 60)}.`,
           );
-          router.push(`/otp-screen?email=${email}`);
         } else {
-          Constants.showDialog(
-            result.ErrorMessage || "Failed to send reset link"
-          );
+          Constants.showDialog(result.ErrorMessage || "Something went wrong. Please try again.");
         }
       } catch {
         Constants.showDialog("An error occurred. Please try again.");
@@ -79,11 +80,12 @@ const ForgotPasswordScreen = () => {
                 autoCorrect={false}
                 placeholder="Enter Your Email"
                 placeholderTextColor="#999999"
+                accessibilityLabel="Email address"
               />
             </View>
           </View>
 
-          {/* Login Button */}
+          {/* Submit Button */}
           <TouchableOpacity
             style={styles.loginButton}
             onPress={resetPasswordPressed}

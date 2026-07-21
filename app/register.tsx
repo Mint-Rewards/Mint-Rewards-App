@@ -36,7 +36,7 @@ const RegisterScreen = () => {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const { signUp, signIn } = useAppStore();
+  const { signUp } = useAppStore();
 
   const handleGoogleSignUp = async () => {
     setGoogleLoading(true);
@@ -193,14 +193,7 @@ const RegisterScreen = () => {
       try {
         const result = await signUp(email.trim(), password, name.trim(), "", "", "", "");
         if (result.Status === "Success") {
-          // signUp doesn't issue a token — sign in immediately to get one
-          const loginResult = await signIn(email.trim(), password);
-          if (loginResult.Status === "Success") {
-            router.replace("/(tabs)/home");
-          } else {
-            Constants.showDialog("Account created! Please sign in.");
-            router.replace("/login");
-          }
+          router.push({ pathname: "/verify-email", params: { email: email.trim() } });
         } else {
           Constants.showDialog(result.ErrorMessage || "Registration failed");
         }

@@ -6,8 +6,10 @@ expo-env.d.ts
 # @end expo-cli
 node_modules
 .expo
-android
-ios
+android/
+ios/
 
 MintRewards.app
 *.tar.gz
+
+.DS_Store

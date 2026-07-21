@@ -18,6 +18,14 @@ import { logScreenView } from "@/utils/logger";
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const { setUserData, getProfile, user } = useAppStore();
+  const pathname = usePathname();
+  const previousRoute = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (previousRoute.current === pathname) return;
+    logScreenView(pathname, previousRoute.current, user?._id);
+    previousRoute.current = pathname;
+  }, [pathname, user?._id]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -55,6 +63,7 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="register" options={{ headerShown: false }} />
+        <Stack.Screen name="verify-email" options={{ headerShown: false }} />
         <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
         <Stack.Screen name="redeem" options={{ headerShown: false }} />
         <Stack.Screen name="editProfile" options={{ headerShown: false }} />
