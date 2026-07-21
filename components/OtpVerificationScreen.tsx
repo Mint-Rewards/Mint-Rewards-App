@@ -168,7 +168,13 @@ const OtpVerificationScreen = ({
       setInlineError(null);
       setOtp("");
       resendCooldown.start(RESEND_COOLDOWN_SECONDS);
-      AccessibilityInfo.announceForAccessibility("A new code has been sent to your email.");
+      // A 200 does not mean an email went out. The backend answers 200 for a
+      // silently-throttled resend and for an address with no account, so that
+      // the response can't be used to enumerate registered emails. Announce
+      // the server's own hedged wording rather than asserting a send.
+      AccessibilityInfo.announceForAccessibility(
+        result.Message || "If an account exists for that email, a new code has been sent.",
+      );
     } finally {
       setResending(false);
     }

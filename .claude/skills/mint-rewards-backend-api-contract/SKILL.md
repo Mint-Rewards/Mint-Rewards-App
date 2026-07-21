@@ -2,7 +2,8 @@
 name: mint-rewards-backend-api-contract
 description: >
   Catalog of every backend endpoint the Mint Rewards client app consumes:
-  method, path, auth header rules (RAW token, no Bearer), exact request bodies,
+  method, path, auth header rules (send the stored token verbatim — it already
+  contains "Bearer "), exact request bodies,
   response fields the client actually reads, and per-endpoint error-key quirks
   (data.error vs data.message vs data.ErrorMessage). Use when adding/changing
   any fetch call, debugging an API error, wiring a new screen to the backend,
@@ -39,9 +40,35 @@ Two places compute the base URL — keep them in sync when changing env handling
 
 ## Auth header rule (non-obvious — verify before every change)
 
-**`Authorization: <raw token>` — NO `"Bearer "` prefix.** Adding "Bearer " breaks
-every authenticated call. The token comes from `store.token` / `store.user.token`
-/ SecureStore key `userToken`.
+**Send the stored token verbatim: `Authorization: <stored token>`. Do NOT add a
+`"Bearer "` prefix — the stored value already contains one.**
+
+This is the single easiest thing to get wrong in this repo, so read the whole
+rule rather than the headline:
+
+- The backend returns its token field **already scheme-prefixed** — literally
+  `"Bearer eyJhbGci..."` — from both `POST /api/users/login` and
+  `POST /api/users/verify-email-otp` (backend `login/route.ts:108`,
+  `verify-email-otp/route.ts:117`; VERIFIED by backend audit 2026-07-22).
+- The client stores that string as-is in `store.token` / `store.user.token` /
+  SecureStore `userToken`, and sends it unmodified.
+- The backend's auth middleware accepts **only** the prefixed form — it splits
+  on a space and rejects anything whose first segment isn't exactly `Bearer`
+  (backend `lib/auth.ts:29-32`). A bare JWT 401s.
+
+So "no Bearer prefix" describes what *the client code adds* (nothing), not what
+goes over the wire (which is `Bearer <jwt>`). Adding `"Bearer "` yourself
+produces `Bearer Bearer eyJ...` and 401s every authenticated call.
+
+> An earlier revision of this file stated the rule as "`Authorization: <raw
+> token>` — NO Bearer prefix" with no explanation of where the prefix comes
+> from. That phrasing led an audit to conclude the app-wide invariant was a
+> bare token and to flag correct code in `verifyEmailOtp` as a bug. Keep the
+> explanation attached to the rule.
+
+Related: the `resetToken` from `verify-otp` is **not** interchangeable with a
+session token — the backend rejects tokens carrying a `purpose` claim for
+general auth (backend `lib/auth.ts:67-69`).
 
 Two fetch wrappers exist:
 

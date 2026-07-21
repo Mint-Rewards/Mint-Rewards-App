@@ -53,13 +53,47 @@ export function parseRetryAfter(header: string | null): number {
   return DEFAULT_RETRY_AFTER_SECONDS;
 }
 
+/**
+ * Backend `code` values → client OtpErrorCode. The backend is adding these as
+ * a stable machine-readable discriminator; until they ship, `data.code` is
+ * absent and we fall through to the status/header heuristic below.
+ * Confirmed by backend audit 2026-07-22.
+ */
+const SERVER_ERROR_CODES: Record<string, OtpErrorCode> = {
+  RATE_LIMITED: "RATE_LIMITED",
+  OTP_ATTEMPTS_EXHAUSTED: "ATTEMPTS_EXHAUSTED",
+  RESET_TOKEN_INVALID: "INVALID_SESSION",
+  // OTP_INVALID intentionally unmapped — a plain wrong/expired code is the
+  // generic failure branch, which carries no code.
+};
+
 async function classifyErrorResponse(
   response: Response,
   data: any,
   fallbackMessage: string,
 ): Promise<OtpResult> {
+  const retryAfterHeader = response.headers.get("Retry-After");
+
+  // Prefer the explicit discriminator whenever the backend sends one.
+  const mapped = typeof data?.code === "string" ? SERVER_ERROR_CODES[data.code] : undefined;
+  if (mapped) {
+    return {
+      Status: "Error",
+      ErrorMessage: data?.error || data?.message || fallbackMessage,
+      code: mapped,
+      ...(mapped === "RATE_LIMITED"
+        ? { retryAfterSeconds: parseRetryAfter(retryAfterHeader) }
+        : {}),
+    };
+  }
+
+  // Fallback heuristic, used only until the backend ships `code`. The audit
+  // confirmed it is correct for this backend's own endpoints — attempts-
+  // exhausted is genuinely its only 429 without a Retry-After — but a 429 from
+  // an edge limiter or WAF carries neither, and would be misread as a
+  // permanent lockout. That risk disappears once `code` is present.
   if (response.status === 429) {
-    const retryAfter = response.headers.get("Retry-After");
+    const retryAfter = retryAfterHeader;
     if (retryAfter) {
       return {
         Status: "Error",
