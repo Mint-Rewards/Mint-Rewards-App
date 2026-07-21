@@ -57,7 +57,7 @@ export const configureGoogleSignIn = () => {
   if (!GoogleSignin) return;
   GoogleSignin.configure({
     iosClientId: '490896222696-4jtrnrbi9uhn98q2ukjb68f2cd45dq2v.apps.googleusercontent.com',
-    webClientId: '490896222696-kdpgcfnhh860ilahd091n09vnh2f3avs.apps.googleusercontent.com',
+    webClientId: '490896222696-3umgevhg0eqtkg03cfs7saa19i0g8qir.apps.googleusercontent.com',
     offlineAccess: true,
     scopes: ['profile', 'email'],
   });
