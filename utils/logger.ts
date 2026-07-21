@@ -34,6 +34,8 @@ export type LogEventType =
   | "LOGOUT"
   | "PASSWORD_RESET"
   | "OTP_VERIFY"
+  | "EMAIL_VERIFIED"
+  | "EMAIL_VERIFY_RESEND"
   // Navigation
   | "SCREEN_VIEW"
   // Actions
@@ -45,6 +47,30 @@ export type LogEventType =
   // Errors
   | "API_ERROR"
   | "APP_ERROR";
+
+/**
+ * Behavioral events go to Firebase Analytics under these names.
+ * Firebase requires snake_case, alphanumeric + underscore, <= 40 chars.
+ *
+ * API_ERROR and APP_ERROR are deliberately absent: Firebase caps string
+ * params at 100 chars, which destroys stack traces. Absence from this map
+ * is what routes an event to the backend instead.
+ */
+const FIREBASE_EVENT_MAP: Partial<Record<LogEventType, string>> = {
+  LOGIN: "login",
+  REGISTER: "sign_up",
+  LOGOUT: "logout",
+  PASSWORD_RESET: "password_reset",
+  OTP_VERIFY: "otp_verify",
+  EMAIL_VERIFIED: "email_verified",
+  EMAIL_VERIFY_RESEND: "email_verify_resend",
+  SCREEN_VIEW: "screen_view",
+  PROFILE_UPDATE: "profile_update",
+  REFERRAL_SENT: "referral_sent",
+  DISCOUNT_VIEWED: "discount_viewed",
+  BRAND_VIEWED: "brand_viewed",
+  ACCOUNT_DELETED: "account_deleted",
+};
 
 export interface LogPayload {
   event: LogEventType;
@@ -92,13 +118,87 @@ function buildBasePayload(
   };
 }
 
+async function sendToBackend(payload: LogPayload): Promise<void> {
+  await fetch(`${API_URL}/api/logs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+// Loaded on first use, not at import: the native module is absent in Expo Go
+// and a top-level import would crash the app before it renders.
+let analyticsModule: typeof import("@react-native-firebase/analytics") | null =
+  null;
+
+function getAnalyticsModule() {
+  if (!analyticsModule) {
+    analyticsModule = require("@react-native-firebase/analytics");
+  }
+  return analyticsModule!;
+}
+
+const MAX_PARAM_LENGTH = 100;
+
+/**
+ * Firebase params must be scalars, and Google's terms prohibit sending PII.
+ * Anything email-shaped is dropped rather than truncated — a truncated email
+ * is still PII.
+ */
+function sanitizeParams(extra?: Record<string, unknown>) {
+  const params: Record<string, string | number | boolean> = {};
+  if (!extra) return params;
+
+  for (const [key, value] of Object.entries(extra)) {
+    if (/email|mail/i.test(key)) continue;
+    if (value === null || value === undefined) continue;
+
+    if (typeof value === "number" || typeof value === "boolean") {
+      params[key] = value;
+    } else {
+      const asString = typeof value === "string" ? value : JSON.stringify(value);
+      if (/@/.test(asString)) continue;
+      params[key] = asString.slice(0, MAX_PARAM_LENGTH);
+    }
+  }
+  return params;
+}
+
+async function sendToFirebase(
+  eventName: string,
+  payload: LogPayload
+): Promise<void> {
+  const { getAnalytics, logEvent, logScreenView, setUserId } =
+    getAnalyticsModule();
+  const analytics = getAnalytics();
+
+  // userId is a Firebase-sanctioned identifier; userEmail is never sent.
+  if (payload.userId) {
+    await setUserId(analytics, payload.userId);
+  }
+
+  if (eventName === "screen_view" && payload.route) {
+    await logScreenView(analytics, {
+      screen_name: payload.route,
+      screen_class: payload.route,
+    });
+    return;
+  }
+
+  const params = sanitizeParams(payload.extra);
+  if (payload.route) params.route = payload.route.slice(0, MAX_PARAM_LENGTH);
+
+  await logEvent(analytics, eventName, params);
+}
+
 async function sendLog(payload: LogPayload): Promise<void> {
   try {
-    await fetch(`${API_URL}/api/logs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const firebaseEvent = FIREBASE_EVENT_MAP[payload.event];
+    if (firebaseEvent) {
+      await sendToFirebase(firebaseEvent, payload);
+    } else {
+      await sendToBackend(payload);
+    }
   } catch (err) {
     // Never let logging break the app
     console.warn("[Logger] Failed to send log:", err);
@@ -113,7 +213,13 @@ async function sendLog(payload: LogPayload): Promise<void> {
  * Log an authentication event (login, register, logout, etc.)
  */
 export const logAuthEvent = async (
-  event: "LOGIN" | "REGISTER" | "LOGOUT" | "PASSWORD_RESET" | "OTP_VERIFY",
+  event:
+    | "LOGIN"
+    | "REGISTER"
+    | "LOGOUT"
+    | "PASSWORD_RESET"
+    | "OTP_VERIFY"
+    | "EMAIL_VERIFIED",
   userId: string,
   extra?: Record<string, unknown>
 ): Promise<void> => {
