@@ -21,25 +21,31 @@ export default function RootLayout() {
 
   useEffect(() => {
     const checkAuth = async () => {
+      // TEMP DIAGNOSTIC — remove once the sign-in bounce is diagnosed.
+      console.log("[checkAuth] start");
       try {
         const token = await SecureStore.getItemAsync("userToken");
+        console.log(`[checkAuth] stored token: ${token ? "present" : "NONE"}`);
         if (token) {
           // Set token first so getProfile can use it
           setUserData({ token });
           await getProfile();
           const user = useAppStore.getState().user;
           if (user) {
+            console.log("[checkAuth] profile OK -> /(tabs)/home");
             router.replace("/(tabs)/home");
           } else {
             // Profile fetch failed — token is stale
+            console.warn("[checkAuth] profile FAILED -> deleting token, /login");
             await SecureStore.deleteItemAsync("userToken");
             router.replace("/login");
           }
         } else {
+          console.log("[checkAuth] no token -> /login");
           router.replace("/login");
         }
       } catch (error) {
-        console.error("Auth check failed:", error);
+        console.error("[checkAuth] threw -> /login. Auth check failed:", error);
         await SecureStore.deleteItemAsync("userToken");
         router.replace("/login");
       }
