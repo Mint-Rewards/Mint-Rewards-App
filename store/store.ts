@@ -550,10 +550,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.success) {
-        const rawToken = String(data.token || "").replace(/^Bearer\s+/i, "");
-        set({ token: rawToken });
+        // Keep the header value verbatim ("Bearer <jwt>"), the same shape signIn
+        // stores — the API requires the Bearer scheme and rejects a bare token.
+        const sessionToken = String(data.token || "");
+        set({ token: sessionToken });
 
-        await SecureStore.setItemAsync("userToken", rawToken);
+        await SecureStore.setItemAsync("userToken", sessionToken);
         await SecureStore.setItemAsync("userEmail", email);
         await get().getProfile();
 
@@ -565,7 +567,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         await logAuthEvent("EMAIL_VERIFIED", verifiedUser?._id ?? "", { email });
         set({ isLoading: false, error: null });
-        return { Status: "Success", Message: data.message, token: rawToken };
+        return { Status: "Success", Message: data.message, token: sessionToken };
       }
 
       await logEvent("OTP_VERIFY", {
@@ -849,8 +851,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ isBrandsWithCampaignsLoading: true, brandsWithCampaignsError: null });
 
     try {
-      // const token = get().token || get().user?.token;
-      const token = get().user?.token;
+      const token = get().token || get().user?.token;
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",

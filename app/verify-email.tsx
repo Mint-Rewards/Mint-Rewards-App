@@ -96,6 +96,15 @@ const VerifyEmailScreen = () => {
         return;
       }
 
+      if (result.Status !== "Success") {
+        setHasError(true);
+        setInlineError(result.ErrorMessage || "Couldn't send a new code. Please try again.");
+        AccessibilityInfo.announceForAccessibility(
+          result.ErrorMessage || "Couldn't send a new code.",
+        );
+        return;
+      }
+
       // Server responds 200 regardless of account state; assume the code was sent.
       setLocked(false);
       setHasError(false);

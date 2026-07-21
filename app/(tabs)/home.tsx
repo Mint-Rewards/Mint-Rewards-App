@@ -134,8 +134,8 @@ export default function HomeScreen() {
     });
   }, [wasteToCo2, getBrands]);
 
-  const pendingBrands = brands.filter((b) => (b as any).status === "PENDING");
-  const cardsContainerHeight = pendingBrands.length * VISIBLE + OVERLAP + 80;
+  // active-campaigns only ever returns APPROVED brands, so no filtering here.
+  const cardsContainerHeight = brands.length * VISIBLE + OVERLAP + 80;
 
   return (
     <View style={styles.container}>
@@ -229,7 +229,7 @@ export default function HomeScreen() {
           )}
 
           <View style={{ height: cardsContainerHeight, position: "relative" }}>
-            {pendingBrands.map((brand, index) => (
+            {brands.map((brand, index) => (
               <BrandCard
                 key={brand._id}
                 brand={brand as BrandTheme & { status?: string }}
