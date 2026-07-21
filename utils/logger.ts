@@ -33,6 +33,7 @@ export type LogEventType =
   | "REGISTER"
   | "LOGOUT"
   | "PASSWORD_RESET"
+  | "PASSWORD_RESET_RESEND"
   | "OTP_VERIFY"
   | "EMAIL_VERIFIED"
   | "EMAIL_VERIFY_RESEND"
@@ -61,6 +62,7 @@ const FIREBASE_EVENT_MAP: Partial<Record<LogEventType, string>> = {
   REGISTER: "sign_up",
   LOGOUT: "logout",
   PASSWORD_RESET: "password_reset",
+  PASSWORD_RESET_RESEND: "password_reset_resend",
   OTP_VERIFY: "otp_verify",
   EMAIL_VERIFIED: "email_verified",
   EMAIL_VERIFY_RESEND: "email_verify_resend",

@@ -32,19 +32,74 @@ export interface OtpResult {
   resetToken?: string;
 }
 
+const DEFAULT_RETRY_AFTER_SECONDS = 60;
+
+// Retry-After is either delta-seconds or an HTTP-date (RFC 9110 §10.2.3).
+// parseInt() on the date form yields NaN, so both forms are handled explicitly.
+export function parseRetryAfter(header: string | null): number {
+  if (!header) return DEFAULT_RETRY_AFTER_SECONDS;
+
+  const trimmed = header.trim();
+  const seconds = Number(trimmed);
+  if (trimmed !== "" && Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds);
+  }
+
+  const retryAt = Date.parse(trimmed);
+  if (!Number.isNaN(retryAt)) {
+    return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
+  }
+
+  return DEFAULT_RETRY_AFTER_SECONDS;
+}
+
+/**
+ * Backend `code` values → client OtpErrorCode. The backend is adding these as
+ * a stable machine-readable discriminator; until they ship, `data.code` is
+ * absent and we fall through to the status/header heuristic below.
+ * Confirmed by backend audit 2026-07-22.
+ */
+const SERVER_ERROR_CODES: Record<string, OtpErrorCode> = {
+  RATE_LIMITED: "RATE_LIMITED",
+  OTP_ATTEMPTS_EXHAUSTED: "ATTEMPTS_EXHAUSTED",
+  RESET_TOKEN_INVALID: "INVALID_SESSION",
+  // OTP_INVALID intentionally unmapped — a plain wrong/expired code is the
+  // generic failure branch, which carries no code.
+};
+
 async function classifyErrorResponse(
   response: Response,
   data: any,
   fallbackMessage: string,
 ): Promise<OtpResult> {
+  const retryAfterHeader = response.headers.get("Retry-After");
+
+  // Prefer the explicit discriminator whenever the backend sends one.
+  const mapped = typeof data?.code === "string" ? SERVER_ERROR_CODES[data.code] : undefined;
+  if (mapped) {
+    return {
+      Status: "Error",
+      ErrorMessage: data?.error || data?.message || fallbackMessage,
+      code: mapped,
+      ...(mapped === "RATE_LIMITED"
+        ? { retryAfterSeconds: parseRetryAfter(retryAfterHeader) }
+        : {}),
+    };
+  }
+
+  // Fallback heuristic, used only until the backend ships `code`. The audit
+  // confirmed it is correct for this backend's own endpoints — attempts-
+  // exhausted is genuinely its only 429 without a Retry-After — but a 429 from
+  // an edge limiter or WAF carries neither, and would be misread as a
+  // permanent lockout. That risk disappears once `code` is present.
   if (response.status === 429) {
-    const retryAfter = response.headers.get("Retry-After");
+    const retryAfter = retryAfterHeader;
     if (retryAfter) {
       return {
         Status: "Error",
         ErrorMessage: data?.error || "Too many requests. Please try again later.",
         code: "RATE_LIMITED",
-        retryAfterSeconds: parseInt(retryAfter, 10) || 60,
+        retryAfterSeconds: parseRetryAfter(retryAfter),
       };
     }
     return {
@@ -183,6 +238,12 @@ interface UserSlice {
   token: string | null;
   isLoading: boolean;
   error: string | null;
+  /**
+   * Single-use password-reset credential, held in memory only between
+   * otp-screen and change-password. Never persisted and never routed through
+   * a URL param — expo-router would retain it in navigation state.
+   */
+  resetToken: string | null;
   setUserData: (userData: Partial<User>) => void;
   getProfile: () => Promise<void>;
   signIn: (
@@ -201,9 +262,10 @@ interface UserSlice {
   signOut: () => Promise<void>;
   resendVerificationOtp: (email: string) => Promise<OtpResult>;
   verifyEmailOtp: (email: string, otp: string) => Promise<OtpResult>;
-  forgotPassword: (email: string) => Promise<OtpResult>;
+  forgotPassword: (email: string, options?: { isResend?: boolean }) => Promise<OtpResult>;
   verifyOTP: (email: string, otp: string) => Promise<OtpResult>;
   setPassword: (resetToken: string, password: string) => Promise<OtpResult>;
+  clearResetToken: () => void;
   deleteAccount: () => Promise<{
     Status: string;
     Message?: string;
@@ -285,6 +347,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   token: null,
   isLoading: false,
   error: null,
+  resetToken: null,
+
+  clearResetToken: () => set({ resetToken: null }),
 
   setUserData: (userData) =>
     set((state) => ({
@@ -295,8 +360,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
   getProfile: async () => {
     set({ isLoading: true, error: null });
     try {
+      // get().token first, matching every other authenticated action. Reading
+      // user?.token first made this the only caller that depended on the
+      // SecureStore write having already landed: verifyEmailOtp sets token in
+      // store state but leaves user null until this very call populates it.
       const token =
-        get().user?.token || (await SecureStore.getItemAsync("userToken"));
+        get().token || get().user?.token || (await SecureStore.getItemAsync("userToken"));
 
       if (!token) throw new Error("No authentication token found");
 
@@ -511,7 +580,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     await logAuthEvent("LOGOUT", get().user?._id ?? "", {
       email: get().user?.email,
     });
-    set({ user: null, token: null, error: null });
+    set({ user: null, token: null, error: null, resetToken: null });
   },
 
   resendVerificationOtp: async (email) => {
@@ -585,7 +654,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  forgotPassword: async (email) => {
+  forgotPassword: async (email, options) => {
     set({ isLoading: true, error: null });
     try {
       const response = await fetch(`${API_URL}/api/users/reset-password`, {
@@ -596,7 +665,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const data = await response.json().catch(() => ({}));
 
       if (response.ok) {
-        await logEvent("PASSWORD_RESET", { extra: { email, stage: "request_sent" } });
+        // Distinct events, not one event with a stage field: resend rate is
+        // the signal for tuning the throttle, and it has to be countable on
+        // its own. Mirrors EMAIL_VERIFY_RESEND on the verification flow.
+        await logEvent(options?.isResend ? "PASSWORD_RESET_RESEND" : "PASSWORD_RESET", {
+          extra: { email, stage: options?.isResend ? "resend" : "request_sent" },
+        });
         set({ isLoading: false });
         return {
           Status: "Success",
@@ -627,7 +701,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       if (response.ok && data.success) {
         await logEvent("OTP_VERIFY", { extra: { email, success: true, flow: "reset" } });
-        set({ isLoading: false, error: null });
+        // Held in memory for change-password to consume; never routed via URL.
+        set({ isLoading: false, error: null, resetToken: data.resetToken ?? null });
         return { Status: "Success", resetToken: data.resetToken };
       }
 
@@ -657,7 +732,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.success) {
-        set({ isLoading: false, error: null });
+        // The token is single-use; drop it as soon as the server accepts it.
+        set({ isLoading: false, error: null, resetToken: null });
         return { Status: "Success", Message: data.message || "Password successfully updated." };
       }
 

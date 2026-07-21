@@ -31,8 +31,17 @@ const OtpInput = ({
     const cleaned = text.replace(/\D/g, "");
 
     if (cleaned.length > 1) {
-      // Pasted or autofilled full code
-      const merged = (value.slice(0, index) + cleaned).slice(0, length);
+      // Pasted or autofilled. A full-length paste replaces the whole code —
+      // iOS oneTimeCode autofill can land on a non-zero box, and splicing it
+      // in would drop the digits already sitting after that box.
+      const merged =
+        cleaned.length >= length
+          ? cleaned.slice(0, length)
+          : (
+              value.slice(0, index) +
+              cleaned +
+              value.slice(index + cleaned.length)
+            ).slice(0, length);
       setCode(merged);
       const nextIndex = Math.min(merged.length, length - 1);
       inputRefs.current[nextIndex]?.focus();

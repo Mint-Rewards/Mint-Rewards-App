@@ -1,5 +1,5 @@
 import { useAppStore } from "@/store/store";
-import { router, useLocalSearchParams } from "expo-router";
+import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,17 +19,17 @@ const ChangePasswordScreen = () => {
   const [hidePassword, setHidePassword] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  const params = useLocalSearchParams<{ resetToken: string }>();
-  const [resetToken, setResetToken] = useState(params.resetToken ?? "");
-
-  const { setPassword } = useAppStore();
+  // resetToken is single-use and must never persist beyond this screen, so it
+  // is read from in-memory store state rather than a route param — expo-router
+  // would otherwise retain it in navigation state and history.
+  const resetToken = useAppStore((state) => state.resetToken);
+  const { setPassword, clearResetToken } = useAppStore();
 
   useEffect(() => {
     return () => {
-      // resetToken is single-use and must never persist beyond this screen
-      setResetToken("");
+      clearResetToken();
     };
-  }, []);
+  }, [clearResetToken]);
 
   const changePasswordPressed = async () => {
     if (!password1 || !password2) {
@@ -58,7 +58,7 @@ const ChangePasswordScreen = () => {
       const result = await setPassword(resetToken, password1);
       if (result.Status !== "Success") {
         if (result.code === "INVALID_SESSION") {
-          setResetToken("");
+          clearResetToken();
           Constants.showDialog("Your session expired. Please request a new code.");
           router.replace("/forgot-password");
           return;
@@ -66,7 +66,6 @@ const ChangePasswordScreen = () => {
         Constants.showDialog(result.ErrorMessage || "Failed to change password");
         return;
       }
-      setResetToken("");
       Constants.showDialog("Password successfully updated.");
       router.replace("/login");
     } finally {

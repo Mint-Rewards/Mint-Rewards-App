@@ -55,7 +55,7 @@ const ForgotPasswordScreen = () => {
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Forgot Password</Text>
           <Text style={styles.welcomeSubtitle}>
-            Please enter your email address to receive reset password OTP.
+            Please enter your email address. If the email exists in the database, you will receive a reset password OTP.
           </Text>
         </View>
       </View>
