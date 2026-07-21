@@ -34,6 +34,8 @@ export type LogEventType =
   | "LOGOUT"
   | "PASSWORD_RESET"
   | "OTP_VERIFY"
+  | "EMAIL_VERIFIED"
+  | "EMAIL_VERIFY_RESEND"
   // Navigation
   | "SCREEN_VIEW"
   // Actions
@@ -60,6 +62,8 @@ const FIREBASE_EVENT_MAP: Partial<Record<LogEventType, string>> = {
   LOGOUT: "logout",
   PASSWORD_RESET: "password_reset",
   OTP_VERIFY: "otp_verify",
+  EMAIL_VERIFIED: "email_verified",
+  EMAIL_VERIFY_RESEND: "email_verify_resend",
   SCREEN_VIEW: "screen_view",
   PROFILE_UPDATE: "profile_update",
   REFERRAL_SENT: "referral_sent",
@@ -209,7 +213,13 @@ async function sendLog(payload: LogPayload): Promise<void> {
  * Log an authentication event (login, register, logout, etc.)
  */
 export const logAuthEvent = async (
-  event: "LOGIN" | "REGISTER" | "LOGOUT" | "PASSWORD_RESET" | "OTP_VERIFY",
+  event:
+    | "LOGIN"
+    | "REGISTER"
+    | "LOGOUT"
+    | "PASSWORD_RESET"
+    | "OTP_VERIFY"
+    | "EMAIL_VERIFIED",
   userId: string,
   extra?: Record<string, unknown>
 ): Promise<void> => {

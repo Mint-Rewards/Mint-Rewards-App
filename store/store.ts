@@ -20,6 +20,49 @@ async function fetchWithTimeout(
   }
 }
 
+export type OtpErrorCode = "RATE_LIMITED" | "ATTEMPTS_EXHAUSTED" | "INVALID_SESSION";
+
+export interface OtpResult {
+  Status: "Success" | "Error";
+  Message?: string;
+  ErrorMessage?: string;
+  code?: OtpErrorCode;
+  retryAfterSeconds?: number;
+  token?: string;
+  resetToken?: string;
+}
+
+async function classifyErrorResponse(
+  response: Response,
+  data: any,
+  fallbackMessage: string,
+): Promise<OtpResult> {
+  if (response.status === 429) {
+    const retryAfter = response.headers.get("Retry-After");
+    if (retryAfter) {
+      return {
+        Status: "Error",
+        ErrorMessage: data?.error || "Too many requests. Please try again later.",
+        code: "RATE_LIMITED",
+        retryAfterSeconds: parseInt(retryAfter, 10) || 60,
+      };
+    }
+    return {
+      Status: "Error",
+      ErrorMessage: data?.error || "Too many attempts. Request a new code.",
+      code: "ATTEMPTS_EXHAUSTED",
+    };
+  }
+  if (response.status === 401) {
+    return {
+      Status: "Error",
+      ErrorMessage: data?.error || "Invalid or expired reset session.",
+      code: "INVALID_SESSION",
+    };
+  }
+  return { Status: "Error", ErrorMessage: data?.error || data?.message || fallbackMessage };
+}
+
 // ============================================================================
 // INTERFACES & TYPES
 // ============================================================================
@@ -156,17 +199,11 @@ interface UserSlice {
     town: string,
   ) => Promise<{ Status: string; Message?: string; ErrorMessage?: string }>;
   signOut: () => Promise<void>;
-  forgotPassword: (
-    email: string,
-  ) => Promise<{ Status: string; Message?: string; ErrorMessage?: string }>;
-  verifyOTP: (
-    email: string,
-    otp: string,
-  ) => Promise<{ Status: string; Message?: string; ErrorMessage?: string }>;
-  setPassword: (
-    email: string,
-    password: string,
-  ) => Promise<{ Status: string; Message?: string; ErrorMessage?: string }>;
+  resendVerificationOtp: (email: string) => Promise<OtpResult>;
+  verifyEmailOtp: (email: string, otp: string) => Promise<OtpResult>;
+  forgotPassword: (email: string) => Promise<OtpResult>;
+  verifyOTP: (email: string, otp: string) => Promise<OtpResult>;
+  setPassword: (resetToken: string, password: string) => Promise<OtpResult>;
   deleteAccount: () => Promise<{
     Status: string;
     Message?: string;
@@ -477,25 +514,99 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ user: null, token: null, error: null });
   },
 
-  forgotPassword: async (email) => {
-    set({ isLoading: true, error: null });
+  resendVerificationOtp: async (email) => {
     try {
-      await fetch(`${API_URL}/api/users/reset-password`, {
+      const response = await fetch(`${API_URL}/api/users/resend-verification-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
+      const data = await response.json().catch(() => ({}));
 
-      // ✅ Log password reset request
-      await logEvent("PASSWORD_RESET", {
-        extra: { email, stage: "request_sent" },
+      if (response.ok) {
+        await logEvent("EMAIL_VERIFY_RESEND", { extra: { email } });
+        return {
+          Status: "Success",
+          Message:
+            data.message ||
+            "If an unverified account exists for that email, a new code has been sent.",
+        };
+      }
+      return await classifyErrorResponse(response, data, "Failed to resend code. Please try again.");
+    } catch (error) {
+      await logError("resendVerificationOtp exception", { error });
+      return { Status: "Error", ErrorMessage: "Network error. Please try again." };
+    }
+  },
+
+  verifyEmailOtp: async (email, otp) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch(`${API_URL}/api/users/verify-email-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp }),
       });
+      const data = await response.json().catch(() => ({}));
 
-      set({ isLoading: false });
-      return {
-        Status: "Success",
-        Message: "Password reset link sent to your email",
-      };
+      if (response.ok && data.success) {
+        // Keep the header value verbatim ("Bearer <jwt>"), the same shape signIn
+        // stores — the API requires the Bearer scheme and rejects a bare token.
+        const sessionToken = String(data.token || "");
+        set({ token: sessionToken });
+
+        await SecureStore.setItemAsync("userToken", sessionToken);
+        await SecureStore.setItemAsync("userEmail", email);
+        await get().getProfile();
+
+        const verifiedUser = get().user;
+        if (verifiedUser?.userName) {
+          await SecureStore.setItemAsync("userName", verifiedUser.userName);
+        }
+        await SecureStore.setItemAsync("userPoints", String(verifiedUser?.points || 0));
+
+        await logAuthEvent("EMAIL_VERIFIED", verifiedUser?._id ?? "", { email });
+        set({ isLoading: false, error: null });
+        return { Status: "Success", Message: data.message, token: sessionToken };
+      }
+
+      await logEvent("OTP_VERIFY", {
+        level: "warn",
+        extra: { email, success: false, flow: "email_verify" },
+      });
+      const result = await classifyErrorResponse(response, data, "Invalid or expired code.");
+      set({ isLoading: false, error: result.ErrorMessage ?? null });
+      return result;
+    } catch (error) {
+      const errorMessage = "Network error. Please try again.";
+      set({ error: errorMessage, isLoading: false });
+      await logError("verifyEmailOtp exception", { error });
+      return { Status: "Error", ErrorMessage: errorMessage };
+    }
+  },
+
+  forgotPassword: async (email) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch(`${API_URL}/api/users/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        await logEvent("PASSWORD_RESET", { extra: { email, stage: "request_sent" } });
+        set({ isLoading: false });
+        return {
+          Status: "Success",
+          Message: data.message || "If an account exists for that email, a reset code has been sent.",
+        };
+      }
+
+      const result = await classifyErrorResponse(response, data, "Failed to send reset code. Please try again.");
+      set({ isLoading: false, error: result.ErrorMessage ?? null });
+      return result;
     } catch (error) {
       const errorMessage = "Network error. Please try again.";
       set({ error: errorMessage, isLoading: false });
@@ -512,32 +623,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp }),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
-      if (response.ok) {
-        // ✅ Log OTP verification
-        await logEvent("OTP_VERIFY", {
-          extra: { email, success: true },
-        });
-
+      if (response.ok && data.success) {
+        await logEvent("OTP_VERIFY", { extra: { email, success: true, flow: "reset" } });
         set({ isLoading: false, error: null });
-        return {
-          Status: "Success",
-          Message: "OTP verified successfully",
-          ...data,
-        };
-      } else {
-        const errorMessage =
-          data.message || "OTP verification failed. Please try again.";
-        set({ error: errorMessage, isLoading: false });
-
-        await logEvent("OTP_VERIFY", {
-          level: "warn",
-          extra: { email, success: false, reason: errorMessage },
-        });
-
-        return { Status: "Error", ErrorMessage: errorMessage };
+        return { Status: "Success", resetToken: data.resetToken };
       }
+
+      await logEvent("OTP_VERIFY", {
+        level: "warn",
+        extra: { email, success: false, flow: "reset" },
+      });
+      const result = await classifyErrorResponse(response, data, "Invalid or expired code.");
+      set({ isLoading: false, error: result.ErrorMessage ?? null });
+      return result;
     } catch (error) {
       const errorMessage = "Network error. Please try again.";
       set({ error: errorMessage, isLoading: false });
@@ -546,29 +646,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  setPassword: async (email, password) => {
+  setPassword: async (resetToken, password) => {
     set({ isLoading: true, error: null });
     try {
       const response = await fetch(`${API_URL}/api/users/set-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ resetToken, password }),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
-      if (response.ok) {
+      if (response.ok && data.success) {
         set({ isLoading: false, error: null });
-        return {
-          Status: "Success",
-          Message: "Password updated successfully",
-          ...data,
-        };
-      } else {
-        const errorMessage =
-          data.message || "Failed to update password. Please try again.";
-        set({ error: errorMessage, isLoading: false });
-        return { Status: "Error", ErrorMessage: errorMessage };
+        return { Status: "Success", Message: data.message || "Password successfully updated." };
       }
+
+      const result = await classifyErrorResponse(response, data, "Failed to update password. Please try again.");
+      set({ isLoading: false, error: result.ErrorMessage ?? null });
+      return result;
     } catch (error) {
       const errorMessage = "Network error. Please try again.";
       set({ error: errorMessage, isLoading: false });
@@ -756,8 +851,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ isBrandsWithCampaignsLoading: true, brandsWithCampaignsError: null });
 
     try {
-      // const token = get().token || get().user?.token;
-      const token = get().user?.token;
+      const token = get().token || get().user?.token;
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
