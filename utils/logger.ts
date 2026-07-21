@@ -128,8 +128,21 @@ async function sendToBackend(payload: LogPayload): Promise<void> {
 
 // Loaded on first use, not at import: the native module is absent in Expo Go
 // and a top-level import would crash the app before it renders.
-let analyticsModule: typeof import("@react-native-firebase/analytics") | null =
-  null;
+type AnalyticsModule = {
+  getAnalytics: () => unknown;
+  logEvent: (
+    analytics: unknown,
+    eventName: string,
+    params?: Record<string, unknown>
+  ) => Promise<void>;
+  logScreenView: (
+    analytics: unknown,
+    params: { screen_name: string; screen_class: string }
+  ) => Promise<void>;
+  setUserId: (analytics: unknown, userId: string) => Promise<void>;
+};
+
+let analyticsModule: AnalyticsModule | null = null;
 
 function getAnalyticsModule() {
   if (!analyticsModule) {
