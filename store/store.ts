@@ -228,7 +228,7 @@ interface UserSlice {
   signOut: () => Promise<void>;
   resendVerificationOtp: (email: string) => Promise<OtpResult>;
   verifyEmailOtp: (email: string, otp: string) => Promise<OtpResult>;
-  forgotPassword: (email: string) => Promise<OtpResult>;
+  forgotPassword: (email: string, options?: { isResend?: boolean }) => Promise<OtpResult>;
   verifyOTP: (email: string, otp: string) => Promise<OtpResult>;
   setPassword: (resetToken: string, password: string) => Promise<OtpResult>;
   clearResetToken: () => void;
@@ -326,8 +326,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
   getProfile: async () => {
     set({ isLoading: true, error: null });
     try {
+      // get().token first, matching every other authenticated action. Reading
+      // user?.token first made this the only caller that depended on the
+      // SecureStore write having already landed: verifyEmailOtp sets token in
+      // store state but leaves user null until this very call populates it.
       const token =
-        get().user?.token || (await SecureStore.getItemAsync("userToken"));
+        get().token || get().user?.token || (await SecureStore.getItemAsync("userToken"));
 
       if (!token) throw new Error("No authentication token found");
 
@@ -616,7 +620,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  forgotPassword: async (email) => {
+  forgotPassword: async (email, options) => {
     set({ isLoading: true, error: null });
     try {
       const response = await fetch(`${API_URL}/api/users/reset-password`, {
@@ -627,7 +631,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const data = await response.json().catch(() => ({}));
 
       if (response.ok) {
-        await logEvent("PASSWORD_RESET", { extra: { email, stage: "request_sent" } });
+        // Distinct events, not one event with a stage field: resend rate is
+        // the signal for tuning the throttle, and it has to be countable on
+        // its own. Mirrors EMAIL_VERIFY_RESEND on the verification flow.
+        await logEvent(options?.isResend ? "PASSWORD_RESET_RESEND" : "PASSWORD_RESET", {
+          extra: { email, stage: options?.isResend ? "resend" : "request_sent" },
+        });
         set({ isLoading: false });
         return {
           Status: "Success",

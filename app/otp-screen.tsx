@@ -17,7 +17,7 @@ const OtpScreen = () => {
       verifyButtonLabel="Verify Code"
       verifiedAnnouncement="Code verified."
       verify={verifyOTP}
-      resend={forgotPassword}
+      resend={(address) => forgotPassword(address, { isResend: true })}
       onVerified={(result) => {
         // verifyOTP stashes the token in the store; a success without one is
         // unusable, so reject it and let the generic failure state show.
