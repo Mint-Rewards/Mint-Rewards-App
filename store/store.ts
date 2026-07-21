@@ -756,8 +756,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ isBrandsWithCampaignsLoading: true, brandsWithCampaignsError: null });
 
     try {
-      // const token = get().token || get().user?.token;
-      const token = get().user?.token;
+      // getProfile() replaces `user` wholesale with the backend profile, which
+      // carries no token — so `user.token` is undefined after any profile fetch.
+      // Always fall back to the store token, as every other action does.
+      const token = get().token || get().user?.token;
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
