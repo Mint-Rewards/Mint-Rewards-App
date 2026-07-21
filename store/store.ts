@@ -32,6 +32,27 @@ export interface OtpResult {
   resetToken?: string;
 }
 
+const DEFAULT_RETRY_AFTER_SECONDS = 60;
+
+// Retry-After is either delta-seconds or an HTTP-date (RFC 9110 §10.2.3).
+// parseInt() on the date form yields NaN, so both forms are handled explicitly.
+export function parseRetryAfter(header: string | null): number {
+  if (!header) return DEFAULT_RETRY_AFTER_SECONDS;
+
+  const trimmed = header.trim();
+  const seconds = Number(trimmed);
+  if (trimmed !== "" && Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds);
+  }
+
+  const retryAt = Date.parse(trimmed);
+  if (!Number.isNaN(retryAt)) {
+    return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
+  }
+
+  return DEFAULT_RETRY_AFTER_SECONDS;
+}
+
 async function classifyErrorResponse(
   response: Response,
   data: any,
@@ -44,7 +65,7 @@ async function classifyErrorResponse(
         Status: "Error",
         ErrorMessage: data?.error || "Too many requests. Please try again later.",
         code: "RATE_LIMITED",
-        retryAfterSeconds: parseInt(retryAfter, 10) || 60,
+        retryAfterSeconds: parseRetryAfter(retryAfter),
       };
     }
     return {
@@ -183,6 +204,12 @@ interface UserSlice {
   token: string | null;
   isLoading: boolean;
   error: string | null;
+  /**
+   * Single-use password-reset credential, held in memory only between
+   * otp-screen and change-password. Never persisted and never routed through
+   * a URL param — expo-router would retain it in navigation state.
+   */
+  resetToken: string | null;
   setUserData: (userData: Partial<User>) => void;
   getProfile: () => Promise<void>;
   signIn: (
@@ -204,6 +231,7 @@ interface UserSlice {
   forgotPassword: (email: string) => Promise<OtpResult>;
   verifyOTP: (email: string, otp: string) => Promise<OtpResult>;
   setPassword: (resetToken: string, password: string) => Promise<OtpResult>;
+  clearResetToken: () => void;
   deleteAccount: () => Promise<{
     Status: string;
     Message?: string;
@@ -285,6 +313,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   token: null,
   isLoading: false,
   error: null,
+  resetToken: null,
+
+  clearResetToken: () => set({ resetToken: null }),
 
   setUserData: (userData) =>
     set((state) => ({
@@ -511,7 +542,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     await logAuthEvent("LOGOUT", get().user?._id ?? "", {
       email: get().user?.email,
     });
-    set({ user: null, token: null, error: null });
+    set({ user: null, token: null, error: null, resetToken: null });
   },
 
   resendVerificationOtp: async (email) => {
@@ -627,7 +658,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       if (response.ok && data.success) {
         await logEvent("OTP_VERIFY", { extra: { email, success: true, flow: "reset" } });
-        set({ isLoading: false, error: null });
+        // Held in memory for change-password to consume; never routed via URL.
+        set({ isLoading: false, error: null, resetToken: data.resetToken ?? null });
         return { Status: "Success", resetToken: data.resetToken };
       }
 
@@ -657,7 +689,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.success) {
-        set({ isLoading: false, error: null });
+        // The token is single-use; drop it as soon as the server accepts it.
+        set({ isLoading: false, error: null, resetToken: null });
         return { Status: "Success", Message: data.message || "Password successfully updated." };
       }
 
