@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -36,6 +37,15 @@ const ForgotPasswordScreen = () => {
           Constants.showDialog(
             `Too many requests. Please try again in ${formatCountdown(result.retryAfterSeconds || 60)}.`,
           );
+        } else if (result.code === "ACCOUNT_NOT_FOUND") {
+          Alert.alert(
+            "No account found",
+            `We couldn't find an account for ${trimmedEmail}.`,
+            [
+              { text: "Try again", style: "cancel" },
+              { text: "Create account", onPress: () => router.replace("/register") },
+            ],
+          );
         } else {
           Constants.showDialog(result.ErrorMessage || "Something went wrong. Please try again.");
         }
@@ -55,7 +65,7 @@ const ForgotPasswordScreen = () => {
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Forgot Password</Text>
           <Text style={styles.welcomeSubtitle}>
-            Please enter your email address. If the email exists in the database, you will receive a reset password OTP.
+            Enter your email address and we&apos;ll send you a code to reset your password.
           </Text>
         </View>
       </View>

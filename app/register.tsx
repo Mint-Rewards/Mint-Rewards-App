@@ -194,6 +194,11 @@ const RegisterScreen = () => {
         const result = await signUp(email.trim(), password, name.trim(), "", "", "", "");
         if (result.Status === "Success") {
           router.push({ pathname: "/verify-email", params: { email: email.trim() } });
+        } else if (result.code === "RATE_LIMITED") {
+          const minutes = Math.ceil((result.retryAfterSeconds || 3600) / 60);
+          Constants.showDialog(
+            `Too many signup attempts. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+          );
         } else {
           Constants.showDialog(result.ErrorMessage || "Registration failed");
         }

@@ -20,7 +20,11 @@ async function fetchWithTimeout(
   }
 }
 
-export type OtpErrorCode = "RATE_LIMITED" | "ATTEMPTS_EXHAUSTED" | "INVALID_SESSION";
+export type OtpErrorCode =
+  | "RATE_LIMITED"
+  | "ATTEMPTS_EXHAUSTED"
+  | "INVALID_SESSION"
+  | "ACCOUNT_NOT_FOUND";
 
 export interface OtpResult {
   Status: "Success" | "Error";
@@ -197,7 +201,13 @@ interface UserSlice {
     province: string,
     city: string,
     town: string,
-  ) => Promise<{ Status: string; Message?: string; ErrorMessage?: string }>;
+  ) => Promise<{
+    Status: string;
+    Message?: string;
+    ErrorMessage?: string;
+    code?: OtpErrorCode;
+    retryAfterSeconds?: number;
+  }>;
   signOut: () => Promise<void>;
   resendVerificationOtp: (email: string) => Promise<OtpResult>;
   verifyEmailOtp: (email: string, otp: string) => Promise<OtpResult>;
@@ -432,6 +442,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ...data,
         };
       } else {
+        // 429 is handled explicitly rather than through classifyErrorResponse:
+        // that helper maps 401 to "invalid or expired reset session", which is
+        // meaningless on signup. Signup's rate-limit windows are hourly, so
+        // retryAfterSeconds here is minutes-to-an-hour scale, not the ~60s the
+        // OTP screens deal in.
+        if (response.status === 429) {
+          const retryAfter = response.headers.get("Retry-After");
+          const errorMessage =
+            data.error ||
+            data.message ||
+            "Too many signup attempts. Please try again later.";
+          set({ error: errorMessage, isLoading: false });
+
+          await logEvent("API_ERROR", {
+            level: "warn",
+            extra: { event: "REGISTER_RATE_LIMITED", email, reason: errorMessage },
+          });
+
+          return {
+            Status: "Error",
+            ErrorMessage: errorMessage,
+            code: "RATE_LIMITED",
+            retryAfterSeconds: retryAfter ? parseInt(retryAfter, 10) || 3600 : 3600,
+          };
+        }
+
         const errorMessage =
           data.error ||
           data.message ||
@@ -600,7 +636,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
         set({ isLoading: false });
         return {
           Status: "Success",
-          Message: data.message || "If an account exists for that email, a reset code has been sent.",
+          Message: data.message || "A reset code has been sent.",
+        };
+      }
+
+      // Handled here rather than in classifyErrorResponse: that helper serves five
+      // call sites, and teaching it to read every 404 as "no account" would make a
+      // missing or misdeployed route render as a confidently wrong message. A
+      // route-missing 404 carries no `code`, so it falls through to the generic path.
+      if (response.status === 404 && data?.code === "ACCOUNT_NOT_FOUND") {
+        const errorMessage = data.error || "No account found for that email.";
+        set({ isLoading: false, error: errorMessage });
+        return {
+          Status: "Error",
+          ErrorMessage: errorMessage,
+          code: "ACCOUNT_NOT_FOUND",
         };
       }
 

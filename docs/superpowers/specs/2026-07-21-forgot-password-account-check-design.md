@@ -1,7 +1,9 @@
 # Forgot-password: check the email is linked to an account
 
 **Date:** 2026-07-21
-**Status:** Approved, not yet implemented
+**Status:** App changes (3, 4) implemented 2026-07-22 on `dev`, unverified —
+the `ACCOUNT_NOT_FOUND` path stays dormant until the backend ships. Backend
+changes (1, 2) not started.
 **Repos:** `Mint-Rewards-App`, `Mint-Rewards-Backend`
 
 ## Goal
@@ -78,13 +80,37 @@ Add the missing rate limiting, mirroring the pattern already used in
 placed after email-format validation and **before** the `findOne` that produces
 the `409`:
 
-- IP: **15 per hour** — generous for shared NAT, offices, and campus networks;
+- IP: **20 per hour** — generous for shared NAT, offices, and campus networks;
   useless for bulk enumeration.
-- Per email (hashed via `hashKey`): **5 per hour** — blocks hammering one known
+- Per email (hashed via `hashKey`): **10 per hour** — blocks hammering one known
   address.
 
+Numbers set by the owner on 2026-07-22. The per-IP figure is deliberately on
+the generous side: Pakistani mobile carriers run heavy CGNAT, and a campus or
+office signup drive is a real acquisition motion for this app, so a
+false-positive block costs more than the enumeration it would prevent. Note the
+per-IP limit *cannot* distinguish an enumerator from a campus — there is no
+signal at the IP layer that does — so this is a choice about which error to
+prefer, not a solved problem.
+
+Be honest about what each limit buys. The **per-email limit does nothing against
+enumeration** (an enumerator queries each address once); it bounds mailbombing
+of one targeted address, at 10/hour. The per-IP limit is the only enumeration
+control, and it is weak against anyone renting residential proxies. Price both
+as casual-abuse and mail-cost controls, not as a security boundary.
+
+**Signup now sends mail.** Since the OTP work landed, a successful signup
+triggers a verification email (`app/register.tsx` routes to `/verify-email`), so
+every unthrottled POST is a free outbound send. Protecting the email provider's
+cost and sender reputation is a stronger justification for these limits than
+enumeration is.
+
+Return `Retry-After` on the 429, as `reset-password` already does — the client
+reads it (see change 5).
+
 `checkRateLimit` fails *open* if Mongo is unavailable, by design. That is
-acceptable here: signup's hard floor remains the unique-email constraint.
+acceptable here: signup's hard floor remains the unique-email constraint. Do not
+set these numbers as if they were a hard guarantee.
 
 This is worth doing on its own merits, independent of this feature — an
 unthrottled account-creation endpoint invites spam accounts, mass mail through
@@ -143,6 +169,25 @@ Note: as of writing, `app/forgot-password.tsx` on `dev` has an uncommitted edit
 setting this line to the "If the email exists in the database" wording. This
 change replaces that line either way.
 
+### 5. `store/store.ts` `signUp` + `app/register.tsx` — surface the 429
+
+Signup's rate limiting is new, so the client had no 429 path: `signUp` collapsed
+every failure to `data.error || data.message` and the register screen showed it
+raw, with no wait time.
+
+`signUp` now handles 429 explicitly and returns `code: "RATE_LIMITED"` plus
+`retryAfterSeconds` (defaulting to 3600 when the header is absent, matching the
+hourly window). Its declared return type gains `code` and `retryAfterSeconds`.
+
+Handled **explicitly rather than by delegating to `classifyErrorResponse`** —
+the same reasoning as change 3. That helper maps 401 to "invalid or expired
+reset session", which is meaningless on signup, and its 409 path would be a
+coincidence rather than a decision.
+
+`app/register.tsx` renders the wait **in minutes**, not via `formatCountdown`:
+that helper emits `m:ss`, so an hour-scale wait renders as "60:00", which reads
+as malformed. The OTP screens keep using it — their waits are ~60s.
+
 ## Verification
 
 Neither repo has a test framework, so verification is manual.
@@ -151,13 +196,15 @@ Backend, against the dev preview deployment after pushing:
 
 - Unknown email → `404`, body contains `code: "ACCOUNT_NOT_FOUND"`.
 - Known email → `200`, code arrives.
-- 6th signup attempt for one email within an hour → `429` with `Retry-After`.
-- 16th signup from one IP within an hour → `429` with `Retry-After`.
+- 11th signup attempt for one email within an hour → `429` with `Retry-After`.
+- 21st signup from one IP within an hour → `429` with `Retry-After`.
 
 App, on the simulator:
 
 - Typo'd email → stays on the forgot-password screen, offers registration.
 - Real account → reaches the OTP screen and the code arrives.
+- Signup past the per-email limit → dialog states the wait in minutes, and the
+  screen does not advance to `/verify-email`.
 
 ## Out of scope
 
