@@ -13,3 +13,6 @@ MintRewards.app
 *.tar.gz
 
 .DS_Store
+
+*.aab
+*.ipa
