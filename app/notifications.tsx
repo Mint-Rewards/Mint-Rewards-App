@@ -56,7 +56,7 @@ const NotificationsScreen = () => {
 
           {/* Text Content */}
           <View style={styles.textContainer}>
-            <Text style={styles.title}>No Notifications Yet! 🔔</Text>
+            <Text style={styles.title}>No Notifications Yet!</Text>
             <Text style={styles.subtitle}>
               Your notifications will appear here.
             </Text>
