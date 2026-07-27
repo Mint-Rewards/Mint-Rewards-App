@@ -211,7 +211,7 @@ const ShareScreen = () => {
 
           {/* Email Form */}
           <View style={styles.formContainer}>
-            <Text style={styles.formTitle}>📧 Enter Email Addresses</Text>
+            <Text style={styles.formTitle}>Enter Email Addresses</Text>
 
             {/* Email Fields */}
             <View style={styles.emailFieldsContainer}>
