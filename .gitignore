@@ -16,3 +16,5 @@ MintRewards.app
 
 *.aab
 *.ipa
+
+.claude/
