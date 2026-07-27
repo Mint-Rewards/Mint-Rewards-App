@@ -23,6 +23,12 @@
     },
     "production": {
       "autoIncrement": true
+    },
+    "testflight-preview": {
+      "extends": "production",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://mint-rewards-backend-git-dev-mint-rewards-projects.vercel.app"
+      }
     }
   },
   "submit": {
