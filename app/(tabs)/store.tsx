@@ -52,7 +52,7 @@ const StoreScreen = () => {
 
           {/* Text Content */}
           <View style={styles.textContainer}>
-            <Text style={styles.title}>Store Coming Soon! 🚀</Text>
+            <Text style={styles.title}>Store Coming Soon!</Text>
             <Text style={styles.subtitle}>
               We&apos;re building something amazing for you.
             </Text>
