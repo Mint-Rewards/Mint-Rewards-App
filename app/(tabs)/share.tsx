@@ -1,4 +1,5 @@
 import Navbar from "@/components/ui/navbar";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
@@ -22,6 +23,9 @@ interface EmailField {
 
 const ShareScreen = () => {
   const { sendRefferal, isLoading, error, user } = useAppStore();
+  // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
+  // absolutely positioned, so the scroll has to clear it by its full height.
+  const tabBarOverflow = useBottomTabOverflow();
 
   const [emailFields, setEmailFields] = useState<EmailField[]>([
     { id: "1", email: "" },
@@ -166,7 +170,11 @@ const ShareScreen = () => {
       <Navbar user={user} />
 
       {/* Content */}
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={{ paddingBottom: tabBarOverflow }}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.mainContainer}>
           {/* Illustration */}
           <View style={styles.illustrationContainer}>
