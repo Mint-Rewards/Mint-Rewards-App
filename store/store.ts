@@ -1,6 +1,7 @@
 import { logAuthEvent, logError, logEvent } from "@/utils/logger";
 import { authenticatedFetch } from "@/utils/api";
 import { API_BASE_URL } from "@/utils/constants";
+import { setUnauthorizedHandler } from "@/utils/session";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 
@@ -1079,3 +1080,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 }));
+
+// Lets authenticatedFetch sign the user out on 401 without importing the store
+// (which would reintroduce the store -> api -> store require cycle).
+setUnauthorizedHandler(() => useAppStore.getState().signOut());

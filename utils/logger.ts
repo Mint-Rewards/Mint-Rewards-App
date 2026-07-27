@@ -135,10 +135,6 @@ type AnalyticsModule = {
     eventName: string,
     params?: Record<string, unknown>
   ) => Promise<void>;
-  logScreenView: (
-    analytics: unknown,
-    params: { screen_name: string; screen_class: string }
-  ) => Promise<void>;
   setUserId: (analytics: unknown, userId: string) => Promise<void>;
 };
 
@@ -181,8 +177,7 @@ async function sendToFirebase(
   eventName: string,
   payload: LogPayload
 ): Promise<void> {
-  const { getAnalytics, logEvent, logScreenView, setUserId } =
-    getAnalyticsModule();
+  const { getAnalytics, logEvent, setUserId } = getAnalyticsModule();
   const analytics = getAnalytics();
 
   // userId is a Firebase-sanctioned identifier; userEmail is never sent.
@@ -190,8 +185,11 @@ async function sendToFirebase(
     await setUserId(analytics, payload.userId);
   }
 
+  // Firebase's dedicated logScreenView() is deprecated in RNFB v22+; the
+  // reserved "screen_view" event through logEvent() is the replacement and
+  // populates the same Analytics screen reports.
   if (eventName === "screen_view" && payload.route) {
-    await logScreenView(analytics, {
+    await logEvent(analytics, "screen_view", {
       screen_name: payload.route,
       screen_class: payload.route,
     });
