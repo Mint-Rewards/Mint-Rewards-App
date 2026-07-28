@@ -1,6 +1,6 @@
 import { useAppStore } from "@/store/store";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -10,20 +10,35 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Constants } from "../utils/constants";
+import { Ionicons } from "@expo/vector-icons";
+import { Constants, Utils } from "../utils/constants";
 
-const OtpScreen = () => {
+const ChangePasswordScreen = () => {
   const [password1, setPassword1] = useState("");
   const [password2, setPassword2] = useState("");
+  const [hidePassword, setHidePassword] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  const { email } = useLocalSearchParams();
+  const params = useLocalSearchParams<{ resetToken: string }>();
+  const [resetToken, setResetToken] = useState(params.resetToken ?? "");
 
   const { setPassword } = useAppStore();
+
+  useEffect(() => {
+    return () => {
+      // resetToken is single-use and must never persist beyond this screen
+      setResetToken("");
+    };
+  }, []);
 
   const changePasswordPressed = async () => {
     if (!password1 || !password2) {
       Constants.showDialog("Please enter both passwords");
+      return;
+    }
+
+    if (!Utils.validatePassword(password1)) {
+      Constants.showDialog("Password must be at least 8 characters");
       return;
     }
 
@@ -32,22 +47,28 @@ const OtpScreen = () => {
       return;
     }
 
+    if (!resetToken) {
+      Constants.showDialog("Your session expired. Please request a new code.");
+      router.replace("/forgot-password");
+      return;
+    }
+
     setLoading(true);
     try {
-      const password = password1;
-      console.log(email);
-
-      const result = await setPassword(email as string, password);
+      const result = await setPassword(resetToken, password1);
       if (result.Status !== "Success") {
-        Constants.showDialog(
-          result.ErrorMessage || "Failed to change password",
-        );
+        if (result.code === "INVALID_SESSION") {
+          setResetToken("");
+          Constants.showDialog("Your session expired. Please request a new code.");
+          router.replace("/forgot-password");
+          return;
+        }
+        Constants.showDialog(result.ErrorMessage || "Failed to change password");
         return;
       }
-      Constants.showDialog("Password changed successfully!");
-      router.push("/login"); // Navigate to appropriate screen
-    } catch {
-      Constants.showDialog("Failed to change password. Please try again.");
+      setResetToken("");
+      Constants.showDialog("Password successfully updated.");
+      router.replace("/login");
     } finally {
       setLoading(false);
     }
@@ -59,7 +80,7 @@ const OtpScreen = () => {
       <View style={styles.headerSection}>
         {/* Welcome Section */}
         <View style={styles.welcomeSection}>
-          <Text style={styles.welcomeTitle}>Enter New Password</Text>
+          <Text style={styles.welcomeTitle}>Set New Password</Text>
           <Text style={styles.welcomeSubtitle}>
             Please enter the new password you want to set.
           </Text>
@@ -78,38 +99,48 @@ const OtpScreen = () => {
             <Text style={styles.inputLabel}>New Password</Text>
             <View style={styles.inputContainer}>
               <TextInput
-                style={styles.textInput}
+                style={styles.passwordTextInput}
                 value={password1}
                 onChangeText={setPassword1}
-                keyboardType="default"
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="Enter Your New Password"
+                placeholder="Min. 8 characters"
                 placeholderTextColor="#999999"
-                secureTextEntry
+                secureTextEntry={hidePassword}
+                accessibilityLabel="New password"
               />
+              <TouchableOpacity
+                style={styles.eyeIconButton}
+                onPress={() => setHidePassword(!hidePassword)}
+              >
+                <Ionicons
+                  name={hidePassword ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#999999"
+                />
+              </TouchableOpacity>
             </View>
           </View>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Confirm Password</Text>
             <View style={styles.inputContainer}>
               <TextInput
-                style={styles.textInput}
+                style={styles.passwordTextInput}
                 value={password2}
                 onChangeText={setPassword2}
-                keyboardType="default"
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="Enter Your New Password"
+                placeholder="Re-enter your new password"
                 placeholderTextColor="#999999"
-                secureTextEntry
+                secureTextEntry={hidePassword}
+                accessibilityLabel="Confirm new password"
               />
             </View>
           </View>
 
-          {/* Verify Button */}
+          {/* Submit Button */}
           <TouchableOpacity
-            style={[styles.verifyButton]}
+            style={styles.verifyButton}
             onPress={changePasswordPressed}
             disabled={loading}
           >
@@ -123,7 +154,7 @@ const OtpScreen = () => {
           {/* Back to Login */}
           <TouchableOpacity
             style={styles.backToLoginContainer}
-            onPress={() => router.replace("/")}
+            onPress={() => router.replace("/login")}
           >
             <Text style={styles.backToLoginText}>← Back to Login</Text>
           </TouchableOpacity>
@@ -168,56 +199,32 @@ const styles = StyleSheet.create({
     paddingTop: 30,
   },
   inputGroup: {
-    marginBottom: 30,
+    marginBottom: 20,
   },
   inputLabel: {
     fontSize: 16,
     fontWeight: "500",
     color: "#333333",
-    marginBottom: 15,
-    textAlign: "center",
+    marginBottom: 8,
   },
-  otpContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-  },
-  otpInputContainer: {
-    width: 60,
-    height: 60,
-  },
-  otpInput: {
-    width: "100%",
-    height: "100%",
-    borderWidth: 2,
+  inputContainer: {
+    height: 50,
+    borderWidth: 1,
     borderColor: "#E0E0E0",
     borderRadius: 12,
-    fontSize: 24,
-    fontWeight: "600",
-    color: "#333333",
-    backgroundColor: "#FAFAFA",
-  },
-  otpInputFilled: {
-    borderColor: Constants.appThemeColor,
-    backgroundColor: "#ffffff",
-  },
-  resendSection: {
-    alignItems: "center",
-    marginBottom: 30,
-  },
-  resendText: {
-    fontSize: 14,
-    color: "#666666",
-    marginBottom: 10,
-  },
-  resendButton: {
-    paddingVertical: 8,
     paddingHorizontal: 15,
+    backgroundColor: "#FAFAFA",
+    flexDirection: "row",
+    alignItems: "center",
   },
-  resendButtonText: {
+  passwordTextInput: {
+    flex: 1,
     fontSize: 16,
-    color: Constants.appThemeColor,
-    fontWeight: "600",
+    color: "#333333",
+    height: "100%",
+  },
+  eyeIconButton: {
+    padding: 5,
   },
   verifyButton: {
     height: 52,
@@ -226,9 +233,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginTop: 10,
-  },
-  verifyButtonDisabled: {
-    backgroundColor: "#CCCCCC",
   },
   verifyButtonText: {
     color: "#ffffff",
@@ -246,22 +250,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
-  inputContainer: {
-    height: 50,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    backgroundColor: "#FAFAFA",
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  textInput: {
-    flex: 1,
-    fontSize: 16,
-    color: "#333333",
-    height: "100%",
-  },
 });
 
-export default OtpScreen;
+export default ChangePasswordScreen;

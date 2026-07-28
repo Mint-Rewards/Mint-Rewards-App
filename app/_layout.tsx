@@ -14,10 +14,20 @@ import * as SecureStore from "expo-secure-store";
 import { useEffect, useRef } from "react";
 import { configureGoogleSignIn } from '@/utils/googleAuth';
 import { logScreenView } from "@/utils/logger";
+import { EnvBanner } from "@/components/EnvBanner";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const { setUserData, getProfile, user } = useAppStore();
+  const pathname = usePathname();
+  const previousRoute = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (previousRoute.current === pathname) return;
+    logScreenView(pathname, previousRoute.current, user?._id);
+    previousRoute.current = pathname;
+  }, [pathname, user?._id]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -55,23 +65,30 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      <Stack initialRouteName="index">
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="register" options={{ headerShown: false }} />
-        <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-        <Stack.Screen name="redeem" options={{ headerShown: false }} />
-        <Stack.Screen name="editProfile" options={{ headerShown: false }} />
-        <Stack.Screen name="discounts" options={{ headerShown: false }} />
-        <Stack.Screen name="collections" options={{ headerShown: false }} />
-        <Stack.Screen name="otp-screen" options={{ headerShown: false }} />
-        <Stack.Screen name="change-password" options={{ headerShown: false }} />
-        <Stack.Screen name="notifications" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    // SafeAreaProvider added so EnvBanner can read the top inset from outside
+    // the navigator. The navigators' own SafeAreaProviderCompat detects this
+    // provider and defers to it.
+    <SafeAreaProvider>
+      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+        <EnvBanner />
+        <Stack initialRouteName="index">
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="login" options={{ headerShown: false }} />
+          <Stack.Screen name="register" options={{ headerShown: false }} />
+          <Stack.Screen name="verify-email" options={{ headerShown: false }} />
+          <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+          <Stack.Screen name="redeem" options={{ headerShown: false }} />
+          <Stack.Screen name="editProfile" options={{ headerShown: false }} />
+          <Stack.Screen name="discounts" options={{ headerShown: false }} />
+          <Stack.Screen name="collections" options={{ headerShown: false }} />
+          <Stack.Screen name="otp-screen" options={{ headerShown: false }} />
+          <Stack.Screen name="change-password" options={{ headerShown: false }} />
+          <Stack.Screen name="notifications" options={{ headerShown: false }} />
+          <Stack.Screen name="+not-found" />
+        </Stack>
+        <StatusBar style="auto" />
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

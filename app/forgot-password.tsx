@@ -1,8 +1,10 @@
 import { useAppStore } from "@/store/store";
+import { formatCountdown } from "@/hooks/useCountdown";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,17 +28,26 @@ const ForgotPasswordScreen = () => {
     } else {
       setLoading(true);
       try {
-        const result = await forgotPassword(email);
+        const trimmedEmail = email.trim();
+        const result = await forgotPassword(trimmedEmail);
 
         if (result.Status === "Success") {
+          router.push(`/otp-screen?email=${encodeURIComponent(trimmedEmail)}`);
+        } else if (result.code === "RATE_LIMITED") {
           Constants.showDialog(
-            "We have sent you an OTP. Please check your email!"
+            `Too many requests. Please try again in ${formatCountdown(result.retryAfterSeconds || 60)}.`,
           );
-          router.push(`/otp-screen?email=${email}`);
+        } else if (result.code === "ACCOUNT_NOT_FOUND") {
+          Alert.alert(
+            "No account found",
+            `We couldn't find an account for ${trimmedEmail}.`,
+            [
+              { text: "Try again", style: "cancel" },
+              { text: "Create account", onPress: () => router.replace("/register") },
+            ],
+          );
         } else {
-          Constants.showDialog(
-            result.ErrorMessage || "Failed to send reset link"
-          );
+          Constants.showDialog(result.ErrorMessage || "Something went wrong. Please try again.");
         }
       } catch {
         Constants.showDialog("An error occurred. Please try again.");
@@ -54,7 +65,7 @@ const ForgotPasswordScreen = () => {
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Forgot Password</Text>
           <Text style={styles.welcomeSubtitle}>
-            Please enter your email address to receive reset password OTP.
+            Enter your email address and we&apos;ll send you a code to reset your password.
           </Text>
         </View>
       </View>
@@ -79,11 +90,12 @@ const ForgotPasswordScreen = () => {
                 autoCorrect={false}
                 placeholder="Enter Your Email"
                 placeholderTextColor="#999999"
+                accessibilityLabel="Email address"
               />
             </View>
           </View>
 
-          {/* Login Button */}
+          {/* Submit Button */}
           <TouchableOpacity
             style={styles.loginButton}
             onPress={resetPasswordPressed}

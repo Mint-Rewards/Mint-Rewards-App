@@ -6,19 +6,50 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "development",
+      "environment": "development",
+      "env": {
+        "APP_VARIANT": "development"
+      }
     },
     "simulator": {
       "ios": {
         "simulator": true
       },
-      "developmentClient": true
+      "developmentClient": true,
+      "channel": "development",
+      "environment": "development",
+      "env": {
+        "APP_VARIANT": "development"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "environment": "preview",
+      "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_VARIANT": "development"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "distribution": "store",
+      "channel": "production",
+      "environment": "production",
+      "env": {
+        "APP_VARIANT": "production"
+      }
+    },
+    "testflight-preview": {
+      "extends": "production",
+      "env": {
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_API_URL": "https://mint-rewards-backend-git-dev-mint-rewards-projects.vercel.app"
+      }
     }
   },
   "submit": {

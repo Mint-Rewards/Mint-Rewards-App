@@ -1,6 +1,6 @@
 import { router } from "expo-router";
-import { useAppStore } from "@/store/store";
 import { API_BASE_URL } from "@/utils/constants";
+import { handleUnauthorized } from "@/utils/session";
 
 export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path}`;
@@ -24,8 +24,7 @@ export async function authenticatedFetch(
   console.log(`[authFetch] <- ${response.status} ${url}`);
 
   if (response.status === 401) {
-    console.warn(`[authFetch] 401 -> FORCING SIGN-OUT + redirect to /login. url=${url}`);
-    await useAppStore.getState().signOut();
+    await handleUnauthorized();
     router.replace("/login");
   }
 

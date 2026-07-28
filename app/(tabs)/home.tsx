@@ -115,7 +115,7 @@ const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps)
 });
 
 export default function HomeScreen() {
-  const { user, wasteToCo2, getBrandsWithCampaigns } = useAppStore();
+  const { user, wasteToCo2, getBrands } = useAppStore();
   const hasLocation = !!(user?.latitude && user?.longitude);
   const hasAddress = !!user?.address;
   const isProfileComplete = !!(
@@ -129,13 +129,13 @@ export default function HomeScreen() {
 
   useEffect(() => {
     wasteToCo2().then((value: number) => setCo2(value));
-    getBrandsWithCampaigns().then((result) => {
+    getBrands().then((result) => {
       if (Array.isArray(result)) setBrands(result);
     });
-  }, [wasteToCo2, getBrandsWithCampaigns]);
+  }, [wasteToCo2, getBrands]);
 
-  const pendingBrands = brands.filter((b) => (b as any).status === "PENDING");
-  const cardsContainerHeight = pendingBrands.length * VISIBLE + OVERLAP + 80;
+  // active-campaigns only ever returns APPROVED brands, so no filtering here.
+  const cardsContainerHeight = brands.length * VISIBLE + OVERLAP + 80;
 
   return (
     <View style={styles.container}>
@@ -229,7 +229,7 @@ export default function HomeScreen() {
           )}
 
           <View style={{ height: cardsContainerHeight, position: "relative" }}>
-            {pendingBrands.map((brand, index) => (
+            {brands.map((brand, index) => (
               <BrandCard
                 key={brand._id}
                 brand={brand as BrandTheme & { status?: string }}

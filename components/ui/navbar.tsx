@@ -25,9 +25,6 @@ const Navbar = ({ user }: { user: User | null }) => {
               </Text>
             </View>
             <View style={styles.headerIcons}>
-              <TouchableOpacity style={styles.iconButton}>
-                <Ionicons name="filter-outline" size={20} />
-              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.iconButton}
                 onPress={() => router.push("/notifications")}

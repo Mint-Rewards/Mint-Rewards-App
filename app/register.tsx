@@ -26,7 +26,7 @@ const RegisterScreen = () => {
   const [loading, setLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
 
-  const { signUp, signIn } = useAppStore();
+  const { signUp } = useAppStore();
 
   const handleAppleSignUp = async (credential: AppleAuthenticationCredential) => {
     setAppleLoading(true);
@@ -119,14 +119,12 @@ const RegisterScreen = () => {
       try {
         const result = await signUp(email.trim(), password, name.trim(), "", "", "", "");
         if (result.Status === "Success") {
-          // signUp doesn't issue a token — sign in immediately to get one
-          const loginResult = await signIn(email.trim(), password);
-          if (loginResult.Status === "Success") {
-            router.replace("/(tabs)/home");
-          } else {
-            Constants.showDialog("Account created! Please sign in.");
-            router.replace("/login");
-          }
+          router.push({ pathname: "/verify-email", params: { email: email.trim() } });
+        } else if (result.code === "RATE_LIMITED") {
+          const minutes = Math.ceil((result.retryAfterSeconds || 3600) / 60);
+          Constants.showDialog(
+            `Too many signup attempts. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+          );
         } else {
           Constants.showDialog(result.ErrorMessage || "Registration failed");
         }
