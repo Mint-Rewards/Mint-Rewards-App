@@ -1,4 +1,4 @@
-import Constants from "expo-constants";
+import { ENV } from "@/config/env";
 import * as Device from "expo-device";
 import { Platform } from "react-native";
 
@@ -6,20 +6,18 @@ import { Platform } from "react-native";
 // CONFIG
 // ============================================================================
 
-const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? "https://mint-rewards-backend.vercel.app";
-// const API_URL =
-//   process.env.EXPO_PUBLIC_API_URL ?? "http://192.168.18.82:3000";
+const API_URL = ENV.apiUrl;
 
-const APP_VERSION = Constants.expoConfig?.version ?? "unknown";
-const BUILD_NUMBER =
-  Constants.expoConfig?.ios?.buildNumber ??
-  Constants.expoConfig?.android?.versionCode?.toString() ??
-  "unknown";
+// Tags every event with the build variant so dev and production traffic are
+// distinguishable in Firebase and in the backend log store.
+const ENVIRONMENT = ENV.appVariant;
+
+const APP_VERSION = ENV.appVersion;
+const BUILD_NUMBER = ENV.buildNumber;
 
 // Stable device ID: Expo's installationId is unique per install.
 // On physical devices expo-device can also provide modelName etc.
-const DEVICE_ID = Constants.installationId ?? "unknown";
+const DEVICE_ID = ENV.installationId;
 
 // ============================================================================
 // TYPES
@@ -90,6 +88,8 @@ export interface LogPayload {
   platform: string;
   appVersion: string;
   buildNumber: string;
+  /** "development" | "production" — which build variant produced this event. */
+  environment: string;
 
   // Timing
   timestamp: string;
@@ -114,6 +114,7 @@ function buildBasePayload(
     platform: Platform.OS,
     appVersion: APP_VERSION,
     buildNumber: BUILD_NUMBER,
+    environment: ENVIRONMENT,
     timestamp: new Date().toISOString(),
   };
 }
@@ -192,12 +193,14 @@ async function sendToFirebase(
     await logEvent(analytics, "screen_view", {
       screen_name: payload.route,
       screen_class: payload.route,
+      environment: payload.environment,
     });
     return;
   }
 
   const params = sanitizeParams(payload.extra);
   if (payload.route) params.route = payload.route.slice(0, MAX_PARAM_LENGTH);
+  params.environment = payload.environment;
 
   await logEvent(analytics, eventName, params);
 }

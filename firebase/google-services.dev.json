@@ -1,0 +1,90 @@
+{
+  "project_info": {
+    "project_number": "78392867949",
+    "project_id": "mint-rewards-eb254",
+    "storage_bucket": "mint-rewards-eb254.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:78392867949:android:1646be32d2db4a305cd364",
+        "android_client_info": {
+          "package_name": "com.mintrewards.appp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "78392867949-q6jqbpov7eg98tjen8sgsiq08ji13d7g.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mintrewards.appp",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "78392867949-dsbi2ttj54l3gomb3n112i3itfjt382t.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4pKi-q2icvOZprH8yUPYRuwpS6Z431Mo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "78392867949-dsbi2ttj54l3gomb3n112i3itfjt382t.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "78392867949-3jjb4h3kmf5c4bnjun1qg3vitfgtvlqd.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.mintrewards.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:78392867949:android:a4f22c811bcf53585cd364",
+        "android_client_info": {
+          "package_name": "com.mintrewards.appp.dev"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "78392867949-dsbi2ttj54l3gomb3n112i3itfjt382t.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4pKi-q2icvOZprH8yUPYRuwpS6Z431Mo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "78392867949-dsbi2ttj54l3gomb3n112i3itfjt382t.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "78392867949-3jjb4h3kmf5c4bnjun1qg3vitfgtvlqd.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.mintrewards.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
