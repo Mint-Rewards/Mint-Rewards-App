@@ -1,4 +1,5 @@
 import { Alert, Dimensions } from "react-native";
+import { ENV } from "@/config/env";
 
 const { width, height } = Dimensions.get("window");
 
@@ -9,8 +10,10 @@ export const SizeConfig = {
   fontSize: width / 100,
 };
 
-// API Base URL
-export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? "https://mint-rewards-backend.vercel.app").replace(/\/$/, "");
+// API Base URL — resolved and validated in config/env.ts. Re-exported here so
+// the existing import sites keep working; new code should import from
+// "@/config/env" directly.
+export const API_BASE_URL = ENV.apiUrl;
 
 // App Constants
 export const Constants = {

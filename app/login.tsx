@@ -50,7 +50,6 @@ const LoginScreen = () => {
         const { idToken, user } = result.data;
         console.log('Google user:', JSON.stringify(user));
         console.log('idToken exists:', !!idToken);
-        console.log('Hitting URL:', `${API_BASE_URL}/api/auth/google`);
 
         const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
           method: 'POST',
