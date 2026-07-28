@@ -4,6 +4,7 @@ import AppleSignInButton from "@/components/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
+import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
   ActivityIndicator,
   Platform,
@@ -39,6 +40,10 @@ const RegisterScreen = () => {
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const { signUp } = useAppStore();
+  const posthog = usePostHog();
+  // Default to enabled (!== false) so buttons don't flicker/hide while flags are still loading.
+  const googleSignInEnabled = useFeatureFlag("google-signin-enabled") !== false;
+  const appleSignInEnabled = useFeatureFlag("apple-signin-enabled") !== false;
 
   const handleGoogleSignUp = async () => {
     setGoogleLoading(true);
@@ -89,6 +94,15 @@ const RegisterScreen = () => {
           await SecureStore.setItemAsync("userEmail", userData.email);
           await SecureStore.setItemAsync("userName", userData.userName);
           await SecureStore.setItemAsync("userPoints", String(userData.points || 0));
+
+          posthog.identify(userData._id, {
+            $set: { userName: userData.userName, mintId: userData.mintId },
+            $set_once: { first_signup_date: new Date().toISOString(), signup_method: 'google' },
+          });
+          posthog.capture('user_signed_up_google', {
+            mint_id: userData.mintId,
+            is_first_time_login: userData.firstTimeLogin,
+          });
 
           router.replace("/(tabs)/home");
         } else {
@@ -169,6 +183,15 @@ const RegisterScreen = () => {
         await SecureStore.setItemAsync('userName', userData.userName);
         await SecureStore.setItemAsync('userPoints', String(userData.points || 0));
 
+        posthog.identify(userData._id, {
+          $set: { userName: userData.userName, mintId: userData.mintId },
+          $set_once: { first_signup_date: new Date().toISOString(), signup_method: 'apple' },
+        });
+        posthog.capture('user_signed_up_apple', {
+          mint_id: userData.mintId,
+          is_first_time_login: userData.firstTimeLogin,
+        });
+
         router.replace('/(tabs)/home');
       } else {
         Constants.showDialog(data.ErrorMessage || 'Apple Sign-Up failed.');
@@ -195,6 +218,7 @@ const RegisterScreen = () => {
       try {
         const result = await signUp(email.trim(), password, name.trim(), "", "", "", "");
         if (result.Status === "Success") {
+          posthog.capture('user_signed_up', { method: 'email' });
           router.push({ pathname: "/verify-email", params: { email: email.trim() } });
         } else if (result.code === "RATE_LIMITED") {
           const minutes = Math.ceil((result.retryAfterSeconds || 3600) / 60);
@@ -296,42 +320,46 @@ const RegisterScreen = () => {
             )}
           </TouchableOpacity>
 
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
+          {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
+            <View style={styles.dividerContainer}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+          )}
 
           {/* Google Sign-Up Button */}
-          <TouchableOpacity
-            style={[
-              styles.googleButton,
-              (loading || googleLoading) && styles.googleButtonDisabled,
-            ]}
-            onPress={handleGoogleSignUp}
-            disabled={loading || appleLoading || googleLoading}
-            activeOpacity={0.9}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color="#1f1f1f" size="small" />
-            ) : (
-              <View style={styles.googleButtonContent}>
-                <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
-                <Text
-                  style={[
-                    styles.googleButtonText,
-                    loading && styles.googleButtonTextDisabled,
-                  ]}
-                  numberOfLines={1}
-                >
-                  Sign up with Google
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          {googleSignInEnabled && (
+            <TouchableOpacity
+              style={[
+                styles.googleButton,
+                (loading || googleLoading) && styles.googleButtonDisabled,
+              ]}
+              onPress={handleGoogleSignUp}
+              disabled={loading || appleLoading || googleLoading}
+              activeOpacity={0.9}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#1f1f1f" size="small" />
+              ) : (
+                <View style={styles.googleButtonContent}>
+                  <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
+                  <Text
+                    style={[
+                      styles.googleButtonText,
+                      loading && styles.googleButtonTextDisabled,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Sign up with Google
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
 
           {/* Apple Sign-Up is iOS-only */}
-          {Platform.OS === "ios" && (
+          {Platform.OS === "ios" && appleSignInEnabled && (
             <View style={styles.appleButtonContainer}>
               <AppleSignInButton
                 onCredential={handleAppleSignUp}

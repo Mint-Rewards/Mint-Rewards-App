@@ -4,6 +4,7 @@ import AppleSignInButton from "@/components/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
+import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
   ActivityIndicator,
   Platform,
@@ -41,6 +42,10 @@ const LoginScreen = () => {
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const { signIn } = useAppStore();
+  const posthog = usePostHog();
+  // Default to enabled (!== false) so buttons don't flicker/hide while flags are still loading.
+  const googleSignInEnabled = useFeatureFlag("google-signin-enabled") !== false;
+  const appleSignInEnabled = useFeatureFlag("apple-signin-enabled") !== false;
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
@@ -93,6 +98,12 @@ const LoginScreen = () => {
           await SecureStore.setItemAsync('userEmail', userData.email);
           await SecureStore.setItemAsync('userName', userData.userName);
           await SecureStore.setItemAsync('userPoints', String(userData.points || 0));
+
+          posthog.identify(userData._id, {
+            $set: { userName: userData.userName, mintId: userData.mintId, city: userData.city },
+            $set_once: { first_login_date: new Date().toISOString() },
+          });
+          posthog.capture('user_logged_in_google', { mint_id: userData.mintId });
 
           router.replace('/(tabs)/home');
         } else {
@@ -174,6 +185,12 @@ const LoginScreen = () => {
         await SecureStore.setItemAsync('userName', userData.userName);
         await SecureStore.setItemAsync('userPoints', String(userData.points || 0));
 
+        posthog.identify(userData._id, {
+          $set: { userName: userData.userName, mintId: userData.mintId, city: userData.city },
+          $set_once: { first_login_date: new Date().toISOString() },
+        });
+        posthog.capture('user_logged_in_apple', { mint_id: userData.mintId });
+
         router.replace('/(tabs)/home');
       } else {
         Constants.showDialog(data.ErrorMessage || 'Apple Sign-In failed.');
@@ -198,11 +215,24 @@ const LoginScreen = () => {
       try {
         const result = await signIn(email, password);
         if (result.Status === "Success") {
+          const storeUser = useAppStore.getState().user;
+          if (storeUser?._id) {
+            posthog.identify(storeUser._id, {
+              $set: {
+                userName: storeUser.userName ?? null,
+                mintId: storeUser.mintId ?? null,
+                city: storeUser.city ?? null,
+              },
+              $set_once: { first_login_date: new Date().toISOString() },
+            });
+          }
+          posthog.capture('user_logged_in', { method: 'email' });
           router.replace("/(tabs)/home");
         } else {
           Constants.showDialog(result.ErrorMessage || "Login failed");
         }
       } catch (error) {
+        posthog.captureException(error instanceof Error ? error : new Error(String(error)));
         Constants.showDialog("An error occurred. Please try again.");
       } finally {
         setLoading(false);
@@ -293,42 +323,46 @@ const LoginScreen = () => {
           </TouchableOpacity>
 
           {/* Divider */}
-          <View style={[styles.dividerContainer, isSmallScreen && styles.dividerContainerSmall]}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
+          {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
+            <View style={[styles.dividerContainer, isSmallScreen && styles.dividerContainerSmall]}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+          )}
 
           {/* Google Sign-In Button */}
-          <TouchableOpacity
-            style={[
-              styles.googleButton,
-              (loading || googleLoading) && styles.googleButtonDisabled,
-            ]}
-            onPress={handleGoogleSignIn}
-            disabled={loading || appleLoading || googleLoading}
-            activeOpacity={0.9}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color="#1f1f1f" size="small" />
-            ) : (
-              <View style={styles.googleButtonContent}>
-                <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
-                <Text
-                  style={[
-                    styles.googleButtonText,
-                    loading && styles.googleButtonTextDisabled,
-                  ]}
-                  numberOfLines={1}
-                >
-                  Sign in with Google
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          {googleSignInEnabled && (
+            <TouchableOpacity
+              style={[
+                styles.googleButton,
+                (loading || googleLoading) && styles.googleButtonDisabled,
+              ]}
+              onPress={handleGoogleSignIn}
+              disabled={loading || appleLoading || googleLoading}
+              activeOpacity={0.9}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#1f1f1f" size="small" />
+              ) : (
+                <View style={styles.googleButtonContent}>
+                  <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
+                  <Text
+                    style={[
+                      styles.googleButtonText,
+                      loading && styles.googleButtonTextDisabled,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Sign in with Google
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
 
           {/* Apple Sign-In is iOS-only */}
-          {Platform.OS === "ios" && (
+          {Platform.OS === "ios" && appleSignInEnabled && (
             <View style={styles.appleButtonContainer}>
               <AppleSignInButton
                 onCredential={handleAppleSignIn}
