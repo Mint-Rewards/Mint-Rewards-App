@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "78392867949-pi9thce7suvgqg08jlopekjn1hsqpddn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mintrewards.appp",
+            "certificate_hash": "35b4d4b06253f6e18922c5add1ee1cddfee432cb"
+          }
+        },
+        {
           "client_id": "78392867949-q6jqbpov7eg98tjen8sgsiq08ji13d7g.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
