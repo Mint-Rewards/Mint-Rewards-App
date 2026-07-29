@@ -115,7 +115,7 @@ const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps)
 });
 
 export default function HomeScreen() {
-  const { user, wasteToCo2, getBrands } = useAppStore();
+  const { user, wasteToCo2, getBrands, getCampaigns } = useAppStore();
   const hasLocation = !!(user?.latitude && user?.longitude);
   const hasAddress = !!user?.address;
   const isProfileComplete = !!(
@@ -125,6 +125,7 @@ export default function HomeScreen() {
   );
 
   const [brands, setBrands] = React.useState<BrandTheme[]>([]);
+  const [activeBrandIds, setActiveBrandIds] = React.useState<Set<string>>(new Set());
   const [co2, setCo2] = React.useState(0);
 
   useEffect(() => {
@@ -132,10 +133,27 @@ export default function HomeScreen() {
     getBrands().then((result) => {
       if (Array.isArray(result)) setBrands(result);
     });
-  }, [wasteToCo2, getBrands]);
+    getCampaigns().then((result) => {
+      if (Array.isArray(result)) {
+        setActiveBrandIds(new Set(result.map((campaign) => campaign.brand?._id).filter(Boolean)));
+      }
+    });
+  }, [wasteToCo2, getBrands, getCampaigns]);
 
-  // active-campaigns only ever returns APPROVED brands, so no filtering here.
-  const cardsContainerHeight = brands.length * VISIBLE + OVERLAP + 80;
+  // Brands with a currently active campaign sort to the top; the rest sink to
+  // the bottom. Array.sort is stable, so relative order within each group is
+  // preserved from the backend's original ordering.
+  const sortedBrands = React.useMemo(
+    () =>
+      [...brands].sort((a, b) => {
+        const aActive = activeBrandIds.has(a._id) ? 0 : 1;
+        const bActive = activeBrandIds.has(b._id) ? 0 : 1;
+        return aActive - bActive;
+      }),
+    [brands, activeBrandIds],
+  );
+
+  const cardsContainerHeight = sortedBrands.length * VISIBLE + OVERLAP + 80;
 
   return (
     <View style={styles.container}>
@@ -229,7 +247,7 @@ export default function HomeScreen() {
           )}
 
           <View style={{ height: cardsContainerHeight, position: "relative" }}>
-            {brands.map((brand, index) => (
+            {sortedBrands.map((brand, index) => (
               <BrandCard
                 key={brand._id}
                 brand={brand as BrandTheme & { status?: string }}
