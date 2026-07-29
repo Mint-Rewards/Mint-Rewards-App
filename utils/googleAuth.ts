@@ -16,9 +16,11 @@ try {
 export const configureGoogleSignIn = () => {
   if (!GoogleSignin) return;
   GoogleSignin.configure({
-    iosClientId: ENV.googleIosClientId,
-    webClientId: ENV.googleWebClientId,
-    offlineAccess: true,
+    // iosClientId: ENV.googleIosClientId,
+    // webClientId: ENV.googleWebClientId,
+    iosClientId: "78392867949-3jjb4h3kmf5c4bnjun1qg3vitfgtvlqd.apps.googleusercontent.com",
+    webClientId: "78392867949-dsbi2ttj54l3gomb3n112i3itfjt382t.apps.googleusercontent.com",
+    offlineAccess: false,
     scopes: ['profile', 'email'],
   });
 };
