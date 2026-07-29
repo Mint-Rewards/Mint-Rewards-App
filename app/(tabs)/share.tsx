@@ -1,6 +1,7 @@
 import Navbar from "@/components/ui/navbar";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useState } from "react";
 import {
@@ -166,15 +167,16 @@ const ShareScreen = () => {
       <Navbar user={user} />
 
       {/* Content */}
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.mainContainer}>
+      {/* <ScrollView style={styles.content} showsVerticalScrollIndicator={false}> */}
+      <View style={styles.content}>
+        <View style={styles.comingSoonContainer}>
           {/* Illustration */}
           <View style={styles.illustrationContainer}>
             <LinearGradient
               colors={["#f8f9fa", "#e9ecef"]}
               style={styles.illustrationBackground}
             >
-              <Ionicons name="share-social" size={60} color="#00528A" />
+              <Ionicons name="share-social" size={80} color="#00528A" />
             </LinearGradient>
 
             {/* Decorative elements */}
@@ -202,25 +204,27 @@ const ShareScreen = () => {
 
           {/* Title and Description */}
           <View style={styles.textContainer}>
-            <Text style={styles.title}>Invite Friends & Earn!</Text>
+            <Text style={styles.title}>Referrals Coming Soon!</Text>
             <Text style={styles.subtitle}>
+              We&apos;re building something amazing for you.
+            </Text>
+            <Text style={styles.description}>
               Share Mint Rewards with your friends and earn points for every
-              successful referral.
+              successful referral!
             </Text>
           </View>
 
           {/* Email Form */}
-          <View style={styles.formContainer}>
+
+          {/* <View style={styles.formContainer}>
             <Text style={styles.formTitle}>Enter Email Addresses</Text>
 
-            {/* Email Fields */}
             <View style={styles.emailFieldsContainer}>
               {emailFields.map((field, index) =>
                 renderEmailField(field, index),
               )}
             </View>
 
-            {/* Add Email Button */}
             <TouchableOpacity
               style={styles.addEmailButton}
               onPress={addEmailField}
@@ -230,7 +234,6 @@ const ShareScreen = () => {
               <Text style={styles.addEmailButtonText}>Add Another Email</Text>
             </TouchableOpacity>
 
-            {/* Global Error */}
             {error && (
               <View style={styles.errorContainer}>
                 <Ionicons name="alert-circle" size={20} color="#e53e3e" />
@@ -238,7 +241,6 @@ const ShareScreen = () => {
               </View>
             )}
 
-            {/* Send Button */}
             <TouchableOpacity
               style={[styles.sendButton, isLoading && styles.buttonDisabled]}
               onPress={handleSendReferrals}
@@ -266,9 +268,29 @@ const ShareScreen = () => {
                 )}
               </LinearGradient>
             </TouchableOpacity>
+          </View> */}
+
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => router.push("/(tabs)/home")}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={["#00528A", "#00528A"]}
+                style={styles.gradientButton}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Ionicons name="home" size={20} color="#ffffff" />
+                <Text style={styles.primaryButtonText}>Back to Home</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
+      </View>
+      {/* </ScrollView> */}
     </View>
   );
 };
@@ -340,19 +362,25 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
   },
   mainContainer: {
     padding: 20,
   },
-  illustrationContainer: {
+  comingSoonContainer: {
     alignItems: "center",
-    marginBottom: 30,
+    maxWidth: 320,
+  },
+  illustrationContainer: {
     position: "relative",
+    marginBottom: 40,
   },
   illustrationBackground: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
@@ -366,8 +394,8 @@ const styles = StyleSheet.create({
   },
   sparkleContainer: {
     position: "absolute",
-    width: 160,
-    height: 160,
+    width: 200,
+    height: 200,
     top: -20,
     left: -20,
   },
@@ -388,7 +416,7 @@ const styles = StyleSheet.create({
   },
   textContainer: {
     alignItems: "center",
-    marginBottom: 30,
+    marginBottom: 40,
   },
   title: {
     fontSize: 24,
@@ -401,7 +429,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#4a5568",
     textAlign: "center",
+    marginBottom: 8,
     lineHeight: 24,
+  },
+  description: {
+    fontSize: 14,
+    color: "#718096",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  actionButtons: {
+    width: "100%",
+    marginBottom: 40,
+  },
+  primaryButton: {
+    marginBottom: 12,
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  gradientButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    gap: 10,
+  },
+  primaryButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
   },
   formContainer: {
     marginBottom: 30,

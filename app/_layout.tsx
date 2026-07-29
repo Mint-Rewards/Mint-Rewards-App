@@ -5,6 +5,7 @@ import {
   Stack,
   ThemeProvider,
   usePathname,
+  useGlobalSearchParams,
 } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
@@ -16,18 +17,25 @@ import { configureGoogleSignIn } from '@/utils/googleAuth';
 import { logScreenView } from "@/utils/logger";
 import { EnvBanner } from "@/components/EnvBanner";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { PostHogProvider } from "posthog-react-native";
+import { posthog } from "@/utils/posthog";
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const { setUserData, getProfile, user } = useAppStore();
   const pathname = usePathname();
+  const params = useGlobalSearchParams();
   const previousRoute = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (previousRoute.current === pathname) return;
     logScreenView(pathname, previousRoute.current, user?._id);
+    posthog.screen(pathname, {
+      previous_screen: previousRoute.current ?? null,
+      ...params,
+    });
     previousRoute.current = pathname;
-  }, [pathname, user?._id]);
+  }, [pathname, params, user?._id]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -69,9 +77,18 @@ export default function RootLayout() {
     // the navigator. The navigators' own SafeAreaProviderCompat detects this
     // provider and defers to it.
     <SafeAreaProvider>
-      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-        <EnvBanner />
-        <Stack initialRouteName="index">
+      <PostHogProvider
+        client={posthog}
+        autocapture={{
+          captureScreens: false,
+          captureTouches: true,
+          propsToCapture: ['testID'],
+          maxElementsCaptured: 20,
+        }}
+      >
+        <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+          <EnvBanner />
+          <Stack initialRouteName="index">
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="login" options={{ headerShown: false }} />
@@ -86,9 +103,10 @@ export default function RootLayout() {
           <Stack.Screen name="change-password" options={{ headerShown: false }} />
           <Stack.Screen name="notifications" options={{ headerShown: false }} />
           <Stack.Screen name="+not-found" />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
+          </Stack>
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </PostHogProvider>
     </SafeAreaProvider>
   );
 }
