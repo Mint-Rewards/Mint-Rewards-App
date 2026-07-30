@@ -4,6 +4,7 @@
 export const DEMO_COLLECTIONS_EMAILS: string[] = [
   // PLACEHOLDER — fill in with the real accounts before shipping.
   "hamiyim432@kierko.com",
+  "ifrahchishti2004@gmail.com"
   // "REPLACE_WITH_EMAIL_2",
 ];
 
