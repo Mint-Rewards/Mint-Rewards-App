@@ -1,4 +1,11 @@
 import Navbar from "@/components/ui/navbar";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
+import { isDemoCollectionsUser } from "@/constants/demoAccounts";
+import {
+  PICKUPS_COMPLETED_COUNT,
+  TOTAL_POINTS_EARNED,
+  TOTAL_WASTE_KG,
+} from "@/constants/mockCollectionsData";
 import { useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -15,6 +22,12 @@ import {
 
 const ProfileScreen = () => {
   const { signOut, deleteAccount, user, campaigns } = useAppStore();
+  // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
+  // absolutely positioned, so the scroll has to clear it by its full height.
+  const tabBarOverflow = useBottomTabOverflow();
+  // Demo-only: allowlisted accounts get the mock pickup history behind these
+  // rows. Everyone else keeps today's behavior (plain rows → empty state).
+  const showDemoCollections = isDemoCollectionsUser(user?.email);
 
   const handleLogout = () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -71,7 +84,9 @@ const ProfileScreen = () => {
       <View style={styles.profileSection}>
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{user?.points || 0}</Text>
+            <Text style={styles.statNumber}>
+              {showDemoCollections ? TOTAL_POINTS_EARNED : user?.points || 0}
+            </Text>
             <Text style={styles.statLabel}>Points</Text>
           </View>
           <View style={styles.statDivider} />
@@ -137,29 +152,47 @@ const ProfileScreen = () => {
           <View style={styles.menuContainer}>
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => router.push("/collections")}
+              onPress={() =>
+                router.push(
+                  showDemoCollections ? "/collections?section=past" : "/collections",
+                )
+              }
               activeOpacity={0.7}
             >
               <View style={styles.menuContent}>
                 <Text style={styles.menuTitle}>Waste Collected</Text>
               </View>
 
+              {showDemoCollections && (
+                <Text style={styles.menuValue}>{TOTAL_WASTE_KG}kg</Text>
+              )}
               <Ionicons name="chevron-forward" size={20} color="#999999" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => router.push("/collections")}
+              onPress={() =>
+                router.push(
+                  showDemoCollections ? "/collections?section=past" : "/collections",
+                )
+              }
               activeOpacity={0.7}
             >
               <View style={styles.menuContent}>
                 <Text style={styles.menuTitle}>Pickups Completed</Text>
               </View>
 
+              {showDemoCollections && (
+                <Text style={styles.menuValue}>{PICKUPS_COMPLETED_COUNT}</Text>
+              )}
               <Ionicons name="chevron-forward" size={20} color="#999999" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => router.push("/collections")}
+              onPress={() =>
+                router.push(
+                  showDemoCollections ? "/collections?section=rewards" : "/collections",
+                )
+              }
               activeOpacity={0.7}
             >
               <View style={styles.menuContent}>
@@ -195,7 +228,7 @@ const ProfileScreen = () => {
         </View>
 
         {/* Bottom spacing for tab bar */}
-        <View style={styles.bottomSpacing} />
+        <View style={[styles.bottomSpacing, { height: 50 + tabBarOverflow }]} />
       </ScrollView>
     </View>
   );
@@ -301,6 +334,12 @@ const styles = StyleSheet.create({
   menuSubtitle: {
     fontSize: 14,
     color: "#666666",
+  },
+  menuValue: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#00528A",
+    marginRight: 8,
   },
   actionButtons: {
     paddingHorizontal: 20,

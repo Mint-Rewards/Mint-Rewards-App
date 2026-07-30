@@ -1,5 +1,16 @@
 import Navbar from "@/components/ui/navbar";
-import { BrandTheme, useAppStore } from "@/store/store";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
+import { isDemoCollectionsUser } from "@/constants/demoAccounts";
+import {
+  TOTAL_POINTS_EARNED,
+  TOTAL_WASTE_KG,
+  UPCOMING_COLLECTIONS_COUNT,
+  earliestCollectionSlot,
+  formatCollectionDate,
+  upcomingCollectionsForUser,
+  upcomingStatusLabel,
+} from "@/constants/mockCollectionsData";
+import { BrandTheme, co2FromWasteKg, useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import { logEvent } from "@/utils/logger";
 import { Constants } from "../../utils/constants";
@@ -114,8 +125,42 @@ const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps)
   );
 });
 
+/**
+ * A stat card's figure. The unit is a separate, smaller Text on the same
+ * baseline so "41.7" and "kg" can never be split across two lines — the number
+ * shrinks to fit its card instead of wrapping.
+ */
+const StatValue = ({
+  value,
+  unit,
+}: {
+  value: number | string | undefined;
+  unit?: string;
+}) => (
+  <View style={styles.statValueRow}>
+    <Text
+      style={styles.statValue}
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.6}
+    >
+      {value}
+    </Text>
+    {!!unit && <Text style={styles.statUnit}>{unit}</Text>}
+  </View>
+);
+
 export default function HomeScreen() {
-  const { user, wasteToCo2, getBrands } = useAppStore();
+  const {
+    user,
+    wasteToCo2,
+    getBrands,
+    scheduledCollection,
+    loadScheduledCollection,
+  } = useAppStore();
+  // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
+  // absolutely positioned, so the scroll has to clear it by its full height.
+  const tabBarOverflow = useBottomTabOverflow();
   const hasLocation = !!(user?.latitude && user?.longitude);
   const hasAddress = !!user?.address;
   const isProfileComplete = !!(
@@ -123,6 +168,35 @@ export default function HomeScreen() {
     user?.province?.trim() &&
     user?.city?.trim()
   );
+
+  // Demo-only: allowlisted accounts see the mock upcoming-collections teaser
+  // instead of the static "Warming Up!" card. Everyone else is unaffected.
+  // Placed in this user's own town/city, same helper the collections screen uses.
+  const upcomingCollections = React.useMemo(
+    () => upcomingCollectionsForUser(user),
+    [user],
+  );
+  const isDemoUser = isDemoCollectionsUser(user?.email);
+  const showDemoCollections = isDemoUser && upcomingCollections.length > 0;
+  const nextCollection = showDemoCollections ? upcomingCollections[0] : undefined;
+  // Collections offer several slots; the teaser shows the soonest one.
+  const nextSlot = nextCollection ? earliestCollectionSlot(nextCollection) : undefined;
+  // Once the user has scheduled a pickup on /collections, their booking takes
+  // over this card — it is the more useful thing to show than a generic teaser.
+  // The store holds only the ids, so resolve them against the same rows the
+  // collections screen renders.
+  const booked = React.useMemo(() => {
+    if (!showDemoCollections || !scheduledCollection) return undefined;
+    const collection = upcomingCollections.find(
+      (item) => item.id === scheduledCollection.collectionId,
+    );
+    const slot = collection?.slots.find(
+      (item) => item.id === scheduledCollection.slotId,
+    );
+    return collection && slot
+      ? { collection, slot, status: scheduledCollection.status }
+      : undefined;
+  }, [showDemoCollections, scheduledCollection, upcomingCollections]);
 
   const [brands, setBrands] = React.useState<BrandTheme[]>([]);
   const [co2, setCo2] = React.useState(0);
@@ -133,6 +207,24 @@ export default function HomeScreen() {
       if (Array.isArray(result)) setBrands(result);
     });
   }, [wasteToCo2, getBrands]);
+
+  // The booking outlives the session, so pull it back from SecureStore once the
+  // user is known — keyed on the id, since the stored schedule is per-user.
+  useEffect(() => {
+    loadScheduledCollection();
+  }, [loadScheduledCollection, user?._id]);
+
+  // Demo accounts have no real pickups on the backend, so user.totalWasteCollected
+  // is empty for them and these two cards would read 0 while /collections and
+  // the profile screen show the mock totals. Read the same figure they do, and
+  // derive CO₂ from it with the store's factor rather than a second copy.
+  const wasteCollectedKg = isDemoUser
+    ? TOTAL_WASTE_KG
+    : user?.totalWasteCollected || 0;
+  const co2Saved = isDemoUser ? co2FromWasteKg(TOTAL_WASTE_KG) : co2;
+  // 100 points per completed pickup for demo accounts, whose points balance on
+  // the backend does not reflect the mock pickup history.
+  const points = isDemoUser ? TOTAL_POINTS_EARNED : user?.points;
 
   // active-campaigns only ever returns APPROVED brands, so no filtering here.
   const cardsContainerHeight = brands.length * VISIBLE + OVERLAP + 80;
@@ -145,21 +237,24 @@ export default function HomeScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 40 + tabBarOverflow },
+        ]}
       >
         {/* Stats */}
         <View style={styles.statsContainer}>
           <LinearGradient colors={["#00528A", "#97DBAD"]} style={styles.statCard}>
             <Text style={styles.statLabel}>Mint Rewards</Text>
-            <Text style={styles.statValue}>{user?.points}</Text>
+            <StatValue value={points} />
           </LinearGradient>
           <LinearGradient colors={["#73C1A6", "#AFDEF2"]} style={styles.statCard}>
             <Text style={styles.statLabel}>Recycled waste collected</Text>
-            <Text style={styles.statValue}>{user?.totalWasteCollected || 0}kg</Text>
+            <StatValue value={wasteCollectedKg} unit="kg" />
           </LinearGradient>
           <LinearGradient colors={["#82A599", "#C6F2C0"]} style={styles.statCard}>
             <Text style={styles.statLabel}>CO₂ Saved</Text>
-            <Text style={styles.statValue}>{co2 || 0}%</Text>
+            <StatValue value={co2Saved || 0} unit="%" />
           </LinearGradient>
         </View>
 
@@ -168,7 +263,15 @@ export default function HomeScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Upcoming Collections</Text>
             {hasLocation && (
-              <TouchableOpacity onPress={() => router.push("/collections")}>
+              <TouchableOpacity
+                onPress={() =>
+                  router.push(
+                    showDemoCollections
+                      ? "/collections?section=upcoming"
+                      : "/collections",
+                  )
+                }
+              >
                 <Text style={styles.seeAllText}>See All</Text>
               </TouchableOpacity>
             )}
@@ -177,10 +280,34 @@ export default function HomeScreen() {
           {(hasLocation && hasAddress) ? (
             <View style={styles.collectionCard}>
               <View style={styles.collectionInfo}>
-                <Text style={styles.collectionTitle}>
-                  Warming Up!
-                </Text>
-                <Text style={styles.collectionDate}>We'll notify you once your area is unlocked.</Text>
+                {booked ? (
+                  <>
+                    <Text style={styles.collectionTitle}>
+                      {upcomingStatusLabel(booked.status)} for{" "}
+                      {formatCollectionDate(booked.slot.date)}
+                    </Text>
+                    <Text style={styles.collectionDate}>
+                      {booked.collection.code} · {booked.slot.time}
+                    </Text>
+                  </>
+                ) : showDemoCollections && nextCollection && nextSlot ? (
+                  <>
+                    <Text style={styles.collectionTitle}>
+                      Next on {formatCollectionDate(nextSlot.date)}
+                      {nextCollection.area ? ` · ${nextCollection.area}` : ""}
+                    </Text>
+                    <Text style={styles.collectionDate}>
+                      {UPCOMING_COLLECTIONS_COUNT} collections near you
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.collectionTitle}>
+                      Warming Up!
+                    </Text>
+                    <Text style={styles.collectionDate}>We'll notify you once your area is unlocked.</Text>
+                  </>
+                )}
               </View>
               <Image
                 source={require("../../assets/images/upcoming-collections.png")}
@@ -271,14 +398,27 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    padding: 15,
+    padding: 14,
     borderRadius: 12,
     marginHorizontal: 4,
     alignItems: "flex-start",
     justifyContent: "space-between",
   },
   statLabel: { color: "#ffffff", fontSize: 12, marginBottom: 8, lineHeight: 16 },
-  statValue: { color: "#ffffff", fontSize: 28, fontWeight: "900" },
+  // Number and unit share a baseline; the number takes the slack so it can
+  // shrink rather than push the unit onto its own line.
+  statValueRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    alignSelf: "stretch",
+  },
+  statValue: { color: "#ffffff", fontSize: 26, fontWeight: "900", flexShrink: 1 },
+  statUnit: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+    marginLeft: 2,
+  },
   section: { paddingHorizontal: 20, paddingTop: 20 },
   sectionHeader: {
     flexDirection: "row",

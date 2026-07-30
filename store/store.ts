@@ -283,10 +283,78 @@ interface CampaignSlice {
     | Promise<Campaign[]>;
 }
 
+/**
+ * CO₂ saved for a given weight of recycled waste, rounded to 2dp. Exported so
+ * screens showing a waste figure that did NOT come from `user.totalWasteCollected`
+ * (the demo mock totals on home) derive CO₂ with the same factor as
+ * `wasteToCo2` instead of keeping their own copy of 0.21.
+ */
+export function co2FromWasteKg(wasteKg: number): number {
+  return Math.round((wasteKg * 0.21 + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * The one upcoming collection the user has scheduled. Demo-only (see
+ * constants/mockCollectionsData.ts). Kept in the store rather than a screen's
+ * useState so it survives navigation between /collections and the home tab, and
+ * persisted to SecureStore so it survives logout and app restarts.
+ */
+export interface ScheduledCollection {
+  collectionId: string;
+  slotId: string;
+  /**
+   * Always "pending" internally — the UI renders it as "Scheduled"
+   * (see upcomingStatusLabel in constants/mockCollectionsData.ts).
+   */
+  status: "pending";
+}
+
+interface DemoCollectionsSlice {
+  scheduledCollection: ScheduledCollection | null;
+  /** No-op when one is already scheduled: a user gets exactly one pickup. */
+  scheduleCollection: (collectionId: string, slotId: string) => Promise<void>;
+  /**
+   * Rehydrates `scheduledCollection` for the signed-in user. Safe to call on
+   * every mount; screens that show the schedule call it in an effect.
+   */
+  loadScheduledCollection: () => Promise<void>;
+}
+
+/**
+ * Per-user SecureStore key for the demo schedule.
+ *
+ * Deliberately NOT deleted in signOut (the owner asked for the schedule to
+ * survive logout), which is the same exemption `appleFullName_<id>` already
+ * has. Scoping the key to the user id is what makes that safe: a second
+ * account signing in on the same device reads its own key, not the previous
+ * user's booking. SecureStore keys allow only [A-Za-z0-9._-], so the fallback
+ * to email is sanitised.
+ */
+function scheduledCollectionKey(user: User | null): string {
+  const identity = user?._id || user?.email || "anonymous";
+  return `demoScheduledCollection_${identity.replace(/[^A-Za-z0-9._-]/g, "_")}`;
+}
+
+/** Narrows an unknown parsed JSON blob back to a ScheduledCollection. */
+function parseScheduledCollection(raw: string): ScheduledCollection | null {
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.collectionId === "string" && typeof parsed?.slotId === "string"
+      ? { collectionId: parsed.collectionId, slotId: parsed.slotId, status: "pending" }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 // ============================================================================
 // STORE
 // ============================================================================
-type AppStore = UserSlice & ProfileSlice & CampaignSlice & DiscountSlice;
+type AppStore = UserSlice &
+  ProfileSlice &
+  CampaignSlice &
+  DiscountSlice &
+  DemoCollectionsSlice;
 
 export const useAppStore = create<AppStore>((set, get) => ({
   // ========================================================================
@@ -548,7 +616,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     await logAuthEvent("LOGOUT", get().user?._id ?? "", {
       email: get().user?.email,
     });
-    set({ user: null, token: null, error: null });
+    // scheduledCollection clears from memory so the next account never sees the
+    // previous user's booking, but its SecureStore key is deliberately left in
+    // place (see scheduledCollectionKey): the schedule must survive logout, and
+    // loadScheduledCollection rehydrates it when its owner signs back in.
+    set({ user: null, token: null, error: null, scheduledCollection: null });
   },
 
   resendVerificationOtp: async (email) => {
@@ -730,8 +802,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   wasteToCo2: async () => {
     const user = get().user;
     if (user?.totalWasteCollected) {
-      const wasteKg = parseFloat(user.totalWasteCollected);
-      return Math.round((wasteKg * 0.21 + Number.EPSILON) * 100) / 100;
+      return co2FromWasteKg(parseFloat(user.totalWasteCollected));
     }
     return 0;
   },
@@ -915,7 +986,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         headers.Authorization = token;
       }
 
-      const response = await authenticatedFetch(`${API_URL}/api/brands`, {
+      // /api/brands is admin-only (requireAdminAuth) and rejects regular user
+      // tokens. active-campaigns already returns both brands and campaigns in
+      // one response — merge them client-side by brand id instead.
+      const response = await authenticatedFetch(`${API_URL}/api/users/active-campaigns`, {
         method: "GET",
         headers,
       });
@@ -923,15 +997,35 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const data = await response.json();
 
       if (response.ok) {
-        // Set user data in store
+        const activeBrands = data.activeBrands || [];
+        // Unlike the admin /api/brands route, active-campaigns does not
+        // populate `brand` — it's a raw ObjectId string here.
+        const activeCampaigns = data.activeCampaigns || [];
+
+        const campaignsByBrandId = new Map<string, any[]>();
+        for (const campaign of activeCampaigns) {
+          const brandId = String(campaign.brand);
+          if (!campaignsByBrandId.has(brandId)) campaignsByBrandId.set(brandId, []);
+          campaignsByBrandId.get(brandId)!.push(campaign);
+        }
+
+        const brandsWithCampaigns = activeBrands.map((brand: BrandTheme) => ({
+          ...brand,
+          campaigns: (campaignsByBrandId.get(String(brand._id)) || []).map((campaign) => ({
+            ...campaign,
+            // BrandTheme is a subset of the full admin-panel Brand type;
+            // it's all this screen ever renders from campaign.brand.
+            brand,
+          })),
+        }));
 
         set({
-          brandsWithCampaigns: data.brands || [],
+          brandsWithCampaigns,
           isBrandsWithCampaignsLoading: false,
           brandsWithCampaignsError: null,
         });
 
-        return data.brands;
+        return brandsWithCampaigns;
       } else {
         const errorMessage = data.message || "Error fetching campaigns.";
         set({
@@ -1080,6 +1174,39 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     } catch {
       // best-effort — local state remains unchanged until next refresh
+    }
+  },
+
+  // ========================================================================
+  // DEMO COLLECTIONS SLICE
+  // ========================================================================
+  scheduledCollection: null,
+
+  scheduleCollection: async (collectionId, slotId) => {
+    // One pickup per user, and the first booking wins — checked here as well as
+    // hidden in the UI.
+    if (get().scheduledCollection) return;
+    const entry: ScheduledCollection = { collectionId, slotId, status: "pending" };
+    set({ scheduledCollection: entry });
+    try {
+      await SecureStore.setItemAsync(
+        scheduledCollectionKey(get().user),
+        JSON.stringify(entry),
+      );
+    } catch (error) {
+      // The in-memory booking still stands; it just won't survive a restart.
+      await logError("scheduleCollection persist failed", { error });
+    }
+  },
+
+  loadScheduledCollection: async () => {
+    if (get().scheduledCollection) return;
+    try {
+      const raw = await SecureStore.getItemAsync(scheduledCollectionKey(get().user));
+      const entry = raw ? parseScheduledCollection(raw) : null;
+      if (entry) set({ scheduledCollection: entry });
+    } catch (error) {
+      await logError("loadScheduledCollection failed", { error });
     }
   },
 }));

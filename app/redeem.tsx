@@ -39,6 +39,10 @@ const RedeemScreen = () => {
   }>({ visible: false, campaign: null });
 
   useEffect(() => {
+    getBrandsWithCampaigns();
+  }, [getBrandsWithCampaigns]);
+
+  useEffect(() => {
     if (!brandsWithCampaigns.length) return; // still loading
     const found = brandsWithCampaigns.find((d) => d._id === brandId);
     if (found) {
