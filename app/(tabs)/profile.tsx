@@ -1,4 +1,5 @@
 import Navbar from "@/components/ui/navbar";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -15,6 +16,9 @@ import {
 
 const ProfileScreen = () => {
   const { signOut, deleteAccount, user, campaigns } = useAppStore();
+  // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
+  // absolutely positioned, so the scroll has to clear it by its full height.
+  const tabBarOverflow = useBottomTabOverflow();
 
   const handleLogout = () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -195,7 +199,7 @@ const ProfileScreen = () => {
         </View>
 
         {/* Bottom spacing for tab bar */}
-        <View style={styles.bottomSpacing} />
+        <View style={[styles.bottomSpacing, { height: 50 + tabBarOverflow }]} />
       </ScrollView>
     </View>
   );
