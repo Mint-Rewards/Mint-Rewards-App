@@ -1,4 +1,5 @@
 import Navbar from "@/components/ui/navbar";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -23,6 +24,9 @@ interface EmailField {
 
 const ShareScreen = () => {
   const { sendRefferal, isLoading, error, user } = useAppStore();
+  // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
+  // absolutely positioned, so the scroll has to clear it by its full height.
+  const tabBarOverflow = useBottomTabOverflow();
 
   const [emailFields, setEmailFields] = useState<EmailField[]>([
     { id: "1", email: "" },
@@ -167,8 +171,17 @@ const ShareScreen = () => {
       <Navbar user={user} />
 
       {/* Content */}
-      {/* <ScrollView style={styles.content} showsVerticalScrollIndicator={false}> */}
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          paddingHorizontal: 20,
+          paddingBottom: tabBarOverflow,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.comingSoonContainer}>
           {/* Illustration */}
           <View style={styles.illustrationContainer}>
@@ -289,8 +302,7 @@ const ShareScreen = () => {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
-      {/* </ScrollView> */}
+      </ScrollView>
     </View>
   );
 };
@@ -360,14 +372,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  content: {
+  scrollView: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
-  },
-  mainContainer: {
-    padding: 20,
   },
   comingSoonContainer: {
     alignItems: "center",

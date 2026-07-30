@@ -1,4 +1,5 @@
 import Navbar from "@/components/ui/navbar";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
 import {
   TOTAL_POINTS_EARNED,
@@ -150,8 +151,16 @@ const StatValue = ({
 );
 
 export default function HomeScreen() {
-  const { user, wasteToCo2, getBrands, scheduledCollection, loadScheduledCollection } =
-    useAppStore();
+  const {
+    user,
+    wasteToCo2,
+    getBrands,
+    scheduledCollection,
+    loadScheduledCollection,
+  } = useAppStore();
+  // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
+  // absolutely positioned, so the scroll has to clear it by its full height.
+  const tabBarOverflow = useBottomTabOverflow();
   const hasLocation = !!(user?.latitude && user?.longitude);
   const hasAddress = !!user?.address;
   const isProfileComplete = !!(
@@ -228,7 +237,10 @@ export default function HomeScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 40 + tabBarOverflow },
+        ]}
       >
         {/* Stats */}
         <View style={styles.statsContainer}>

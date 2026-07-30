@@ -1,4 +1,5 @@
 import Navbar from "@/components/ui/navbar";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
 import {
   PICKUPS_COMPLETED_COUNT,
@@ -21,6 +22,9 @@ import {
 
 const ProfileScreen = () => {
   const { signOut, deleteAccount, user, campaigns } = useAppStore();
+  // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
+  // absolutely positioned, so the scroll has to clear it by its full height.
+  const tabBarOverflow = useBottomTabOverflow();
   // Demo-only: allowlisted accounts get the mock pickup history behind these
   // rows. Everyone else keeps today's behavior (plain rows → empty state).
   const showDemoCollections = isDemoCollectionsUser(user?.email);
@@ -224,7 +228,7 @@ const ProfileScreen = () => {
         </View>
 
         {/* Bottom spacing for tab bar */}
-        <View style={styles.bottomSpacing} />
+        <View style={[styles.bottomSpacing, { height: 50 + tabBarOverflow }]} />
       </ScrollView>
     </View>
   );
