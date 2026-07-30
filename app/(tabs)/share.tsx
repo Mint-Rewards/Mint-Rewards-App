@@ -172,11 +172,12 @@ const ShareScreen = () => {
 
       {/* Content */}
       <ScrollView
-        style={styles.content}
+        style={styles.scrollView}
         contentContainerStyle={{
           flexGrow: 1,
           justifyContent: "center",
           alignItems: "center",
+          paddingHorizontal: 20,
           paddingBottom: tabBarOverflow,
         }}
         showsVerticalScrollIndicator={false}
@@ -371,14 +372,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  content: {
+  scrollView: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
-  },
-  mainContainer: {
-    padding: 20,
   },
   comingSoonContainer: {
     alignItems: "center",
