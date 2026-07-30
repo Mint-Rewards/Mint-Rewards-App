@@ -129,6 +129,8 @@ const iosUrlScheme = `com.googleusercontent.apps.${env.googleIosClientId.replace
 // `expo config` and Expo Go still resolve — a dev *build* with the prod files
 // will fail Firebase init, which is the loud failure we want.
 
+const easProjectId = "7a49df03-9e0f-4272-acfc-5bcb7fd8e30a";
+
 function firebaseConfigFile(devFile, prodFile) {
   if (!isDev) return prodFile;
   const absolute = path.join(__dirname, devFile);
@@ -272,10 +274,16 @@ module.exports = () => ({
       typedRoutes: true,
       reactCompiler: true,
     },
+    updates: {
+      url: `https://u.expo.dev/${easProjectId}`,
+      enabled: true,
+      checkAutomatically: "ON_LOAD",
+      fallbackToCacheTimeout: 0,
+    },
     extra: {
       router: {},
       eas: {
-        projectId: "7a49df03-9e0f-4272-acfc-5bcb7fd8e30a",
+        projectId: easProjectId,
       },
       // Read exclusively by config/env.ts.
       appVariant,
