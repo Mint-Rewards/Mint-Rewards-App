@@ -14,27 +14,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "78392867949-pi9thce7suvgqg08jlopekjn1hsqpddn.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.mintrewards.appp",
-            "certificate_hash": "35b4d4b06253f6e18922c5add1ee1cddfee432cb"
-          }
-        },
-        {
           "client_id": "78392867949-q6jqbpov7eg98tjen8sgsiq08ji13d7g.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.mintrewards.appp",
             "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
-          }
-        },
-        {
-          "client_id": "78392867949-qtjftvhtmatedu4432a7l12kbui1kp0c.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.mintrewards.appp",
-            "certificate_hash": "4362b8b70bd37331b1f3192e64a30deb4f351ab6"
           }
         },
         {
@@ -73,14 +57,6 @@
         }
       },
       "oauth_client": [
-        {
-          "client_id": "78392867949-s4hpr03n9l9avtu3rtlqk7gn59vrl7pa.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.mintrewards.appp.dev",
-            "certificate_hash": "bd4ded9974696afe3ec2ce8b893c813d7a517b3b"
-          }
-        },
         {
           "client_id": "78392867949-dsbi2ttj54l3gomb3n112i3itfjt382t.apps.googleusercontent.com",
           "client_type": 3

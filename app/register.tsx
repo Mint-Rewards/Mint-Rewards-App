@@ -4,8 +4,10 @@ import AppleSignInButton from "@/components/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
+import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
   ActivityIndicator,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -34,9 +36,14 @@ const RegisterScreen = () => {
   const [password, setPassword] = useState("");
   const [hidePassword, setHidePassword] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const { signUp } = useAppStore();
+  const posthog = usePostHog();
+  // Default to enabled (!== false) so buttons don't flicker/hide while flags are still loading.
+  const googleSignInEnabled = useFeatureFlag("google-signin-enabled") !== false;
+  const appleSignInEnabled = useFeatureFlag("apple-signin-enabled") !== false;
 
   const handleGoogleSignUp = async () => {
     setGoogleLoading(true);
@@ -88,6 +95,15 @@ const RegisterScreen = () => {
           await SecureStore.setItemAsync("userName", userData.userName);
           await SecureStore.setItemAsync("userPoints", String(userData.points || 0));
 
+          posthog.identify(userData._id, {
+            $set: { userName: userData.userName, mintId: userData.mintId },
+            $set_once: { first_signup_date: new Date().toISOString(), signup_method: 'google' },
+          });
+          posthog.capture('user_signed_up_google', {
+            mint_id: userData.mintId,
+            is_first_time_login: userData.firstTimeLogin,
+          });
+
           router.replace("/(tabs)/home");
         } else {
           Constants.showDialog(data.ErrorMessage || "Google sign-up failed.");
@@ -103,7 +119,7 @@ const RegisterScreen = () => {
   };
 
   const handleAppleSignUp = async (credential: AppleAuthenticationCredential) => {
-    setGoogleLoading(true);
+    setAppleLoading(true);
     try {
       // Apple only sends fullName on the very first sign-in; cache it for future logins.
       const cacheKey = `appleFullName_${credential.user}`;
@@ -167,6 +183,15 @@ const RegisterScreen = () => {
         await SecureStore.setItemAsync('userName', userData.userName);
         await SecureStore.setItemAsync('userPoints', String(userData.points || 0));
 
+        posthog.identify(userData._id, {
+          $set: { userName: userData.userName, mintId: userData.mintId },
+          $set_once: { first_signup_date: new Date().toISOString(), signup_method: 'apple' },
+        });
+        posthog.capture('user_signed_up_apple', {
+          mint_id: userData.mintId,
+          is_first_time_login: userData.firstTimeLogin,
+        });
+
         router.replace('/(tabs)/home');
       } else {
         Constants.showDialog(data.ErrorMessage || 'Apple Sign-Up failed.');
@@ -175,7 +200,7 @@ const RegisterScreen = () => {
       console.log('Apple Sign-Up error:', error.message, error.stack);
       Constants.showDialog('An error occurred. Please try again.');
     } finally {
-      setGoogleLoading(false);
+      setAppleLoading(false);
     }
   };
 
@@ -193,6 +218,7 @@ const RegisterScreen = () => {
       try {
         const result = await signUp(email.trim(), password, name.trim(), "", "", "", "");
         if (result.Status === "Success") {
+          posthog.capture('user_signed_up', { method: 'email' });
           router.push({ pathname: "/verify-email", params: { email: email.trim() } });
         } else if (result.code === "RATE_LIMITED") {
           const minutes = Math.ceil((result.retryAfterSeconds || 3600) / 60);
@@ -285,7 +311,7 @@ const RegisterScreen = () => {
           <TouchableOpacity
             style={styles.signUpButton}
             onPress={handleSignUp}
-            disabled={loading || googleLoading}
+            disabled={loading || appleLoading || googleLoading}
           >
             {loading ? (
               <ActivityIndicator color="#ffffff" size="small" />
@@ -294,49 +320,58 @@ const RegisterScreen = () => {
             )}
           </TouchableOpacity>
 
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
+          {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
+            <View style={styles.dividerContainer}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+          )}
 
-          <TouchableOpacity
-            style={[
-              styles.googleButton,
-              (loading || googleLoading) && styles.googleButtonDisabled,
-            ]}
-            onPress={handleGoogleSignUp}
-            disabled={loading || googleLoading}
-            activeOpacity={0.9}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color="#1f1f1f" size="small" />
-            ) : (
-              <View style={styles.googleButtonContent}>
-                <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
-                <Text
-                  style={[
-                    styles.googleButtonText,
-                    loading && styles.googleButtonTextDisabled,
-                  ]}
-                  numberOfLines={1}
-                >
-                  Sign up with Google
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <View style={{ marginBottom: 8 }}>
-            <AppleSignInButton
-              onCredential={handleAppleSignUp}
-              onError={(e: unknown) => {
-                console.warn('Apple Sign-Up error', e);
-                Constants.showDialog('Apple Sign-Up failed. Please try again.');
-              }}
-              disabled={loading || googleLoading}
-              buttonType={AppleAuthenticationButtonType.SIGN_UP}
-            />
-          </View>
+          {/* Google Sign-Up Button */}
+          {googleSignInEnabled && (
+            <TouchableOpacity
+              style={[
+                styles.googleButton,
+                (loading || googleLoading) && styles.googleButtonDisabled,
+              ]}
+              onPress={handleGoogleSignUp}
+              disabled={loading || appleLoading || googleLoading}
+              activeOpacity={0.9}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#1f1f1f" size="small" />
+              ) : (
+                <View style={styles.googleButtonContent}>
+                  <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
+                  <Text
+                    style={[
+                      styles.googleButtonText,
+                      loading && styles.googleButtonTextDisabled,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Sign up with Google
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Apple Sign-Up is iOS-only */}
+          {Platform.OS === "ios" && appleSignInEnabled && (
+            <View style={styles.appleButtonContainer}>
+              <AppleSignInButton
+                onCredential={handleAppleSignUp}
+                onError={(e: unknown) => {
+                  console.warn('Apple Sign-Up error', e);
+                  Constants.showDialog('Apple Sign-Up failed. Please try again.');
+                }}
+                disabled={loading || appleLoading || googleLoading}
+                buttonType={AppleAuthenticationButtonType.SIGN_UP}
+              />
+            </View>
+          )}
         </ScrollView>
 
         <View style={styles.bottomSection}>
@@ -447,6 +482,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     fontSize: 14,
     color: "#999999",
+  },
+  appleButtonContainer: {
+    width: "100%",
+    maxWidth: 400,
+    alignSelf: "center",
+    marginBottom: 10,
   },
   googleButton: {
     height: 52,
