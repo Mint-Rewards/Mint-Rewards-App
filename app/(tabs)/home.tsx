@@ -26,6 +26,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Linking,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -34,6 +35,8 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+
+const INSTAGRAM_HANDLE = 'mymintrewards'; // replace with actual handle
 
 const CARD_HEIGHT = 160;
 const OVERLAP = CARD_HEIGHT * 0.28;
@@ -47,6 +50,14 @@ function isLightColor(hex: string): boolean {
   const b = parseInt(clean.slice(4, 6), 16);
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.72;
 }
+
+const openInstagram = async () => {
+  const appUrl = `instagram://user?username=${INSTAGRAM_HANDLE}`;
+  const webUrl = `https://instagram.com/${INSTAGRAM_HANDLE}`;
+
+  const supported = await Linking.canOpenURL(appUrl);
+  await Linking.openURL(supported ? appUrl : webUrl);
+};
 
 type BrandCardProps = {
   brand: BrandTheme & { status?: string };
@@ -303,9 +314,13 @@ export default function HomeScreen() {
                 ) : (
                   <>
                     <Text style={styles.collectionTitle}>
-                      Warming Up!
+                      Collections are going live soon
                     </Text>
-                    <Text style={styles.collectionDate}>We'll notify you once your area is unlocked.</Text>
+                    <Text style={styles.collectionDate}>Follow us to stay updated!</Text>
+                    <TouchableOpacity onPress={openInstagram}>
+                      <Text style={styles.collectionDate}>@mymintrewards</Text>
+                    </TouchableOpacity>
+
                   </>
                 )}
               </View>
