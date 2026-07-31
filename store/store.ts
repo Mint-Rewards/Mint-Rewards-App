@@ -136,6 +136,24 @@ export interface Campaign {
   brandRegistration?: string;
 }
 
+export type DealStatus = "pending" | "active" | "rejected" | "inactive" | "expired";
+
+export interface Deal {
+  _id: string;
+  title: string;
+  description?: string;
+  discountPercentage?: number | null;
+  discountAmount?: number | null;
+  promoCode?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  maxUses?: number | null;
+  currentUses?: number;
+  minimumPurchase?: number | null;
+  status: DealStatus;
+  brand: Brand;
+}
+
 // Brand Types
 export interface Brand {
   _id: string;
@@ -281,6 +299,13 @@ interface CampaignSlice {
   getCampaigns: () =>
     | Promise<{ Status: string; ErrorMessage?: string }>
     | Promise<Campaign[]>;
+
+  deals: Deal[];
+  isDealLoading: boolean;
+  dealError: string | null;
+  getDeals: () =>
+    | Promise<{ Status: string; ErrorMessage?: string }>
+    | Promise<Deal[]>;
 }
 
 // ============================================================================
@@ -848,6 +873,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   isCampaignLoading: false,
   campaignError: null,
 
+  deals: [],
+  isDealLoading: false,
+  dealError: null,
+
   brands: [],
   isBrandLoading: false,
   brandError: null,
@@ -915,7 +944,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         headers.Authorization = token;
       }
 
-      const response = await authenticatedFetch(`${API_URL}/api/brands`, {
+      const response = await authenticatedFetch(`${API_URL}/api/users/brands-with-campaigns`, {
         method: "GET",
         headers,
       });
@@ -1003,6 +1032,49 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setCampaignLoading: (loading: boolean) => set({ isCampaignLoading: loading }),
   setCampaignError: (error: string | null) => set({ campaignError: error }),
+
+  getDeals: async () => {
+    set({ isDealLoading: true, dealError: null });
+
+    try {
+      const token = get().token || get().user?.token;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) headers.Authorization = token;
+
+      const response = await authenticatedFetch(`${API_URL}/api/users/active-campaigns`, {
+        method: "GET",
+        headers,
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        set({
+          deals: data.activeDeals || [],
+          isDealLoading: false,
+          dealError: null,
+        });
+        return data.activeDeals;
+      } else {
+        const errorMessage = data.message || "Error fetching deals.";
+        set({ dealError: errorMessage, isDealLoading: false });
+        return {
+          Status: "Error",
+          ErrorMessage: errorMessage,
+        };
+      }
+    } catch (error) {
+      console.error("Deals error:", error);
+      const errorMessage =
+        "Network error. Please check your connection and try again.";
+      set({ dealError: errorMessage, isDealLoading: false });
+      return {
+        Status: "Error",
+        ErrorMessage: errorMessage,
+      };
+    }
+  },
 
   // ========================================================================
   // DISCOUNT SLICE

@@ -115,7 +115,7 @@ const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps)
 });
 
 export default function HomeScreen() {
-  const { user, wasteToCo2, getBrands, getCampaigns } = useAppStore();
+  const { user, wasteToCo2, getBrands, getCampaigns, getDeals } = useAppStore();
   const hasLocation = !!(user?.latitude && user?.longitude);
   const hasAddress = !!user?.address;
   const isProfileComplete = !!(
@@ -135,10 +135,27 @@ export default function HomeScreen() {
     });
     getCampaigns().then((result) => {
       if (Array.isArray(result)) {
-        setActiveBrandIds(new Set(result.map((campaign) => campaign.brand?._id).filter(Boolean)));
+        setActiveBrandIds((prev) => {
+          const next = new Set(prev);
+          result.forEach((campaign) => {
+            if (campaign.brand?._id) next.add(campaign.brand._id);
+          });
+          return next;
+        });
       }
     });
-  }, [wasteToCo2, getBrands, getCampaigns]);
+    getDeals().then((result) => {
+      if (Array.isArray(result)) {
+        setActiveBrandIds((prev) => {
+          const next = new Set(prev);
+          result.forEach((deal) => {
+            if (deal.brand?._id) next.add(deal.brand._id);
+          });
+          return next;
+        });
+      }
+    });
+  }, [wasteToCo2, getBrands, getCampaigns, getDeals]);
 
   // Brands with a currently active campaign sort to the top; the rest sink to
   // the bottom. Array.sort is stable, so relative order within each group is
