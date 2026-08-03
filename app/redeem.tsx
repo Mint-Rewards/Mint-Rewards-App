@@ -121,9 +121,9 @@ const RedeemScreen = () => {
       <View style={[styles.heroSection, { backgroundColor: brand?.themeColor || "#00528A" }]}>
         <View style={styles.logoWrapper}>
           <Image source={{ uri: brand?.logo }} style={styles.brandLogo} resizeMode="contain" />
-          <Ionicons name="sparkles" size={20} color="#FFD700" style={styles.sparkle1} />
+          {/* <Ionicons name="sparkles" size={20} color="#FFD700" style={styles.sparkle1} />
           <Ionicons name="star"     size={16} color="#FF69B4" style={styles.sparkle2} />
-          <Ionicons name="diamond"  size={18} color="#00CED1" style={styles.sparkle3} />
+          <Ionicons name="diamond"  size={18} color="#00CED1" style={styles.sparkle3} /> */}
         </View>
         <Text style={styles.brandName}>{brand?.companyName}</Text>
         {brand?.category && (
