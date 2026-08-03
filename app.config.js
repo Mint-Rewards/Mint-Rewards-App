@@ -8,6 +8,7 @@
 // Everything not listed in the `isDev ? ... : ...` branches below is a verbatim
 // port of the original app.json and is shared by both variants.
 
+const { runtimeVersion } = require("expo-updates");
 const fs = require("fs");
 const path = require("path");
 
@@ -328,6 +329,9 @@ module.exports = () => ({
       enabled: true,
       checkAutomatically: "ON_LOAD",
       fallbackToCacheTimeout: 0,
+    },
+    runtimeVersion: {
+      policy: "appVersion",
     },
     extra: {
       router: {},
