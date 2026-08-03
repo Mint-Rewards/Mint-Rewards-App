@@ -329,6 +329,9 @@ module.exports = () => ({
       checkAutomatically: "ON_LOAD",
       fallbackToCacheTimeout: 0,
     },
+    runtimeVersion: {
+      policy: "appVersion",
+    },
     extra: {
       router: {},
       eas: {

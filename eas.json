@@ -32,7 +32,7 @@
         "buildType": "apk"
       },
       "env": {
-        "APP_VARIANT": "development"
+        "APP_VARIANT": "preview"
       }
     },
     "production": {
