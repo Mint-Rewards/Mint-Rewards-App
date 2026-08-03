@@ -214,9 +214,9 @@ module.exports = () => ({
     // alternative, "appVersion", would depend on someone remembering to bump
     // `version` after every native change; with appVersionSource: "remote" the
     // version isn't even edited locally, making that easy to forget.
-    runtimeVersion: {
-      policy: "fingerprint",
-    },
+    // runtimeVersion: {
+    //   policy: "fingerprint",
+    // },
     ios: {
       supportsTablet: true,
       bundleIdentifier: isDev

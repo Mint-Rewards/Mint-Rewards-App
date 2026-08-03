@@ -10,6 +10,7 @@ node_modules
 .expo
 android/
 ios/
+dist/
 
 MintRewards.app
 *.tar.gz
