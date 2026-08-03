@@ -104,7 +104,11 @@ export default function RootLayout() {
           <Stack.Screen name="notifications" options={{ headerShown: false }} />
           <Stack.Screen name="+not-found" />
           </Stack>
-          <StatusBar style="auto" />
+          {/* Pinned to "dark" (dark glyphs) rather than "auto". "auto" follows
+              the ThemeProvider above and resolves to light glyphs in dark mode,
+              which vanish against the hardcoded-white screens. Same reason the
+              tab bar blur is pinned in TabBarBackground.ios.tsx. */}
+          <StatusBar style="dark" />
         </ThemeProvider>
       </PostHogProvider>
     </SafeAreaProvider>

@@ -12,6 +12,7 @@ import {
 } from "@/constants/mockCollectionsData";
 import { BrandTheme, co2FromWasteKg, useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
+import { brandSurface } from "@/utils/brandTheme";
 import { logEvent } from "@/utils/logger";
 import { Constants } from "../../utils/constants";
 import { LinearGradient } from "expo-linear-gradient";
@@ -41,15 +42,6 @@ const INSTAGRAM_HANDLE = 'mymintrewards'; // replace with actual handle
 const CARD_HEIGHT = 160;
 const OVERLAP = CARD_HEIGHT * 0.28;
 const VISIBLE = CARD_HEIGHT - OVERLAP; // px each card peeks above the next
-
-function isLightColor(hex: string): boolean {
-  const clean = hex.replace("#", "");
-  if (clean.length !== 6) return false;
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.72;
-}
 
 const openInstagram = async () => {
   const appUrl = `instagram://user?username=${INSTAGRAM_HANDLE}`;
@@ -93,8 +85,10 @@ const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps)
     ],
   }));
 
-  const isLight = isLightColor(brand.themeColor);
-  const textColor = isLight ? "#333333" : "#ffffff";
+  // Painted from the normalised colour, never the raw field: a malformed value
+  // like "#00000" renders as transparent in RN, which left the card invisible
+  // against the page while the text stayed white.
+  const surface = brandSurface(brand.themeColor);
 
   return (
     <Animated.View style={[styles.cardWrapper, { zIndex: index, top: index * VISIBLE }, animatedStyle]}>
@@ -110,16 +104,22 @@ const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps)
         <View
           style={[
             styles.couponCard,
-            { backgroundColor: brand.themeColor },
-            isLight && styles.couponCardLight,
+            { backgroundColor: surface.background },
+            surface.isLight && [
+              styles.couponCardLight,
+              { borderColor: surface.hairline! },
+            ],
             locked && styles.couponCardLocked,
           ]}
         >
           <View style={styles.couponTextBlock}>
-            <Text style={[styles.couponCategory, { color: textColor }]} numberOfLines={1}>
+            <Text
+              style={[styles.couponCategory, { color: surface.onSurfaceMuted }]}
+              numberOfLines={1}
+            >
               {brand.category}
             </Text>
-            <Text style={[styles.couponName, { color: textColor }]} numberOfLines={1}>
+            <Text style={[styles.couponName, { color: surface.onSurface }]} numberOfLines={1}>
               {brand.companyName}
             </Text>
           </View>
@@ -578,10 +578,9 @@ const styles = StyleSheet.create({
   },
   couponCardLight: {
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.08)",
   },
   couponTextBlock: { flex: 1, justifyContent: "center", gap: 4 },
-  couponCategory: { fontSize: 13, fontWeight: "300", opacity: 0.85 },
+  couponCategory: { fontSize: 13, fontWeight: "300" },
   couponName: { fontSize: 26, fontWeight: "700", letterSpacing: -0.3 },
   couponLogoWrapper: { width: 110, height: 110, alignItems: "center", justifyContent: "center" },
   couponLogo: { width: 110, height: 110 },
