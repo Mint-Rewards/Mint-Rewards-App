@@ -219,11 +219,11 @@ const RedeemScreen = () => {
         ) : (
           <View style={styles.emptyCampaigns}>
             <View style={styles.emptyIconCircle}>
-              <Ionicons name="megaphone-outline" size={40} color="#00528A" />
+              <Ionicons name="lock-closed" size={40} color="#00528A" />
             </View>
-            <Text style={styles.emptyCampaignsText}>No active campaigns right now</Text>
+            <Text style={styles.emptyCampaignsText}>Not Eligible Yet!</Text>
             <Text style={styles.emptyCampaignsSubtext}>
-              Check back soon for exciting offers from this brand!
+              Start collecting points to unlock exclusive offers and discounts from {brand?.companyName}.
             </Text>
           </View>
         )}
