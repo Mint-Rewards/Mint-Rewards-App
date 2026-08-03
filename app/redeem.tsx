@@ -1,4 +1,5 @@
 import { BrandTheme, Campaign, DiscountItem, useAppStore } from "@/store/store";
+import { brandSurface } from "@/utils/brandTheme";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -109,23 +110,51 @@ const RedeemScreen = () => {
     );
   };
 
+  // Brand colours arrive from the backend and include near-white values, so
+  // every foreground on the hero is derived rather than assumed to be white.
+  const surface = brandSurface(brand?.themeColor);
+
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
+      <StatusBar style={surface.statusBarStyle} />
 
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={24} color="#fff" />
+      <TouchableOpacity
+        style={[styles.backButton, { backgroundColor: surface.scrim }]}
+        onPress={() => router.back()}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+        hitSlop={8}
+      >
+        <Ionicons name="arrow-back" size={24} color={surface.onSurface} />
       </TouchableOpacity>
 
       {/* Brand Header */}
-      <View style={[styles.heroSection, { backgroundColor: brand?.themeColor || "#00528A" }]}>
+      <View
+        style={[
+          styles.heroSection,
+          { backgroundColor: surface.background },
+          surface.isLight && [
+            styles.heroSectionLight,
+            { borderColor: surface.hairline! },
+          ],
+        ]}
+      >
         <View style={styles.logoWrapper}>
           <Image source={{ uri: brand?.logo }} style={styles.brandLogo} resizeMode="contain" />
         </View>
-        <Text style={styles.brandName}>{brand?.companyName}</Text>
+        <Text style={[styles.brandName, { color: surface.onSurface }]}>
+          {brand?.companyName}
+        </Text>
         {brand?.category && (
-          <View style={styles.categoryBadge}>
-            <Text style={styles.categoryText}>{brand.category}</Text>
+          <View
+            style={[
+              styles.categoryBadge,
+              { backgroundColor: surface.chipBackground, borderColor: surface.chipBorder },
+            ]}
+          >
+            <Text style={[styles.categoryText, { color: surface.onSurfaceMuted }]}>
+              {brand.category}
+            </Text>
           </View>
         )}
       </View>
@@ -329,7 +358,6 @@ const styles = StyleSheet.create({
     top: 50,
     left: 20,
     zIndex: 10,
-    backgroundColor: "rgba(0,0,0,0.25)",
     borderRadius: 20,
     width: 40,
     height: 40,
@@ -343,20 +371,26 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
   },
+  // A near-white brand colour has no edge against the page behind it, so the
+  // sheet earns one from a hairline and a low shadow instead of from contrast.
+  heroSectionLight: {
+    borderBottomWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
+  },
   logoWrapper: { position: "relative", marginBottom: 12 },
   brandLogo: { width: 90, height: 90 },
-  sparkle1: { position: "absolute", top: -5,  right: -10 },
-  sparkle2: { position: "absolute", bottom: 5, left: -12 },
-  sparkle3: { position: "absolute", top: 10,  left: -8  },
-  brandName: { fontSize: 22, fontWeight: "bold", color: "#ffffff", marginBottom: 8 },
+  brandName: { fontSize: 22, fontWeight: "bold", marginBottom: 8 },
   categoryBadge: {
-    backgroundColor: "rgba(255,255,255,0.2)",
     paddingHorizontal: 14,
     paddingVertical: 5,
     borderRadius: 20,
+    borderWidth: 1,
   },
   categoryText: {
-    color: "#ffffff",
     fontSize: 13,
     fontWeight: "600",
     textTransform: "uppercase",
