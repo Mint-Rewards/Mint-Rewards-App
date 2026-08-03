@@ -26,6 +26,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Linking,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -34,6 +35,8 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+
+const INSTAGRAM_HANDLE = 'mymintrewards'; // replace with actual handle
 
 const CARD_HEIGHT = 160;
 const OVERLAP = CARD_HEIGHT * 0.28;
@@ -47,6 +50,22 @@ function isLightColor(hex: string): boolean {
   const b = parseInt(clean.slice(4, 6), 16);
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.72;
 }
+
+const openInstagram = async () => {
+  const appUrl = `instagram://user?username=${INSTAGRAM_HANDLE}`;
+  const webUrl = `https://instagram.com/${INSTAGRAM_HANDLE}`;
+
+  // instagram:// isn't declared in LSApplicationQueriesSchemes, so
+  // canOpenURL/openURL can both fail even with Instagram installed — always
+  // fall back to the web URL rather than surface the failure to the user.
+  try {
+    const supported = await Linking.canOpenURL(appUrl);
+    if (!supported) throw new Error("instagram scheme not supported");
+    await Linking.openURL(appUrl);
+  } catch {
+    await Linking.openURL(webUrl);
+  }
+};
 
 type BrandCardProps = {
   brand: BrandTheme & { status?: string };
@@ -228,6 +247,9 @@ export default function HomeScreen() {
 
   // active-campaigns only ever returns APPROVED brands, so no filtering here.
   const cardsContainerHeight = brands.length * VISIBLE + OVERLAP + 80;
+  // The "going live soon" teaser has nowhere to send the user yet — only a
+  // booked or upcoming collection makes the card worth tapping.
+  const canOpenCollections = !!booked || !!(showDemoCollections && nextCollection && nextSlot);
 
   return (
     <View style={styles.container}>
@@ -278,34 +300,65 @@ export default function HomeScreen() {
           </View>
 
           {(hasLocation && hasAddress) ? (
-            <View style={styles.collectionCard}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.collectionCard,
+                pressed && canOpenCollections && styles.collectionCardPressed,
+              ]}
+              onPress={
+                canOpenCollections
+                  ? () =>
+                      router.push(
+                        showDemoCollections
+                          ? "/collections?section=upcoming"
+                          : "/collections",
+                      )
+                  : undefined
+              }
+              disabled={!canOpenCollections}
+              accessibilityRole={canOpenCollections ? "button" : undefined}
+            >
               <View style={styles.collectionInfo}>
                 {booked ? (
                   <>
-                    <Text style={styles.collectionTitle}>
+                    <Text style={styles.collectionPrimary}>
                       {upcomingStatusLabel(booked.status)} for{" "}
                       {formatCollectionDate(booked.slot.date)}
                     </Text>
-                    <Text style={styles.collectionDate}>
+                    <Text style={styles.collectionSecondary}>
                       {booked.collection.code} · {booked.slot.time}
                     </Text>
                   </>
                 ) : showDemoCollections && nextCollection && nextSlot ? (
                   <>
-                    <Text style={styles.collectionTitle}>
+                    <Text style={styles.collectionPrimary}>
                       Next on {formatCollectionDate(nextSlot.date)}
                       {nextCollection.area ? ` · ${nextCollection.area}` : ""}
                     </Text>
-                    <Text style={styles.collectionDate}>
+                    <Text style={styles.collectionSecondary}>
                       {UPCOMING_COLLECTIONS_COUNT} collections near you
                     </Text>
                   </>
                 ) : (
                   <>
-                    <Text style={styles.collectionTitle}>
-                      Warming Up!
+                    <Text style={styles.collectionPrimary}>
+                      Collections are going live soon
                     </Text>
-                    <Text style={styles.collectionDate}>We'll notify you once your area is unlocked.</Text>
+                    <Text style={styles.collectionSecondary}>
+                      Follow us to stay updated!
+                    </Text>
+                    <TouchableOpacity
+                      onPress={openInstagram}
+                      style={styles.instagramLink}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Ionicons
+                        name="logo-instagram"
+                        size={14}
+                        color={Constants.appThemeColor}
+                      />
+                      <Text style={styles.instagramLinkText}>@mymintrewards</Text>
+                    </TouchableOpacity>
                   </>
                 )}
               </View>
@@ -314,7 +367,7 @@ export default function HomeScreen() {
                 style={styles.collectionImage}
                 resizeMode="contain"
               />
-            </View>
+            </Pressable>
           ) : (
             <TouchableOpacity
               style={styles.locationPromptCard}
@@ -429,26 +482,47 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: "bold", color: "#333333" },
   seeAllText: { color: Constants.appThemeColor, fontSize: 14, fontWeight: "500" },
   collectionCard: {
-    backgroundColor: "#F8F8F8",
+    backgroundColor: "#ffffff",
     borderRadius: 12,
     padding: 16,
     height: 100,
     flexDirection: "row",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#EEF1F4",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  collectionCardPressed: {
+    opacity: 0.85,
   },
   collectionInfo: {
     flex: 1,
   },
-  collectionTitle: {
-    fontSize: 14,
-    color: "#666666",
+  collectionPrimary: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1A1A1A",
+    lineHeight: 20,
     marginBottom: 4,
   },
-  collectionDate: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333333",
-    marginBottom: 12,
+  collectionSecondary: {
+    fontSize: 13,
+    color: "#718096",
+  },
+  instagramLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+  },
+  instagramLinkText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Constants.appThemeColor,
   },
   collectionImage: {
     borderRadius: 10,

@@ -24,10 +24,59 @@ const appVariant = isDev ? "development" : "production";
 // utils/constants.ts, which shipped prod as the default).
 
 // eas-cli evaluates this file with EXPO_NO_DOTENV=1 for metadata-only reads
-// (env:set, project info, credentials) — it deliberately skips .env because it
-// resolves env vars from EAS itself. Throwing there breaks those commands for
-// no benefit: nothing is built from that config. On a real EAS build EAS_BUILD
-// is "true" and the env vars are present, so validation runs normally.
+// (env:set, project info, credentials, and critically: the *local* fingerprint
+// precomputation it does before every `eas build`, local or cloud, to embed a
+// runtime version in the job). That last one DOES reach a build: with
+// `runtimeVersion: { policy: "fingerprint" }` below, whatever this file
+// resolves to gets hashed into the build's expected runtime version. If we
+// let EXPO_NO_DOTENV skip .env here, that precomputed hash is based on the
+// UNSET placeholders while the real build (EAS_BUILD="true", real env
+// injected) hashes the real config — guaranteed runtime-version mismatch on
+// every single build.
+//
+// Fix: load .env ourselves via @expo/env, bypassing the EXPO_NO_DOTENV skip,
+// so this file resolves identically whether or not eas-cli decided to skip
+// its own dotenv loading. Every layer of @expo/env's public API — load(),
+// loadProjectEnv(), getEnvFiles(), even the "raw" parseEnvFiles() — checks
+// EXPO_NO_DOTENV internally and no-ops when it's set (that's the whole
+// problem), so there's no way to opt back in through the API. Instead,
+// unset the flag for the duration of this call only, then restore it — this
+// affects nothing except which files @expo/env decides to read here.
+// loadEnvFiles() never overwrites a var already present in process.env, so
+// real EAS-injected build-time values (which take priority) are untouched —
+// this only fills the gap for local/precompute reads that would otherwise
+// see nothing. `force: true` is required too: expo-cli itself calls into
+// @expo/env before evaluating this file, and even under EXPO_NO_DOTENV=1 that
+// call marks env-loading as already done (it "loads" zero files, but still
+// sets the done marker) — without `force`, our call below would silently
+// no-op as "already loaded".
+{
+  const { loadEnvFiles } = require("@expo/env");
+  const hadNoDotenv = "EXPO_NO_DOTENV" in process.env;
+  const previousNoDotenv = process.env.EXPO_NO_DOTENV;
+  delete process.env.EXPO_NO_DOTENV;
+  try {
+    const mode = process.env.NODE_ENV;
+    const envFiles = [
+      mode && `.env.${mode}.local`,
+      mode !== "test" && ".env.local",
+      mode && `.env.${mode}`,
+      ".env",
+    ].filter(Boolean);
+    loadEnvFiles(envFiles.map((file) => path.join(__dirname, file)), {
+      silent: true,
+      force: true,
+    });
+  } finally {
+    if (hadNoDotenv) process.env.EXPO_NO_DOTENV = previousNoDotenv;
+  }
+}
+
+// True only when a value is still missing after the load above — e.g. CI
+// running `eas env:list` with no .env file on disk. Throwing there breaks
+// those commands for no benefit: nothing is built from that config. On a real
+// EAS build EAS_BUILD is "true" and the env vars are present, so validation
+// runs normally.
 //
 // This only relaxes the *build-time* check. config/env.ts still validates
 // unconditionally at app startup, so a bundle can never boot with a missing or
