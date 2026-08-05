@@ -14,6 +14,7 @@ import { BrandTheme, co2FromWasteKg, useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
 import { logEvent } from "@/utils/logger";
+import { isLegacyTownValue } from "@/utils/pakistan_areas";
 import { Constants } from "../../utils/constants";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -187,6 +188,14 @@ export default function HomeScreen() {
     user?.province?.trim() &&
     user?.city?.trim()
   );
+
+  // Saved on an older build, against a town list that has since been renamed
+  // and made canonical. The value can no longer be matched to a town, so ask
+  // the user to re-pick it. Only surfaced once the profile is otherwise
+  // complete — the prompt above already routes incomplete profiles to the same
+  // screen, and two prompts stacked would just be noise.
+  const needsLocationUpdate =
+    isProfileComplete && isLegacyTownValue(user?.city || "", user?.town || "");
 
   // Demo-only: allowlisted accounts see the mock upcoming-collections teaser
   // instead of the static "Warming Up!" card. Everyone else is unaffected.
@@ -403,6 +412,20 @@ export default function HomeScreen() {
               <Ionicons name="person-circle-outline" size={22} color="#449EB2" />
               <Text style={styles.profilePromptText}>
                 Complete your profile to unlock coupons
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#449EB2" />
+            </TouchableOpacity>
+          )}
+
+          {needsLocationUpdate && (
+            <TouchableOpacity
+              style={styles.profilePromptCard}
+              onPress={() => router.push("/editProfile")}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="location-outline" size={22} color="#449EB2" />
+              <Text style={styles.profilePromptText}>
+                We&apos;ve updated our area list — please confirm your town
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#449EB2" />
             </TouchableOpacity>

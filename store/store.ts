@@ -83,6 +83,7 @@ export interface User {
   province?: string;
   city?: string;
   town?: string;
+  townOther?: string;
   subArea?: string;
   subAreaOther?: string;
   mintId?: string;
@@ -106,7 +107,16 @@ export interface UserProfile {
   phone: string;
   province: string;
   city: string;
+  /**
+   * Canonical town. Only ever holds a value from `getTownsForCity(city)`, or
+   * "". Mutually exclusive with `townOther`.
+   */
   town: string;
+  /**
+   * Free-text town for users whose town isn't in the canonical list. Trimmed
+   * and capped at 100 chars. Mutually exclusive with `town`.
+   */
+  townOther?: string;
   /**
    * Canonical block/sector/phase. Only ever holds a value returned by
    * `getSubAreasForTown(city, town)` in utils/pakistan_areas.ts — never free

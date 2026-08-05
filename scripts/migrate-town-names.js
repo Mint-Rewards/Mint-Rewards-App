@@ -33,13 +33,12 @@ const RENAMES = {
   "Lahore::Bahria Town": "Bahria Town Lahore",
   "Lahore::Allama Iqbal Town": "Iqbal Town",
 
-  "Karachi::DHA": "DHA (Defence Housing Authority)",
-  "Karachi::Defence": "DHA (Defence Housing Authority)",
-  "Karachi::PECHS": "PECHS (Pakistan Employees Cooperative Housing Society)",
+  // Karachi's DHA / PECHS / Saddar kept their short names in pakistan_areas.ts,
+  // so those need no rename. "Defence" was dropped as a duplicate of DHA.
+  "Karachi::Defence": "DHA",
   "Karachi::Orangi": "Orangi Town",
   "Karachi::Federal B Area": "Federal B. Area",
   "Karachi::Bahria Town": "Bahria Town Karachi",
-  "Karachi::Saddar": "Old City / Saddar",
 
   "Islamabad::F-6": "Sector F-6",
   "Islamabad::F-7": "Sector F-7",

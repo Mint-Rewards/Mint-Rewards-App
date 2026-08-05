@@ -1746,6 +1746,29 @@ export function cityHasTowns(city: string): boolean {
   return city in PAKISTAN_LOCATIONS.towns;
 }
 
+/** True when `town` is a canonical town of `city`. */
+export function isCanonicalTown(city: string, town: string): boolean {
+  if (!city || !town) return false;
+  return getTownsForCity(city).includes(town);
+}
+
+/**
+ * True when a saved location predates the canonical town list and needs the
+ * user to re-pick it.
+ *
+ * Builds before the sub-area work wrote free-text towns straight into `town`,
+ * and the town list was later renamed to align with the sub-area data ("F-6"
+ * became "Sector F-6"). Either way the result is a non-empty `town` that is not
+ * canonical for its city — a state the current client can no longer produce,
+ * since free text now goes to `townOther`. So this doubles as the "written by
+ * an old build" test.
+ */
+export function isLegacyTownValue(city: string, town: string): boolean {
+  if (!town) return false;
+  if (!cityHasTowns(city)) return false; // no list to judge against
+  return !isCanonicalTown(city, town);
+}
+
 /** Composite key for the subAreas map. Town names repeat across cities. */
 export function subAreaKey(city: string, town: string): string {
   return `${city}::${town}`;
@@ -1764,4 +1787,49 @@ export function getSubAreasForTown(city: string, town: string): string[] {
 /** True when this town has at least one canonical sub-area. */
 export function townHasSubAreas(city: string, town: string): boolean {
   return getSubAreasForTown(city, town).length > 0;
+}
+
+/**
+ * Folds a name to a comparable form: lowercased, punctuation and spacing
+ * removed. Canonical names carry inconsistent punctuation ("Federal B. Area",
+ * "DHA (Defence Housing Authority)", "Gulshan-e-Iqbal"), so comparing raw text
+ * would miss obvious matches for what a user actually types.
+ */
+function foldName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Shortest query worth matching on — below this nearly everything matches. */
+const MIN_MATCH_QUERY = 2;
+
+/**
+ * Canonical names from `options` that look like what the user typed.
+ *
+ * Suggestions are drawn only from the array passed in, so every one traces back
+ * to this file. Ranked exact fold-match, then prefix, then interior: someone
+ * who typed "dha" as free text most needs to be shown the canonical "DHA", so
+ * an exact match leads rather than being filtered out as redundant.
+ *
+ * Returns [] for queries shorter than MIN_MATCH_QUERY.
+ */
+export function matchCanonicalNames(
+  options: string[],
+  query: string,
+  limit = 5,
+): string[] {
+  const needle = foldName(query || "");
+  if (needle.length < MIN_MATCH_QUERY) return [];
+
+  const exact: string[] = [];
+  const prefix: string[] = [];
+  const interior: string[] = [];
+
+  for (const option of options) {
+    const hay = foldName(option);
+    if (hay === needle) exact.push(option);
+    else if (hay.startsWith(needle)) prefix.push(option);
+    else if (hay.includes(needle)) interior.push(option);
+  }
+
+  return [...exact, ...prefix, ...interior].slice(0, limit);
 }
