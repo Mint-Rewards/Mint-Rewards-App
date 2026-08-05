@@ -83,6 +83,8 @@ export interface User {
   province?: string;
   city?: string;
   town?: string;
+  subArea?: string;
+  subAreaOther?: string;
   mintId?: string;
   latitude?: string;
   longitude?: string;
@@ -105,6 +107,18 @@ export interface UserProfile {
   province: string;
   city: string;
   town: string;
+  /**
+   * Canonical block/sector/phase. Only ever holds a value returned by
+   * `getSubAreasForTown(city, town)` in utils/pakistan_areas.ts — never free
+   * text. Mutually exclusive with `subAreaOther`.
+   */
+  subArea?: string;
+  /**
+   * Free-text sub-area for users whose area isn't in the canonical list.
+   * Trimmed and capped at 100 chars. Captured for review, not for
+   * segmentation. Mutually exclusive with `subArea`.
+   */
+  subAreaOther?: string;
   address: string;
   email: string;
   latitude?: string;
