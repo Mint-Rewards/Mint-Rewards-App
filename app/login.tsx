@@ -245,7 +245,7 @@ const LoginScreen = () => {
       {/* Green Header Section */}
       <View style={[styles.headerSection, isSmallScreen && styles.headerSectionSmall]}>
         <View style={styles.welcomeSection}>
-          <Text style={styles.welcomeTitle}>Welcome Back!</Text>
+          <Text style={styles.welcomeTitle}>Welcome!</Text>
           <Text style={styles.welcomeSubtitle}>
             Log in to continue your journey towards{"\n"}a greener planet
           </Text>
