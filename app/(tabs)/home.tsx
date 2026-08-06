@@ -14,8 +14,8 @@ import { BrandTheme, co2FromWasteKg, useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
 import { logEvent } from "@/utils/logger";
-import { isLegacyTownValue } from "@/utils/pakistan_areas";
-import { isProfileComplete } from "@/utils/profile";
+import LocationUpdateModal from "@/components/LocationUpdateModal";
+import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
 import { Constants } from "../../utils/constants";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -179,6 +179,8 @@ export default function HomeScreen() {
     scheduledCollection,
     loadScheduledCollection,
   } = useAppStore();
+  const locationPromptShown = useAppStore((s) => s.locationPromptShown);
+  const dismissLocationPrompt = useAppStore((s) => s.dismissLocationPrompt);
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
   // absolutely positioned, so the scroll has to clear it by its full height.
   const tabBarOverflow = useBottomTabOverflow();
@@ -186,13 +188,11 @@ export default function HomeScreen() {
   const hasAddress = !!user?.address;
   const profileComplete = isProfileComplete(user);
 
-  // Saved on an older build, against a town list that has since been renamed
-  // and made canonical. The value can no longer be matched to a town, so ask
-  // the user to re-pick it. Only surfaced once the profile is otherwise
-  // complete — the prompt above already routes incomplete profiles to the same
-  // screen, and two prompts stacked would just be noise.
-  const needsLocationUpdate =
-    profileComplete && isLegacyTownValue(user?.city || "", user?.town || "");
+  // Location-specific prompt takes precedence over the generic incomplete
+  // banner: these users ARE incomplete (a missing sub-area makes them so), and
+  // the generic "complete your profile" copy would tell them nothing about what
+  // actually changed.
+  const locationUpdateNeeded = needsLocationUpdate(user);
 
   // Demo-only: allowlisted accounts see the mock upcoming-collections teaser
   // instead of the static "Warming Up!" card. Everyone else is unaffected.
@@ -400,7 +400,7 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {!profileComplete && (
+          {!profileComplete && !locationUpdateNeeded && (
             <TouchableOpacity
               style={styles.profilePromptCard}
               onPress={() => router.push("/editProfile")}
@@ -414,7 +414,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
-          {needsLocationUpdate && (
+          {locationUpdateNeeded && (
             <TouchableOpacity
               style={styles.profilePromptCard}
               onPress={() => router.push("/editProfile")}
@@ -422,7 +422,7 @@ export default function HomeScreen() {
             >
               <Ionicons name="location-outline" size={22} color="#449EB2" />
               <Text style={styles.profilePromptText}>
-                We&apos;ve updated our area list — please confirm your town
+                We&apos;ve updated our area list — please re-select your town
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#449EB2" />
             </TouchableOpacity>
@@ -456,6 +456,15 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <LocationUpdateModal
+        visible={locationUpdateNeeded && !locationPromptShown}
+        onLater={dismissLocationPrompt}
+        onUpdate={() => {
+          dismissLocationPrompt();
+          router.push("/editProfile");
+        }}
+      />
     </View>
   );
 }
