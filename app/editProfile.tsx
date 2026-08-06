@@ -8,6 +8,7 @@ import {
   requiresSubArea,
 } from "@/utils/pakistan_areas";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { needsLocationUpdate } from "@/utils/profile";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -76,6 +77,12 @@ const EditProfile = () => {
 
   useEffect(() => {
     if (user) {
+      // Renamed town, or a sub-area that was never collected. Start every
+      // location field empty so the user re-picks from the canonical list
+      // rather than confirming a stale value. Form state only — the store and
+      // the server keep their values until a save succeeds.
+      const mustReselect = needsLocationUpdate(user);
+
       const existingCity = user.city || "";
       const savedTown = user.town || "";
 
@@ -83,11 +90,14 @@ const EditProfile = () => {
       // an older build wrote into `town`, or a value renamed out of the list —
       // both migrate into `townOther` here so the user can confirm or re-pick
       // it, and so saving cannot write a non-canonical value back into `town`.
-      const townIsCanonical = isCanonicalTown(existingCity, savedTown);
+      const townIsCanonical =
+        !mustReselect && isCanonicalTown(existingCity, savedTown);
       const existingTown = townIsCanonical ? savedTown : "";
-      const existingTownOther = townIsCanonical
+      const existingTownOther = mustReselect
         ? ""
-        : user.townOther || savedTown || "";
+        : townIsCanonical
+          ? ""
+          : user.townOther || savedTown || "";
       const isCustom = existingTownOther !== "";
 
       // Only rehydrate `subArea` if it is still canonical for this city/town.
@@ -96,7 +106,8 @@ const EditProfile = () => {
       const canonical = getSubAreasForTown(existingCity, existingTown);
       const existingSubArea =
         user.subArea && canonical.includes(user.subArea) ? user.subArea : "";
-      const existingSubAreaOther = existingSubArea ? "" : user.subAreaOther || "";
+      const existingSubAreaOther =
+        mustReselect || existingSubArea ? "" : user.subAreaOther || "";
 
       setFormData({
         userName: user.userName || "",
