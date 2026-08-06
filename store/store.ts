@@ -212,6 +212,14 @@ interface UserSlice {
   token: string | null;
   isLoading: boolean;
   error: string | null;
+  /**
+   * True once the location-update modal has been shown and dismissed this
+   * session. Deliberately not persisted: a cold start should prompt again,
+   * because the user has not re-picked their town yet and would otherwise sit
+   * behind a locked brand list with no explanation.
+   */
+  locationPromptShown: boolean;
+  dismissLocationPrompt: () => void;
   setUserData: (userData: Partial<User>) => void;
   getProfile: () => Promise<void>;
   signIn: (
@@ -388,6 +396,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   token: null,
   isLoading: false,
   error: null,
+  locationPromptShown: false,
+
+  dismissLocationPrompt: () => set({ locationPromptShown: true }),
 
   setUserData: (userData) =>
     set((state) => ({
@@ -647,7 +658,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // previous user's booking, but its SecureStore key is deliberately left in
     // place (see scheduledCollectionKey): the schedule must survive logout, and
     // loadScheduledCollection rehydrates it when its owner signs back in.
-    set({ user: null, token: null, error: null, scheduledCollection: null });
+    set({
+      user: null,
+      token: null,
+      error: null,
+      scheduledCollection: null,
+      locationPromptShown: false,
+    });
   },
 
   resendVerificationOtp: async (email) => {
