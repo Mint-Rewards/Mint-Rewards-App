@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
 import { logEvent } from "@/utils/logger";
 import { isLegacyTownValue } from "@/utils/pakistan_areas";
+import { isProfileComplete } from "@/utils/profile";
 import { Constants } from "../../utils/constants";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -183,11 +184,7 @@ export default function HomeScreen() {
   const tabBarOverflow = useBottomTabOverflow();
   const hasLocation = !!(user?.latitude && user?.longitude);
   const hasAddress = !!user?.address;
-  const isProfileComplete = !!(
-    user?.phone?.trim() &&
-    user?.province?.trim() &&
-    user?.city?.trim()
-  );
+  const profileComplete = isProfileComplete(user);
 
   // Saved on an older build, against a town list that has since been renamed
   // and made canonical. The value can no longer be matched to a town, so ask
@@ -195,7 +192,7 @@ export default function HomeScreen() {
   // complete — the prompt above already routes incomplete profiles to the same
   // screen, and two prompts stacked would just be noise.
   const needsLocationUpdate =
-    isProfileComplete && isLegacyTownValue(user?.city || "", user?.town || "");
+    profileComplete && isLegacyTownValue(user?.city || "", user?.town || "");
 
   // Demo-only: allowlisted accounts see the mock upcoming-collections teaser
   // instead of the static "Warming Up!" card. Everyone else is unaffected.
@@ -403,7 +400,7 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {!isProfileComplete && (
+          {!profileComplete && (
             <TouchableOpacity
               style={styles.profilePromptCard}
               onPress={() => router.push("/editProfile")}
@@ -437,9 +434,9 @@ export default function HomeScreen() {
                 key={brand._id}
                 brand={brand as BrandTheme & { status?: string }}
                 index={index}
-                locked={!isProfileComplete}
+                locked={!profileComplete}
                 onPress={() => {
-                  if (!isProfileComplete) {
+                  if (!profileComplete) {
                     router.push("/editProfile");
                     return;
                   }

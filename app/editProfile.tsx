@@ -5,7 +5,7 @@ import {
   getSubAreasForTown,
   isCanonicalTown,
   matchCanonicalNames,
-  townHasSubAreas,
+  requiresSubArea,
 } from "@/utils/pakistan_areas";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { Ionicons } from "@expo/vector-icons";
@@ -39,16 +39,6 @@ const OTHER_OPTION = "Other";
 /** Matches the server-side cap on `townOther` / `subAreaOther`. */
 const OTHER_TEXT_MAX = 100;
 
-/**
- * Deliberate skip for the now-required sub-area step. Stores nothing — it only
- * records that the user was asked and chose not to answer, which keeps the
- * field required without forcing a guess from someone who doesn't know their
- * block or sector. A forced guess would land a wrong-but-canonical value in
- * `subArea`, which is worse than an empty one: it looks trustworthy to
- * segmentation queries and can't be told apart from a real answer.
- */
-const SUB_AREA_UNKNOWN = "I'm not sure";
-
 const EditProfile = () => {
   const {
     user,
@@ -77,8 +67,6 @@ const EditProfile = () => {
   const [mapVisible, setMapVisible] = useState(false);
   const [townIsCustom, setTownIsCustom] = useState(false);
   const [subAreaIsOther, setSubAreaIsOther] = useState(false);
-  // Client-only: not persisted, so the question is re-asked on the next edit.
-  const [subAreaSkipped, setSubAreaSkipped] = useState(false);
   const [pickerModal, setPickerModal] = useState<{
     visible: boolean;
     field: PickerField | null;
@@ -144,19 +132,13 @@ const EditProfile = () => {
   const townOptions = [...baseTownOptions, OTHER_OPTION];
 
   // The sub-area step exists only for towns that actually have canonical data.
-  // A custom (free-text) town never does, so this is false for those too.
+  // A free-text town never does — its value lives in `townOther`, leaving
+  // `town` empty — so the step is skipped and not required for those.
   const showSubArea =
-    !townIsCustom &&
-    !!formData.city &&
-    !!formData.town &&
-    townHasSubAreas(formData.city, formData.town);
+    !townIsCustom && requiresSubArea(formData.city || "", formData.town || "");
 
   const subAreaOptions = showSubArea
-    ? [
-        ...getSubAreasForTown(formData.city!, formData.town!),
-        OTHER_OPTION,
-        SUB_AREA_UNKNOWN,
-      ]
+    ? [...getSubAreasForTown(formData.city!, formData.town!), OTHER_OPTION]
     : [];
 
   // ── "Other" suggestions ────────────────────────────────────────────────────
@@ -189,13 +171,12 @@ const EditProfile = () => {
   };
 
   /**
-   * Clears the sub-area answer states. Called whenever the town changes: the
-   * question is about the new town, so a previous "Other" or skip must not
-   * carry over and satisfy the required rule by accident.
+   * Clears the sub-area answer state. Called whenever the town changes: the
+   * question is about the new town, so a previous "Other" must not carry over
+   * and satisfy the required rule by accident.
    */
   const resetSubAreaState = () => {
     setSubAreaIsOther(false);
-    setSubAreaSkipped(false);
   };
 
   /** Commit a canonical town — from the dropdown or from a suggestion tap. */
@@ -253,12 +234,6 @@ const EditProfile = () => {
       if (value === OTHER_OPTION) {
         setFormData((p) => ({ ...p, subArea: "", subAreaOther: "" }));
         setSubAreaIsOther(true);
-        setSubAreaSkipped(false);
-        clearError("subArea");
-      } else if (value === SUB_AREA_UNKNOWN) {
-        setFormData((p) => ({ ...p, subArea: "", subAreaOther: "" }));
-        setSubAreaIsOther(false);
-        setSubAreaSkipped(true);
         clearError("subArea");
       } else {
         selectCanonicalSubArea(value);
@@ -279,13 +254,13 @@ const EditProfile = () => {
     if (!formData.town?.trim() && !formData.townOther?.trim())
       newErrors.town = "Town is required";
     if (!formData.address?.trim())   newErrors.address = "Address is required";
-    // Required only where there is canonical data to choose from. Towns without
-    // sub-areas never render the field, so it must not gate their save.
+    // Required only where there is canonical data to choose from. Free-text
+    // towns and towns without sub-areas never render the field, so it must not
+    // gate their save.
     if (
       showSubArea &&
       !formData.subArea?.trim() &&
-      !formData.subAreaOther?.trim() &&
-      !subAreaSkipped
+      !formData.subAreaOther?.trim()
     )
       newErrors.subArea = "Sub-area is required";
     setErrors(newErrors);
@@ -521,10 +496,9 @@ const EditProfile = () => {
   const renderSubAreaField = () => {
     if (!showSubArea) return null;
 
-    const answered = formData.subArea || subAreaIsOther || subAreaSkipped;
+    const answered = formData.subArea || subAreaIsOther;
     const displayValue =
-      formData.subArea ||
-      (subAreaIsOther ? OTHER_OPTION : subAreaSkipped ? SUB_AREA_UNKNOWN : "Select sub-area");
+      formData.subArea || (subAreaIsOther ? OTHER_OPTION : "Select sub-area");
 
     return (
       <View style={styles.inputContainer}>
@@ -571,7 +545,7 @@ const EditProfile = () => {
         <Text style={styles.fieldHint}>
           {subAreaIsOther
             ? "We'll review entries like yours and add common ones to the list"
-            : `Select "${OTHER_OPTION}" if yours isn't listed, or "${SUB_AREA_UNKNOWN}" to skip`}
+            : `Select "${OTHER_OPTION}" if yours isn't listed`}
         </Text>
       </View>
     );
@@ -737,8 +711,7 @@ const EditProfile = () => {
                   <Text style={[
                     styles.pickerItemText,
                     formData[pickerModal.field!] === item && styles.pickerItemTextSelected,
-                    (item === OTHER_OPTION || item === SUB_AREA_UNKNOWN) &&
-                      styles.pickerItemOther,
+                    item === OTHER_OPTION && styles.pickerItemOther,
                   ]}>
                     {item}
                   </Text>

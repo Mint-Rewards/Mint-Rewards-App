@@ -1790,6 +1790,21 @@ export function townHasSubAreas(city: string, town: string): boolean {
 }
 
 /**
+ * True when a sub-area can be asked for — and therefore required — at this
+ * location. False for a free-text town (which arrives here as an empty `town`,
+ * since the value lives in `townOther`) and for canonical towns with no
+ * sub-area data: neither has a list to choose from, so there is no answer to
+ * demand.
+ *
+ * Single source of truth for the required rule. The edit form and the
+ * profile-completeness check both read it so they cannot disagree about
+ * whether a blank sub-area is a gap or simply not applicable.
+ */
+export function requiresSubArea(city: string, town: string): boolean {
+  return isCanonicalTown(city, town) && townHasSubAreas(city, town);
+}
+
+/**
  * Folds a name to a comparable form: lowercased, punctuation and spacing
  * removed. Canonical names carry inconsistent punctuation ("Federal B. Area",
  * "DHA (Defence Housing Authority)", "Gulshan-e-Iqbal"), so comparing raw text
