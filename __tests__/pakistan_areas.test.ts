@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@jest/globals";
 import { isCanonicalTown, requiresSubArea } from "@/utils/pakistan_areas";
 
 describe("pakistan_areas fixtures", () => {
