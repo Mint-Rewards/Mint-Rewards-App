@@ -2,6 +2,7 @@ import { DiscountItem, useAppStore } from "@/store/store";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
+import { isProfileComplete } from "@/utils/profile";
 import {
   ActivityIndicator,
   Alert,
@@ -27,7 +28,7 @@ type FilterType = "all" | "active";
 
 const DiscountsScreen = () => {
   const { user, getDiscounts, discounts, isDiscountsLoading, discountsError } = useAppStore();
-  const isProfileComplete = !!(user?.phone?.trim() && user?.province?.trim() && user?.city?.trim());
+  const profileComplete = isProfileComplete(user);
 
   const [filter, setFilter] = useState<FilterType>("active");
   const [couponModal, setCouponModal] = useState<{
@@ -157,7 +158,7 @@ const DiscountsScreen = () => {
         ))}
       </View>
 
-      {!isProfileComplete && (
+      {!profileComplete && (
         <TouchableOpacity
           style={styles.profilePromptCard}
           onPress={() => router.push("/editProfile")}
@@ -206,7 +207,7 @@ const DiscountsScreen = () => {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-          {available.map((item) => renderCard(item, false, !isProfileComplete))}
+          {available.map((item) => renderCard(item, false, !profileComplete))}
           {filter === "all" && used.length > 0 && available.length > 0 && (
             <View style={styles.sectionGap} />
           )}
