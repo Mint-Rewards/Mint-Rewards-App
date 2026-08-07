@@ -423,7 +423,7 @@ export default function HomeScreen() {
             >
               <Ionicons name="location-outline" size={22} color="#449EB2" />
               <Text style={styles.profilePromptText}>
-                We&apos;ve updated our area list — please re-select your town
+                We're working on bringing collections to your area. Update your location to see available coupons.
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#449EB2" />
             </TouchableOpacity>
