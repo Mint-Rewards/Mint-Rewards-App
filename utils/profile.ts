@@ -1,4 +1,8 @@
-import { isLegacyTownValue, requiresSubArea } from "@/utils/pakistan_areas";
+import {
+  getSubAreasForTown,
+  isLegacyTownValue,
+  requiresSubArea,
+} from "@/utils/pakistan_areas";
 import type { User } from "@/store/store";
 
 /**
@@ -25,8 +29,21 @@ export function isProfileComplete(user: User | null | undefined): boolean {
     return false;
   }
 
+  // A town the picker cannot represent is not a complete answer to "where do
+  // you live": the user cannot see or confirm it, and the app cannot tell
+  // whether it still means anything. Treat it as missing rather than as an
+  // answered field.
+  if (isLegacyTownValue(city, town)) return false;
+
   if (requiresSubArea(city, town)) {
-    return !!user.subArea?.trim() || !!user.subAreaOther?.trim();
+    const subArea = user.subArea?.trim() || "";
+    // Same reasoning as the town check above: a `subArea` that is no longer
+    // in the canonical list for this town (renamed or removed from the
+    // dataset) cannot be confirmed by the user, so it does not count as an
+    // answer. Mirrors the equivalent guard in `needsLocationUpdate` and the
+    // rehydrate logic in `app/editProfile.tsx`, which drops the same value.
+    if (subArea) return getSubAreasForTown(city, town).includes(subArea);
+    return !!user.subAreaOther?.trim();
   }
 
   return true;
@@ -55,6 +72,20 @@ export function needsLocationUpdate(user: User | null | undefined): boolean {
   const town = user.town?.trim() || "";
 
   if (isLegacyTownValue(city, town)) return true;
+
+  // A `subArea` can go stale the same way a town does: renamed or dropped
+  // from the dataset in a later update. `requiresSubArea` only checks
+  // whether the town still carries sub-area data at all — it has no opinion
+  // on whether this particular saved value is still in that list. Without
+  // this guard, a user in that state would sail through as "up to date"
+  // while `editProfile` silently blanks the same value on rehydrate.
+  if (
+    town &&
+    user.subArea?.trim() &&
+    !getSubAreasForTown(city, town).includes(user.subArea.trim())
+  ) {
+    return true;
+  }
 
   if (requiresSubArea(city, town)) {
     return !user.subArea?.trim() && !user.subAreaOther?.trim();

@@ -836,6 +836,12 @@ Automated tests cover the predicate only. The value of this change is in what an
 - [ ] Seed a user with `townOther: "Some Village"` and empty `town`. Log in. **Expect:** no modal.
 - [ ] Open the **Discounts** tab as a locked-out user. **Expect:** cards locked and the prompt shown there too — not availing normally.
 - [ ] Sign out and sign in as a fully complete user. **Expect:** no modal.
+- [ ] Cold-start a dev build; confirm the bundle builds and Reanimated animations still
+  run. (This repo previously had no `babel.config.js` — Metro applied `babel-preset-expo`
+  implicitly. `app.config.js` enables `experiments.reactCompiler`, and both
+  `react-native-reanimated` and `react-native-worklets` depend on plugins that preset
+  injects, so the new explicit config is worth confirming against a real build rather
+  than trusting `tsc`/`jest` alone.)
 
 ## Out of scope
 

@@ -32,6 +32,7 @@ const LocationUpdateModal = ({ visible, onLater, onUpdate }: Props) => (
             style={styles.laterBtn}
             onPress={onLater}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.laterText}>Later</Text>
           </TouchableOpacity>
@@ -40,6 +41,7 @@ const LocationUpdateModal = ({ visible, onLater, onUpdate }: Props) => (
             style={styles.updateBtn}
             onPress={onUpdate}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.updateText}>Update now</Text>
           </TouchableOpacity>

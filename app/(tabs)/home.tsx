@@ -189,9 +189,10 @@ export default function HomeScreen() {
   const profileComplete = isProfileComplete(user);
 
   // Location-specific prompt takes precedence over the generic incomplete
-  // banner: these users ARE incomplete (a missing sub-area makes them so), and
-  // the generic "complete your profile" copy would tell them nothing about what
-  // actually changed.
+  // banner: these users ARE incomplete — either their saved town is no longer
+  // canonical, or (for those with a still-canonical town) their sub-area was
+  // never collected — and the generic "complete your profile" copy would tell
+  // them nothing about what actually changed.
   const locationUpdateNeeded = needsLocationUpdate(user);
 
   // Demo-only: allowlisted accounts see the mock upcoming-collections teaser

@@ -85,11 +85,21 @@ precedence inverts:
 |---|---|
 | `needsLocationUpdate(user)` | Location modal (once per session) + location banner |
 | `!isProfileComplete(user) && !needsLocationUpdate(user)` | Existing generic "complete your profile" banner |
-| `!isProfileComplete(user)` | Brand cards `locked`, taps route to `editProfile` (unchanged) |
+| `!isProfileComplete(user)` | Brand cards `locked`, taps route to `editProfile` |
 
 At most one banner shows at a time, and affected users get the specific message rather
-than the generic one. The lock itself is unchanged — this design explains an existing
-restriction, it does not add one.
+than the generic one.
+
+The lock itself is not unchanged: `isProfileComplete` now also returns `false` for a
+legacy-town user, which it did not in the original version of this branch. Previously
+such a user's non-empty-but-non-canonical `town` satisfied `hasTown`, and
+`requiresSubArea` short-circuited to false because `isCanonicalTown` was false — so the
+predicate returned `true` and brand cards stayed unlocked even while the modal and banner
+fired. That inconsistency is what made the two populations behave differently despite
+both needing a re-pick: the missing-sub-area group was locked and prompted, the
+legacy-town group was only prompted. With the fix, `isProfileComplete` treats a legacy
+town the same way it already treats a missing required sub-area, so both populations are
+locked, prompted, and unlocked on the same schedule.
 
 ### 3. The modal — `components/LocationUpdateModal.tsx`
 
@@ -132,6 +142,22 @@ No new validation is needed. `validateForm` already requires a town
 (`app/editProfile.tsx:254`, satisfied by either `town` or `townOther`) and a sub-area
 where `requiresSubArea` demands one (`app/editProfile.tsx:265`), so a cleared form cannot
 be saved blank.
+
+**Known consequence, accepted as a cost of uniform clearing.** The town re-pick UI offers
+an "Other" free-text option alongside the canonical list. A user in the missing-sub-area
+population — canonical town, just never asked for a sub-area — sees that same blanked
+town field and can legitimately choose "Other" and type free text instead of re-selecting
+their still-valid canonical town. On save, `town` becomes `""`, `townOther` holds the
+typed value, `requiresSubArea` is now false (free-text towns never require a sub-area),
+and `needsLocationUpdate` goes false via the free-text-town branch — so the prompt clears
+permanently. The user's location data is now strictly worse than before (a canonical town
+traded for free text), and nothing else in the app will ever ask them to fix it.
+
+This is not a hypothetical edge case: it applies to the majority of the affected
+population — 150 of the 196 canonical towns carry sub-area data, and every one of those
+towns' users hits this exact path if they pick "Other" instead of re-selecting. It is
+accepted here as the cost of the "one code path, one rule to reason about" choice
+described above, not tracked as a bug to fix.
 
 ### 6. Consistent gating — `app/discounts.tsx`
 

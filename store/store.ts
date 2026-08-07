@@ -217,6 +217,12 @@ interface UserSlice {
    * session. Deliberately not persisted: a cold start should prompt again,
    * because the user has not re-picked their town yet and would otherwise sit
    * behind a locked brand list with no explanation.
+   *
+   * Only reset in `signOut` (not on login) — safe today only because every
+   * login is preceded by either a cold start or a `signOut`, so the flag is
+   * already `false` by the time a new user's data lands. That invariant lives
+   * outside this file with no compiler or runtime check; revisit this if
+   * in-app account switching (login without an intervening sign-out) lands.
    */
   locationPromptShown: boolean;
   dismissLocationPrompt: () => void;

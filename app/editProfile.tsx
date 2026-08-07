@@ -86,16 +86,18 @@ const EditProfile = () => {
       const existingCity = user.city || "";
       const savedTown = user.town || "";
 
-      // A canonical town survives as `town`. Anything else is either free text
-      // an older build wrote into `town`, or a value renamed out of the list —
-      // both migrate into `townOther` here so the user can confirm or re-pick
-      // it, and so saving cannot write a non-canonical value back into `town`.
+      // A canonical town survives as `town`; `mustReselect` forces both fields
+      // blank so the user re-picks rather than confirms a stale value. The
+      // `savedTown` fallback below is reachable only when `mustReselect` is
+      // false AND the town isn't canonical — i.e. only for cities absent from
+      // `PAKISTAN_LOCATIONS.towns`, where `isLegacyTownValue` can't judge the
+      // saved value and free text may have been written straight into `town`
+      // by an older build.
       const townIsCanonical =
         !mustReselect && isCanonicalTown(existingCity, savedTown);
       const existingTown = townIsCanonical ? savedTown : "";
-      const existingTownOther = mustReselect
-        ? ""
-        : townIsCanonical
+      const existingTownOther =
+        mustReselect || townIsCanonical
           ? ""
           : user.townOther || savedTown || "";
       const isCustom = existingTownOther !== "";
