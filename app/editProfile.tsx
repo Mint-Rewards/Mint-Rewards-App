@@ -1,6 +1,14 @@
 import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
-import { PAKISTAN_LOCATIONS } from "@/utils/pakistanLocations";
+import {
+  PAKISTAN_LOCATIONS,
+  getSubAreasForTown,
+  isCanonicalTown,
+  matchCanonicalNames,
+  requiresSubArea,
+} from "@/utils/pakistan_areas";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { needsLocationUpdate } from "@/utils/profile";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -19,7 +27,18 @@ import {
 } from "react-native";
 import { useAppStore, UserProfile } from "../store/store";
 
-type PickerField = "province" | "city" | "town";
+type PickerField = "province" | "city" | "town" | "subArea";
+
+/**
+ * Sentinel appended to the town and sub-area dropdowns. It is never persisted:
+ * choosing it clears the canonical field and reveals a free-text input writing
+ * to the paired `*Other` field, so `town` and `subArea` only ever hold values
+ * from the canonical list.
+ */
+const OTHER_OPTION = "Other";
+
+/** Matches the server-side cap on `townOther` / `subAreaOther`. */
+const OTHER_TEXT_MAX = 100;
 
 const EditProfile = () => {
   const {
@@ -37,6 +56,9 @@ const EditProfile = () => {
     province: "",
     city: "",
     town: "",
+    townOther: "",
+    subArea: "",
+    subAreaOther: "",
     address: "",
     latitude: "",
     longitude: "",
@@ -45,6 +67,7 @@ const EditProfile = () => {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [mapVisible, setMapVisible] = useState(false);
   const [townIsCustom, setTownIsCustom] = useState(false);
+  const [subAreaIsOther, setSubAreaIsOther] = useState(false);
   const [pickerModal, setPickerModal] = useState<{
     visible: boolean;
     field: PickerField | null;
@@ -54,10 +77,39 @@ const EditProfile = () => {
 
   useEffect(() => {
     if (user) {
-      const existingTown = user.town || "";
+      // Renamed town, or a sub-area that was never collected. Start every
+      // location field empty so the user re-picks from the canonical list
+      // rather than confirming a stale value. Form state only — the store and
+      // the server keep their values until a save succeeds.
+      const mustReselect = needsLocationUpdate(user);
+
       const existingCity = user.city || "";
-      const townList = PAKISTAN_LOCATIONS.towns[existingCity] || [];
-      const isCustom = existingTown !== "" && !townList.includes(existingTown);
+      const savedTown = user.town || "";
+
+      // A canonical town survives as `town`; `mustReselect` forces both fields
+      // blank so the user re-picks rather than confirms a stale value. The
+      // `savedTown` fallback below is reachable only when `mustReselect` is
+      // false AND the town isn't canonical — i.e. only for cities absent from
+      // `PAKISTAN_LOCATIONS.towns`, where `isLegacyTownValue` can't judge the
+      // saved value and free text may have been written straight into `town`
+      // by an older build.
+      const townIsCanonical =
+        !mustReselect && isCanonicalTown(existingCity, savedTown);
+      const existingTown = townIsCanonical ? savedTown : "";
+      const existingTownOther =
+        mustReselect || townIsCanonical
+          ? ""
+          : user.townOther || savedTown || "";
+      const isCustom = existingTownOther !== "";
+
+      // Only rehydrate `subArea` if it is still canonical for this city/town.
+      // A value can go stale if the data file drops or renames an entry, and we
+      // must never seed the form with a non-canonical `subArea`.
+      const canonical = getSubAreasForTown(existingCity, existingTown);
+      const existingSubArea =
+        user.subArea && canonical.includes(user.subArea) ? user.subArea : "";
+      const existingSubAreaOther =
+        mustReselect || existingSubArea ? "" : user.subAreaOther || "";
 
       setFormData({
         userName: user.userName || "",
@@ -66,11 +118,15 @@ const EditProfile = () => {
         province: user.province || "",
         city: existingCity,
         town: existingTown,
+        townOther: existingTownOther,
+        subArea: existingSubArea,
+        subAreaOther: existingSubAreaOther,
         address: user.address || "",
         latitude: user.latitude || "",
         longitude: user.longitude || "",
       });
       setTownIsCustom(isCustom);
+      setSubAreaIsOther(existingSubAreaOther !== "");
     }
   }, []);
 
@@ -86,7 +142,37 @@ const EditProfile = () => {
   const baseTownOptions = formData.city
     ? (PAKISTAN_LOCATIONS.towns[formData.city] || [])
     : [];
-  const townOptions = [...baseTownOptions, "Other"];
+  const townOptions = [...baseTownOptions, OTHER_OPTION];
+
+  // The sub-area step exists only for towns that actually have canonical data.
+  // A free-text town never does — its value lives in `townOther`, leaving
+  // `town` empty — so the step is skipped and not required for those.
+  const showSubArea =
+    !townIsCustom && requiresSubArea(formData.city || "", formData.town || "");
+
+  const subAreaOptions = showSubArea
+    ? [...getSubAreasForTown(formData.city!, formData.town!), OTHER_OPTION]
+    : [];
+
+  // ── "Other" suggestions ────────────────────────────────────────────────────
+  // While someone types a free-text town or sub-area, offer canonical entries
+  // that look like what they wrote, so a near-miss spelling gets steered back
+  // onto the list instead of becoming another `*Other` row to review later.
+  // Debounced so the list settles rather than churning mid-word.
+  const debouncedTownOther = useDebouncedValue(formData.townOther || "");
+  const debouncedSubAreaOther = useDebouncedValue(formData.subAreaOther || "");
+
+  const townSuggestions = townIsCustom
+    ? matchCanonicalNames(baseTownOptions, debouncedTownOther)
+    : [];
+
+  const subAreaSuggestions =
+    showSubArea && subAreaIsOther
+      ? matchCanonicalNames(
+          getSubAreasForTown(formData.city!, formData.town!),
+          debouncedSubAreaOther,
+        )
+      : [];
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const clearError = (field: string) => {
@@ -97,27 +183,74 @@ const EditProfile = () => {
     setPickerModal({ visible: true, field, options, label });
   };
 
+  /**
+   * Clears the sub-area answer state. Called whenever the town changes: the
+   * question is about the new town, so a previous "Other" must not carry over
+   * and satisfy the required rule by accident.
+   */
+  const resetSubAreaState = () => {
+    setSubAreaIsOther(false);
+  };
+
+  /** Commit a canonical town — from the dropdown or from a suggestion tap. */
+  const selectCanonicalTown = (value: string) => {
+    setFormData((p) => ({
+      ...p, town: value, townOther: "", subArea: "", subAreaOther: "",
+    }));
+    setTownIsCustom(false);
+    resetSubAreaState();
+    clearError("town");
+  };
+
+  /** Commit a canonical sub-area — from the dropdown or from a suggestion tap. */
+  const selectCanonicalSubArea = (value: string) => {
+    setFormData((p) => ({ ...p, subArea: value, subAreaOther: "" }));
+    resetSubAreaState();
+    clearError("subArea");
+  };
+
   const handlePickerSelect = (value: string) => {
     const field = pickerModal.field!;
     setPickerModal({ visible: false, field: null, options: [], label: "" });
 
+    // Every level of the cascade clears the sub-area pair: a sub-area is only
+    // meaningful for the exact city/town it was chosen under.
     if (field === "province") {
-      setFormData((p) => ({ ...p, province: value, city: "", town: "" }));
+      setFormData((p) => ({
+        ...p, province: value, city: "", town: "", townOther: "",
+        subArea: "", subAreaOther: "",
+      }));
       setTownIsCustom(false);
+      resetSubAreaState();
       setErrors((p) => ({ ...p, province: "", city: "", town: "" }));
     } else if (field === "city") {
-      setFormData((p) => ({ ...p, city: value, town: "" }));
+      setFormData((p) => ({
+        ...p, city: value, town: "", townOther: "", subArea: "", subAreaOther: "",
+      }));
       setTownIsCustom(false);
+      resetSubAreaState();
       setErrors((p) => ({ ...p, city: "", town: "" }));
     } else if (field === "town") {
-      if (value === "Other") {
-        setFormData((p) => ({ ...p, town: "" }));
+      // Mutual exclusivity: free text goes to `townOther`, never to `town`.
+      if (value === OTHER_OPTION) {
+        setFormData((p) => ({
+          ...p, town: "", townOther: "", subArea: "", subAreaOther: "",
+        }));
         setTownIsCustom(true);
+        resetSubAreaState();
+        clearError("town");
       } else {
-        setFormData((p) => ({ ...p, town: value }));
-        setTownIsCustom(false);
+        selectCanonicalTown(value);
       }
-      clearError("town");
+    } else if (field === "subArea") {
+      // Mutual exclusivity: exactly one of the two fields can ever hold a value.
+      if (value === OTHER_OPTION) {
+        setFormData((p) => ({ ...p, subArea: "", subAreaOther: "" }));
+        setSubAreaIsOther(true);
+        clearError("subArea");
+      } else {
+        selectCanonicalSubArea(value);
+      }
     }
   };
 
@@ -130,8 +263,19 @@ const EditProfile = () => {
     if (!formData.phone?.trim())     newErrors.phone = "Phone number is required";
     if (!formData.province?.trim())  newErrors.province = "Province is required";
     if (!formData.city?.trim())      newErrors.city = "City is required";
-    if (!formData.town?.trim())      newErrors.town = "Town is required";
+    // Either a canonical town or free-text "Other" satisfies the requirement.
+    if (!formData.town?.trim() && !formData.townOther?.trim())
+      newErrors.town = "Town is required";
     if (!formData.address?.trim())   newErrors.address = "Address is required";
+    // Required only where there is canonical data to choose from. Free-text
+    // towns and towns without sub-areas never render the field, so it must not
+    // gate their save.
+    if (
+      showSubArea &&
+      !formData.subArea?.trim() &&
+      !formData.subAreaOther?.trim()
+    )
+      newErrors.subArea = "Sub-area is required";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -141,10 +285,47 @@ const EditProfile = () => {
     clearError(field as string);
   };
 
+  const trimCapped = (v?: string) => (v || "").trim().slice(0, OTHER_TEXT_MAX);
+
+  /**
+   * Normalises both canonical/free-text pairs before they leave the client.
+   * `town` and `subArea` are re-checked against the canonical lists here rather
+   * than trusted from form state, and at most one of each pair survives. Every
+   * field is always sent (as "" when unset) so clearing a previously-saved
+   * value actually reaches the server.
+   */
+  const buildPayload = (): Partial<UserProfile> => {
+    const city = formData.city || "";
+
+    // Town: a non-canonical value is never allowed through as `town`; it
+    // degrades to `townOther` rather than being dropped, so nothing is lost.
+    const townIsCanonical = isCanonicalTown(city, formData.town || "");
+    const town = townIsCanonical ? formData.town! : "";
+    const townOther = townIsCanonical
+      ? ""
+      : trimCapped(formData.townOther || formData.town);
+
+    // Sub-area: only meaningful under a canonical town, and only for towns that
+    // actually have sub-area data — one with none never offered "Other", so
+    // neither field can legitimately hold anything.
+    const canonicalSubAreas = town ? getSubAreasForTown(city, town) : [];
+    if (canonicalSubAreas.length === 0) {
+      return { ...formData, town, townOther, subArea: "", subAreaOther: "" };
+    }
+
+    const subArea =
+      formData.subArea && canonicalSubAreas.includes(formData.subArea)
+        ? formData.subArea
+        : "";
+    const subAreaOther = subArea ? "" : trimCapped(formData.subAreaOther);
+
+    return { ...formData, town, townOther, subArea, subAreaOther };
+  };
+
   const handleSubmit = async () => {
     if (!validateForm()) return;
     try {
-      const result = await updateProfile(formData);
+      const result = await updateProfile(buildPayload());
       if (result.Status === "Success") {
         Alert.alert("Success", "Profile updated successfully!", [
           { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
@@ -222,6 +403,34 @@ const EditProfile = () => {
     </View>
   );
 
+  /**
+   * Canonical entries resembling what the user has typed into an "Other" field.
+   * Tapping one switches them onto the canonical value and clears the free text.
+   */
+  const renderSuggestions = (
+    suggestions: string[],
+    onPick: (value: string) => void,
+  ) => {
+    if (suggestions.length === 0) return null;
+
+    return (
+      <View style={styles.suggestionBox}>
+        <Text style={styles.suggestionHeading}>Did you mean</Text>
+        {suggestions.map((suggestion) => (
+          <TouchableOpacity
+            key={suggestion}
+            style={styles.suggestionRow}
+            onPress={() => onPick(suggestion)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-forward-circle-outline" size={16} color="#449EB2" />
+            <Text style={styles.suggestionText}>{suggestion}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
   // Town field: dropdown or text input depending on townIsCustom
   const renderTownField = () => (
     <View style={styles.inputContainer}>
@@ -237,18 +446,27 @@ const EditProfile = () => {
               styles.customTownInput,
               errors.town && styles.inputError,
             ]}
-            value={formData.town || ""}
-            onChangeText={(v) => handleUpdateField("town", v)}
+            value={formData.townOther || ""}
+            // Writes to `townOther` but clears the `town` error — both fields
+            // satisfy the same "Town is required" rule.
+            onChangeText={(v) => {
+              setFormData((p) => ({ ...p, townOther: v }));
+              clearError("town");
+            }}
             placeholder="Enter your town"
             placeholderTextColor="#a0aec0"
             autoCapitalize="words"
+            maxLength={OTHER_TEXT_MAX}
             autoFocus
           />
           <TouchableOpacity
             style={styles.townBackBtn}
             onPress={() => {
               setTownIsCustom(false);
-              setFormData((p) => ({ ...p, town: "" }));
+              setFormData((p) => ({
+                ...p, town: "", townOther: "", subArea: "", subAreaOther: "",
+              }));
+              resetSubAreaState();
             }}
           >
             <Ionicons name="list" size={20} color="#00528A" />
@@ -272,6 +490,8 @@ const EditProfile = () => {
         </TouchableOpacity>
       )}
 
+      {renderSuggestions(townSuggestions, selectCanonicalTown)}
+
       {errors.town && <Text style={styles.errorText}>{errors.town}</Text>}
       <Text style={styles.fieldHint}>
         {townIsCustom
@@ -280,6 +500,69 @@ const EditProfile = () => {
       </Text>
     </View>
   );
+
+  /**
+   * Sub-area (block / sector / phase). Renders only for towns with canonical
+   * data — towns without it skip the step entirely rather than showing an empty
+   * dropdown, and are not gated by the required rule.
+   */
+  const renderSubAreaField = () => {
+    if (!showSubArea) return null;
+
+    const answered = formData.subArea || subAreaIsOther;
+    const displayValue =
+      formData.subArea || (subAreaIsOther ? OTHER_OPTION : "Select sub-area");
+
+    return (
+      <View style={styles.inputContainer}>
+        <Text style={styles.label}>
+          Sub-area<Text style={styles.asterisk}> *</Text>
+        </Text>
+
+        <TouchableOpacity
+          style={[
+            styles.input,
+            styles.dropdownBtn,
+            errors.subArea && styles.inputError,
+          ]}
+          onPress={() => openPicker("subArea", subAreaOptions, "Sub-area")}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.dropdownText, !answered && styles.placeholderText]}>
+            {displayValue}
+          </Text>
+          <Ionicons name="chevron-down" size={18} color="#a0aec0" />
+        </TouchableOpacity>
+
+        {subAreaIsOther && (
+          <TextInput
+            style={[styles.input, styles.subAreaOtherInput]}
+            value={formData.subAreaOther || ""}
+            // Writes to `subAreaOther` but clears the `subArea` error — both
+            // fields satisfy the same required rule.
+            onChangeText={(v) => {
+              setFormData((p) => ({ ...p, subAreaOther: v }));
+              clearError("subArea");
+            }}
+            placeholder="Enter your block, sector or phase"
+            placeholderTextColor="#a0aec0"
+            autoCapitalize="words"
+            maxLength={OTHER_TEXT_MAX}
+            autoFocus
+          />
+        )}
+
+        {renderSuggestions(subAreaSuggestions, selectCanonicalSubArea)}
+
+        {errors.subArea && <Text style={styles.errorText}>{errors.subArea}</Text>}
+        <Text style={styles.fieldHint}>
+          {subAreaIsOther
+            ? "We'll review entries like yours and add common ones to the list"
+            : `Select "${OTHER_OPTION}" if yours isn't listed`}
+        </Text>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -320,6 +603,8 @@ const EditProfile = () => {
             )}
 
             {renderTownField()}
+
+            {renderSubAreaField()}
 
             {renderInput("address", "Street Address", "e.g. 12 Main Street, Suburb", "default", true, true)}
 
@@ -439,7 +724,7 @@ const EditProfile = () => {
                   <Text style={[
                     styles.pickerItemText,
                     formData[pickerModal.field!] === item && styles.pickerItemTextSelected,
-                    item === "Other" && styles.pickerItemOther,
+                    item === OTHER_OPTION && styles.pickerItemOther,
                   ]}>
                     {item}
                   </Text>
@@ -502,6 +787,38 @@ const styles = StyleSheet.create({
   dropdownText: { fontSize: 16, color: "#2d3748", flex: 1 },
   placeholderText: { color: "#a0aec0" },
   dropdownDisabled: { backgroundColor: "#f0f0f0", borderColor: "#e2e8f0" },
+
+  // Free-text sub-area, revealed under the dropdown when "Other" is picked
+  subAreaOtherInput: { marginTop: 8 },
+
+  // Canonical near-matches offered under an "Other" free-text input
+  suggestionBox: {
+    marginTop: 8,
+    padding: 10,
+    backgroundColor: "#f0f7f9",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d5e8ee",
+    gap: 2,
+  },
+  suggestionHeading: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#5b7683",
+    marginBottom: 4,
+  },
+  suggestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 7,
+  },
+  suggestionText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#00528A",
+    fontWeight: "500",
+  },
 
   // Custom town row
   customTownRow: { flexDirection: "row", gap: 8 },

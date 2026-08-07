@@ -83,6 +83,9 @@ export interface User {
   province?: string;
   city?: string;
   town?: string;
+  townOther?: string;
+  subArea?: string;
+  subAreaOther?: string;
   mintId?: string;
   latitude?: string;
   longitude?: string;
@@ -104,7 +107,28 @@ export interface UserProfile {
   phone: string;
   province: string;
   city: string;
+  /**
+   * Canonical town. Only ever holds a value from `getTownsForCity(city)`, or
+   * "". Mutually exclusive with `townOther`.
+   */
   town: string;
+  /**
+   * Free-text town for users whose town isn't in the canonical list. Trimmed
+   * and capped at 100 chars. Mutually exclusive with `town`.
+   */
+  townOther?: string;
+  /**
+   * Canonical block/sector/phase. Only ever holds a value returned by
+   * `getSubAreasForTown(city, town)` in utils/pakistan_areas.ts — never free
+   * text. Mutually exclusive with `subAreaOther`.
+   */
+  subArea?: string;
+  /**
+   * Free-text sub-area for users whose area isn't in the canonical list.
+   * Trimmed and capped at 100 chars. Captured for review, not for
+   * segmentation. Mutually exclusive with `subArea`.
+   */
+  subAreaOther?: string;
   address: string;
   email: string;
   latitude?: string;
@@ -188,6 +212,20 @@ interface UserSlice {
   token: string | null;
   isLoading: boolean;
   error: string | null;
+  /**
+   * True once the location-update modal has been shown and dismissed this
+   * session. Deliberately not persisted: a cold start should prompt again,
+   * because the user has not re-picked their town yet and would otherwise sit
+   * behind a locked brand list with no explanation.
+   *
+   * Only reset in `signOut` (not on login) — safe today only because every
+   * login is preceded by either a cold start or a `signOut`, so the flag is
+   * already `false` by the time a new user's data lands. That invariant lives
+   * outside this file with no compiler or runtime check; revisit this if
+   * in-app account switching (login without an intervening sign-out) lands.
+   */
+  locationPromptShown: boolean;
+  dismissLocationPrompt: () => void;
   setUserData: (userData: Partial<User>) => void;
   getProfile: () => Promise<void>;
   signIn: (
@@ -364,6 +402,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   token: null,
   isLoading: false,
   error: null,
+  locationPromptShown: false,
+
+  dismissLocationPrompt: () => set({ locationPromptShown: true }),
 
   setUserData: (userData) =>
     set((state) => ({
@@ -428,6 +469,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
           province: data.user.province,
           city: data.user.city,
           town: data.user.town,
+          townOther: data.user.townOther,
+          subArea: data.user.subArea,
+          subAreaOther: data.user.subAreaOther,
           mintId: data.user.mintId,
           latitude: data.user.latitude,
           longitude: data.user.longitude,
@@ -620,7 +664,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // previous user's booking, but its SecureStore key is deliberately left in
     // place (see scheduledCollectionKey): the schedule must survive logout, and
     // loadScheduledCollection rehydrates it when its owner signs back in.
-    set({ user: null, token: null, error: null, scheduledCollection: null });
+    set({
+      user: null,
+      token: null,
+      error: null,
+      scheduledCollection: null,
+      locationPromptShown: false,
+    });
   },
 
   resendVerificationOtp: async (email) => {

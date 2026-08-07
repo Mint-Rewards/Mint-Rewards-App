@@ -14,6 +14,8 @@ import { BrandTheme, co2FromWasteKg, useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
 import { logEvent } from "@/utils/logger";
+import LocationUpdateModal from "@/components/LocationUpdateModal";
+import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
 import { Constants } from "../../utils/constants";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -177,16 +179,21 @@ export default function HomeScreen() {
     scheduledCollection,
     loadScheduledCollection,
   } = useAppStore();
+  const locationPromptShown = useAppStore((s) => s.locationPromptShown);
+  const dismissLocationPrompt = useAppStore((s) => s.dismissLocationPrompt);
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
   // absolutely positioned, so the scroll has to clear it by its full height.
   const tabBarOverflow = useBottomTabOverflow();
   const hasLocation = !!(user?.latitude && user?.longitude);
   const hasAddress = !!user?.address;
-  const isProfileComplete = !!(
-    user?.phone?.trim() &&
-    user?.province?.trim() &&
-    user?.city?.trim()
-  );
+  const profileComplete = isProfileComplete(user);
+
+  // Location-specific prompt takes precedence over the generic incomplete
+  // banner: these users ARE incomplete — either their saved town is no longer
+  // canonical, or (for those with a still-canonical town) their sub-area was
+  // never collected — and the generic "complete your profile" copy would tell
+  // them nothing about what actually changed.
+  const locationUpdateNeeded = needsLocationUpdate(user);
 
   // Demo-only: allowlisted accounts see the mock upcoming-collections teaser
   // instead of the static "Warming Up!" card. Everyone else is unaffected.
@@ -394,7 +401,7 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {!isProfileComplete && (
+          {!profileComplete && !locationUpdateNeeded && (
             <TouchableOpacity
               style={styles.profilePromptCard}
               onPress={() => router.push("/editProfile")}
@@ -408,15 +415,29 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
+          {locationUpdateNeeded && (
+            <TouchableOpacity
+              style={styles.profilePromptCard}
+              onPress={() => router.push("/editProfile")}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="location-outline" size={22} color="#449EB2" />
+              <Text style={styles.profilePromptText}>
+                We're working on bringing collections to your area. Update your location to see available coupons.
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#449EB2" />
+            </TouchableOpacity>
+          )}
+
           <View style={{ height: cardsContainerHeight, position: "relative" }}>
             {brands.map((brand, index) => (
               <BrandCard
                 key={brand._id}
                 brand={brand as BrandTheme & { status?: string }}
                 index={index}
-                locked={!isProfileComplete}
+                locked={!profileComplete}
                 onPress={() => {
-                  if (!isProfileComplete) {
+                  if (!profileComplete) {
                     router.push("/editProfile");
                     return;
                   }
@@ -436,6 +457,15 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <LocationUpdateModal
+        visible={locationUpdateNeeded && !locationPromptShown}
+        onLater={dismissLocationPrompt}
+        onUpdate={() => {
+          dismissLocationPrompt();
+          router.push("/editProfile");
+        }}
+      />
     </View>
   );
 }

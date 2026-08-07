@@ -236,7 +236,10 @@ export function resolveDemoUserLocation(
   user: User | null | undefined,
 ): DemoUserLocation | null {
   const city = user?.city?.trim();
-  const area = user?.town?.trim() || city;
+  // `town` and `townOther` are mutually exclusive, so whichever is populated is
+  // the user's town — reading only `town` would silently degrade a free-text
+  // town to the city.
+  const area = user?.town?.trim() || user?.townOther?.trim() || city;
   if (!city || !area) return null;
   return { area, city };
 }
