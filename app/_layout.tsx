@@ -97,7 +97,7 @@ export default function RootLayout() {
           <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
           <Stack.Screen name="redeem" options={{ headerShown: false }} />
           <Stack.Screen name="editProfile" options={{ headerShown: false }} />
-          <Stack.Screen name="discounts" options={{ headerShown: false }} />
+          <Stack.Screen name="deals" options={{ headerShown: false }} />
           <Stack.Screen name="collections" options={{ headerShown: false }} />
           <Stack.Screen name="otp-screen" options={{ headerShown: false }} />
           <Stack.Screen name="change-password" options={{ headerShown: false }} />

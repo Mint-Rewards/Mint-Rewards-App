@@ -135,31 +135,6 @@ export interface UserProfile {
   longitude?: string;
 }
 
-// Campaign Types
-export interface CampaignAddress {
-  province: string;
-  city: string;
-  town: string;
-  _id?: string;
-}
-
-export type CampaignStatus = "PENDING" | "APPROVED" | "REJECTED";
-
-export interface Campaign {
-  _id: string;
-  name: string;
-  startDate: string;
-  endDate: string;
-  discountCodes: string[];
-  isSingleCode: boolean;
-  discountPercentage?: string;
-  addresses: CampaignAddress[];
-  status: CampaignStatus;
-  users?: string[];
-  brand: Brand;
-  brandRegistration?: string;
-}
-
 // Brand Types
 export interface Brand {
   _id: string;
@@ -193,14 +168,46 @@ export interface BrandTheme {
   status?: string;
 }
 
-export interface DiscountItem {
+/**
+ * A Deal — the consumer incentive, i.e. "what do I get". Served by
+ * GET /api/users/deals from the backend's `deals` collection.
+ *
+ * Vocabulary (see the backend's docs/VOCABULARY.md):
+ *   Deal     — the umbrella term for any consumer incentive.
+ *   Discount — one TYPE of Deal: a price reduction, by percentage
+ *              (discountPercentage) or fixed amount (discountAmount).
+ *   Coupon   — only the redemption mechanism: the `code` below, and the PDF
+ *              voucher built from it.
+ *   Campaign — a sustainability/recycling programme. NOT an incentive, and
+ *              deliberately not surfaced in this app.
+ *
+ * `codes` is never sent to the client: the inventory is the thing being
+ * rationed. A user receives exactly one code, from the redeem endpoint.
+ */
+export interface Deal {
   _id: string;
-  name?: string;
-  discountPercentage?: string;
-  brand: { _id: string; companyName: string; logo?: string; themeColor?: string; category?: string };
-  startDate: string;
-  endDate: string;
+  title: string;
+  description: string;
+  // Numbers here, unlike the string the campaign-backed payload used to carry.
+  discountPercentage: number | null;
+  discountAmount: number | null;
+  minimumPurchase: number | null;
+  // Nullable: a deal need not be date-bounded at either end.
+  startDate: string | null;
+  endDate: string | null;
+  brand: {
+    _id: string;
+    companyName: string;
+    brandName?: string;
+    logo?: string;
+    themeColor?: string;
+    category?: string;
+  };
   isAvailed: boolean;
+  // Present only once this user has claimed the deal.
+  code: string | null;
+  // Every code goes to exactly one user, so a deal can genuinely run out.
+  soldOut: boolean;
 }
 
 // ============================================================================
@@ -282,43 +289,28 @@ interface ProfileSlice {
   }>;
 }
 
-interface DiscountSlice {
-  discounts: DiscountItem[];
-  isDiscountsLoading: boolean;
-  discountsError: string | null;
-  getDiscounts: () => Promise<DiscountItem[]>;
-  availDiscount: (discountId: string) => Promise<string | null>;
-  markDiscountUsed: (discountId: string) => Promise<void>;
-}
-
-interface CampaignSlice {
-  campaigns: Campaign[];
-  isCampaignLoading: boolean;
-  campaignError: string | null;
-
-  brands: BrandTheme[];
-  isBrandLoading: boolean;
-  brandError: string | null;
-
-  brandsWithCampaigns: (BrandTheme & { campaigns: Campaign[] })[];
-  isBrandsWithCampaignsLoading: boolean;
-  brandsWithCampaignsError: string | null;
-
-  getBrands: () =>
-    | Promise<{ Status: string; ErrorMessage?: string }>
-    | Promise<BrandTheme[]>;
-
-  getBrandsWithCampaigns: () =>
-    | Promise<{ Status: string; ErrorMessage?: string }>
-    | Promise<
-        (BrandTheme & {
-          campaigns: Campaign[];
-        })[]
-      >;
-
-  getCampaigns: () =>
-    | Promise<{ Status: string; ErrorMessage?: string }>
-    | Promise<Campaign[]>;
+/**
+ * The app's only consumer-incentive surface.
+ *
+ * This replaces the old DiscountSlice + CampaignSlice pair, both of which read
+ * campaign documents (/api/users/my-discounts and /api/users/active-campaigns)
+ * and presented them as consumer offers. A Campaign is a recycling programme,
+ * not an incentive, so the app now reads deals and nothing else.
+ *
+ * One fetch backs every surface: the deals payload embeds the brand on each
+ * row, so the brand lists on home and the brand-detail screen are derived from
+ * `deals` rather than fetched separately.
+ */
+interface DealSlice {
+  deals: Deal[];
+  isDealsLoading: boolean;
+  dealsError: string | null;
+  getDeals: () => Promise<Deal[]>;
+  /**
+   * Claims one code for this deal. Idempotent per user: re-claiming returns
+   * the same code rather than consuming another.
+   */
+  redeemDeal: (dealId: string) => Promise<{ code: string } | { error: string }>;
 }
 
 /**
@@ -390,8 +382,7 @@ function parseScheduledCollection(raw: string): ScheduledCollection | null {
 // ============================================================================
 type AppStore = UserSlice &
   ProfileSlice &
-  CampaignSlice &
-  DiscountSlice &
+  DealSlice &
   DemoCollectionsSlice;
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -963,267 +954,90 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   // ========================================================================
-  // CAMPAIGN SLICE
+  // DEAL SLICE
   // ========================================================================
-  campaigns: [],
-  isCampaignLoading: false,
-  campaignError: null,
+  //
+  // The app's only consumer-incentive surface. Replaced the campaign-backed
+  // discount slice: /api/users/my-discounts and /api/users/active-campaigns
+  // both served *campaign* documents dressed as offers, and a Campaign is a
+  // recycling programme, not an incentive.
+  deals: [],
+  isDealsLoading: false,
+  dealsError: null,
 
-  brands: [],
-  isBrandLoading: false,
-  brandError: null,
-
-  brandsWithCampaigns: [],
-  isBrandsWithCampaignsLoading: false,
-  brandsWithCampaignsError: null,
-
-  getBrands: async () => {
-    set({ isBrandLoading: true, brandError: null });
-    try {
-      const token = get().token || get().user?.token;
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (token) headers.Authorization = token;
-
-      const response = await authenticatedFetch(`${API_URL}/api/users/active-campaigns`, {
-        method: "GET",
-        headers,
-      });
-      const data = await response.json();
-
-      if (response.ok) {
-        set({
-          brands: data.activeBrands || [],
-          isBrandLoading: false,
-          brandError: null,
-        });
-        return data.activeBrands;
-      } else {
-        const errorMessage = data.message || "Error fetching campaigns.";
-        set({ campaignError: errorMessage, isCampaignLoading: false });
-        return {
-          Status: "Error",
-          ErrorMessage: errorMessage,
-        };
-      }
-    } catch (error) {
-      console.error("Campaigns error:", error);
-      const errorMessage =
-        "Network error. Please check your connection and try again.";
-      set({ campaignError: errorMessage, isCampaignLoading: false });
-      return {
-        Status: "Error",
-        ErrorMessage: errorMessage,
-      };
-    }
-  },
-
-  getBrandsWithCampaigns: async () => {
-    set({ isBrandsWithCampaignsLoading: true, brandsWithCampaignsError: null });
-
+  getDeals: async () => {
+    set({ isDealsLoading: true, dealsError: null });
     try {
       // getProfile() replaces `user` wholesale with the backend profile, which
-      // carries no token — so `user.token` is undefined after any profile fetch.
-      // Always fall back to the store token, as every other action does.
+      // carries no token — so user.token is undefined after any profile fetch.
+      // Always fall back to the store token.
       const token = get().token || get().user?.token;
 
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-
-      if (token) {
-        headers.Authorization = token;
-      }
-
-      // /api/brands is admin-only (requireAdminAuth) and rejects regular user
-      // tokens. active-campaigns already returns both brands and campaigns in
-      // one response — merge them client-side by brand id instead.
-      const response = await authenticatedFetch(`${API_URL}/api/users/active-campaigns`, {
+      const response = await authenticatedFetch(`${API_URL}/api/users/deals`, {
         method: "GET",
-        headers,
+        headers: {
+          "Content-Type": "application/json",
+          // Raw token, no "Bearer " prefix — the backend reads it as-is.
+          ...(token ? { Authorization: token } : {}),
+        },
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        const activeBrands = data.activeBrands || [];
-        // Unlike the admin /api/brands route, active-campaigns does not
-        // populate `brand` — it's a raw ObjectId string here.
-        const activeCampaigns = data.activeCampaigns || [];
-
-        const campaignsByBrandId = new Map<string, any[]>();
-        for (const campaign of activeCampaigns) {
-          const brandId = String(campaign.brand);
-          if (!campaignsByBrandId.has(brandId)) campaignsByBrandId.set(brandId, []);
-          campaignsByBrandId.get(brandId)!.push(campaign);
-        }
-
-        const brandsWithCampaigns = activeBrands.map((brand: BrandTheme) => ({
-          ...brand,
-          campaigns: (campaignsByBrandId.get(String(brand._id)) || []).map((campaign) => ({
-            ...campaign,
-            // BrandTheme is a subset of the full admin-panel Brand type;
-            // it's all this screen ever renders from campaign.brand.
-            brand,
-          })),
-        }));
-
-        set({
-          brandsWithCampaigns,
-          isBrandsWithCampaignsLoading: false,
-          brandsWithCampaignsError: null,
-        });
-
-        return brandsWithCampaigns;
-      } else {
-        const errorMessage = data.message || "Error fetching campaigns.";
-        set({
-          brandsWithCampaignsError: errorMessage,
-          isBrandsWithCampaignsLoading: false,
-        });
-        return {
-          Status: "Error",
-          ErrorMessage: errorMessage,
-        };
+        const deals: Deal[] = data.deals || [];
+        set({ deals, isDealsLoading: false, dealsError: null });
+        return deals;
       }
-    } catch (error) {
-      console.error("Campaigns error:", error);
-      const errorMessage =
-        "Network error. Please check your connection and try again.";
+
       set({
-        brandsWithCampaignsError: errorMessage,
-        isBrandsWithCampaignsLoading: false,
+        dealsError: data.error || "Failed to fetch deals.",
+        isDealsLoading: false,
       });
-      return {
-        Status: "Error",
-        ErrorMessage: errorMessage,
-      };
-    }
-  },
-
-  getCampaigns: async () => {
-    set({ isCampaignLoading: true, campaignError: null });
-
-    try {
-      const token = get().token || get().user?.token;
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (token) headers.Authorization = token;
-
-      const response = await authenticatedFetch(`${API_URL}/api/users/active-campaigns`, {
-        method: "GET",
-        headers,
-      });
-      const data = await response.json();
-
-      if (response.ok) {
-        set({
-          campaigns: data.activeCampaigns || [],
-          isCampaignLoading: false,
-          campaignError: null,
-        });
-        return data.activeCampaigns;
-      } else {
-        const errorMessage = data.message || "Error fetching brands.";
-        set({ brandError: errorMessage, isBrandLoading: false });
-        return {
-          Status: "Error",
-          ErrorMessage: errorMessage,
-        };
-      }
-    } catch (error) {
-      console.error("Brands error:", error);
-      const errorMessage =
-        "Network error. Please check your connection and try again.";
-      set({ brandError: errorMessage, isBrandLoading: false });
-      return {
-        Status: "Error",
-        ErrorMessage: errorMessage,
-      };
-    }
-  },
-
-  setCampaignLoading: (loading: boolean) => set({ isCampaignLoading: loading }),
-  setCampaignError: (error: string | null) => set({ campaignError: error }),
-
-  // ========================================================================
-  // DISCOUNT SLICE
-  // ========================================================================
-  discounts: [],
-  isDiscountsLoading: false,
-  discountsError: null,
-
-  getDiscounts: async () => {
-    set({ isDiscountsLoading: true, discountsError: null });
-    try {
-      const token = get().token || get().user?.token;
-      console.log("[getDiscounts] token:", token);
-      const response = await authenticatedFetch(`${API_URL}/api/users/my-discounts`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: token } : {}),
-        },
-      });
-      const data = await response.json();
-      console.log("[getDiscounts] status:", response.status, "body:", JSON.stringify(data));
-      if (response.ok) {
-        set({ discounts: data.discounts || [], isDiscountsLoading: false });
-        return data.discounts || [];
-      }
-      set({ discountsError: data.error || "Failed to fetch discounts.", isDiscountsLoading: false });
       return [];
     } catch {
-      set({ discountsError: "Network error. Please try again.", isDiscountsLoading: false });
+      set({
+        dealsError: "Network error. Please try again.",
+        isDealsLoading: false,
+      });
       return [];
     }
   },
 
-  availDiscount: async (discountId) => {
+  redeemDeal: async (dealId) => {
     try {
       const token = get().token || get().user?.token;
-      const response = await authenticatedFetch(`${API_URL}/api/users/my-discounts`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: token } : {}),
-        },
-        body: JSON.stringify({ discountId }),
-      });
-      const data = await response.json();
-      console.log("[availDiscount] status:", response.status, "body:", JSON.stringify(data));
-      if (response.ok) {
-        return data.code ?? data.discountCode ?? null;
-      }
-      return null;
-    } catch (e) {
-      console.log("[availDiscount] exception:", e);
-      return null;
-    }
-  },
 
-  markDiscountUsed: async (discountId) => {
-    try {
-      const token = get().token || get().user?.token;
-      const response = await authenticatedFetch(`${API_URL}/api/users/my-discounts`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: token } : {}),
+      const response = await authenticatedFetch(
+        `${API_URL}/api/users/deals/${dealId}/redeem`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: token } : {}),
+          },
         },
-        body: JSON.stringify({ discountId }),
-      });
-      if (response.ok) {
-        set((state) => ({
-          discounts: state.discounts.map((d) =>
-            d._id === discountId ? { ...d, isAvailed: true } : d,
-          ),
-        }));
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.code) {
+        // 404 unknown deal, 409 no codes left / fully redeemed, 503 contention.
+        return { error: data.error || "This deal could not be claimed." };
       }
+
+      // Reflect the claim locally so the card flips to "Used" without waiting
+      // for a refetch. `alreadyClaimed` is not an error — the endpoint is
+      // idempotent per user and hands back the same code.
+      set((state) => ({
+        deals: state.deals.map((d) =>
+          d._id === dealId ? { ...d, isAvailed: true, code: data.code } : d,
+        ),
+      }));
+
+      return { code: data.code as string };
     } catch {
-      // best-effort — local state remains unchanged until next refresh
+      return { error: "Network error. Please try again." };
     }
   },
 

@@ -10,7 +10,7 @@ import { useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React from "react";
+import React, { useEffect } from "react";
 import {
   Alert,
   ScrollView,
@@ -21,7 +21,13 @@ import {
 } from "react-native";
 
 const ProfileScreen = () => {
-  const { signOut, deleteAccount, user, campaigns } = useAppStore();
+  const { signOut, deleteAccount, user, deals, getDeals } = useAppStore();
+
+  // The "Rewards" stat used to read `campaigns`, which nothing ever populated,
+  // so it always rendered 0. Fetch the deals it now counts.
+  useEffect(() => {
+    getDeals();
+  }, [getDeals]);
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
   // absolutely positioned, so the scroll has to clear it by its full height.
   const tabBarOverflow = useBottomTabOverflow();
@@ -91,7 +97,7 @@ const ProfileScreen = () => {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{campaigns.length}</Text>
+            <Text style={styles.statNumber}>{deals.length}</Text>
             <Text style={styles.statLabel}>Rewards</Text>
           </View>
           <View style={styles.statDivider} />
@@ -123,11 +129,11 @@ const ProfileScreen = () => {
 
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => router.push("/discounts")}
+              onPress={() => router.push("/deals")}
               activeOpacity={0.7}
             >
               <View style={styles.menuContent}>
-                <Text style={styles.menuTitle}>My Discounts</Text>
+                <Text style={styles.menuTitle}>My Deals</Text>
               </View>
 
               <Ionicons name="chevron-forward" size={20} color="#999999" />

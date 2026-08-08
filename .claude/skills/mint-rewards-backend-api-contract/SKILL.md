@@ -6,11 +6,11 @@ description: >
   response fields the client actually reads, and per-endpoint error-key quirks
   (data.error vs data.message vs data.ErrorMessage). Use when adding/changing
   any fetch call, debugging an API error, wiring a new screen to the backend,
-  interpreting a login/signup/redeem/my-discounts response, deciding which
+  interpreting a login/signup/redeem/deals response, deciding which
   error key to read, understanding the {Status:"Success"|"Error"} wrapper, or
   coordinating a backend change. Triggers: "endpoint", "API", "fetch", "401",
   "Authorization header", "Bearer", "response shape", "error message key",
-  "my-discounts", "redeem", "active-campaigns", "auth/google", "auth/apple",
+  "deals", "redeem", "soldOut", "isAvailed", "auth/google", "auth/apple",
   "/api/logs", "backend contract".
 ---
 
@@ -47,12 +47,12 @@ Two fetch wrappers exist:
 
 | Wrapper | File | Behavior | Used by |
 |---|---|---|---|
-| `authenticatedFetch` | `utils/api.ts` | Plain fetch, but **on HTTP 401 it calls `signOut()` and `router.replace("/login")` — global sign-out side effect** | my-profile, update-profile, delete-account, referrals, active-campaigns, /api/brands, my-discounts GET/PATCH/PUT |
+| `authenticatedFetch` | `utils/api.ts` | Plain fetch, but **on HTTP 401 it calls `signOut()` and `router.replace("/login")` — global sign-out side effect** | my-profile, update-profile, delete-account, referrals, deals GET, deals redeem POST |
 | `fetchWithTimeout` | `store/store.ts` | AbortController, **15s timeout — used ONLY by signIn and signUp**. AbortError → "Request timed out..." message | login, signup |
 
 Plain `fetch` (no wrapper, no timeout, no 401 sign-out) is used by: reset-password,
 verify-otp, set-password, `/api/auth/google`, `/api/auth/apple`,
-`/api/coupons/:id/redeem`, `/api/logs`. Note the redeem call getting a 401 does
+`/api/logs`. Note the deal redeem call now goes through authenticatedFetch, so a 401 does
 **not** trigger global sign-out — it just alerts "Cannot Download".
 
 ## The `{Status: "Success"|"Error"}` wrapper — TWO different things (do not confuse)
@@ -86,18 +86,21 @@ raw response body. A model editing these must keep the two straight.
 | 7 | POST | `/api/users/verify-otp` | none | `store/store.ts` verifyOTP | plain fetch |
 | 8 | POST | `/api/users/set-password` | none | `store/store.ts` setPassword | plain fetch |
 | 9 | POST | `/api/users/referrals` | raw token | `store/store.ts` sendRefferal | authenticatedFetch |
-| 10 | GET | `/api/users/active-campaigns` | raw token | `store/store.ts` getBrands | authenticatedFetch |
-| 11 | GET | `/api/users/active-campaigns` | raw token | `store/store.ts` getCampaigns (same path, different field read) | authenticatedFetch |
-| 12 | GET | `/api/brands` | raw token (sent if present) | `store/store.ts` getBrandsWithCampaigns | authenticatedFetch |
-| 13 | GET | `/api/users/my-discounts` | raw token | `store/store.ts` getDiscounts | authenticatedFetch |
-| 14 | PATCH | `/api/users/my-discounts` | raw token | `store/store.ts` availDiscount | authenticatedFetch |
-| 15 | PUT | `/api/users/my-discounts` | raw token | `store/store.ts` markDiscountUsed | authenticatedFetch |
-| 16 | PATCH | `/api/coupons/:id/redeem` | raw token | `hooks/useCouponDownload.ts` | plain fetch |
+| 10 | GET | `/api/users/deals` | raw token | `store/store.ts` getDeals | authenticatedFetch |
+| 11 | POST | `/api/users/deals/:dealId/redeem` | raw token | `store/store.ts` redeemDeal, via `hooks/useCouponDownload.ts` | authenticatedFetch |
 | 17 | POST | `/api/auth/google` | none | `app/login.tsx`, `app/register.tsx` | plain fetch |
 | 18 | POST | `/api/auth/apple` | none | `app/login.tsx`, `app/register.tsx` | plain fetch |
 | 19 | POST | `/api/logs` | none | `utils/logger.ts` sendLog | plain fetch, fire-and-forget |
 
-(18 unique method+path combos; #10/#11 share one. `app/change-password.tsx`,
+NO LONGER CONSUMED — these all serve **campaign** documents and the app is
+deals-only (see `Mint-Rewards-Backend/docs/VOCABULARY.md`). They remain live on
+the backend for un-updated clients; do not wire new code to them.
+
+| ~~GET~~ | `/api/users/active-campaigns` | was getBrands / getCampaigns / getBrandsWithCampaigns |
+| ~~GET/PATCH/PUT~~ | `/api/users/my-discounts` | was getDiscounts / availDiscount / markDiscountUsed |
+| ~~PATCH~~ | `/api/coupons/:couponId/redeem` | was useCouponDownload. `couponId` is a **campaign** `_id`. |
+
+(unique method+path combos; `app/change-password.tsx`,
 `app/collections.tsx`, `app/notifications.tsx` and all `app/(tabs)/*` screens call
 only the store actions above — no direct fetches. Verified by
 `grep -rn "fetch(" app components hooks utils store`.)

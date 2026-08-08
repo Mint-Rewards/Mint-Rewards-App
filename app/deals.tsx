@@ -1,4 +1,4 @@
-import { DiscountItem, useAppStore } from "@/store/store";
+import { Deal, useAppStore } from "@/store/store";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
@@ -16,8 +16,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
-
-const isExpired = (endDate: string) => new Date(endDate) < new Date();
+import { dealCtaLabel, isDealExpired, partitionDeals } from "@/utils/deals";
 
 const formatExpiry = (endDate: string) => {
   const d = new Date(endDate);
@@ -26,28 +25,27 @@ const formatExpiry = (endDate: string) => {
 
 type FilterType = "all" | "active";
 
-const DiscountsScreen = () => {
-  const { user, getDiscounts, discounts, isDiscountsLoading, discountsError } = useAppStore();
+const DealsScreen = () => {
+  const { user, getDeals, deals, isDealsLoading, dealsError } = useAppStore();
   const profileComplete = isProfileComplete(user);
 
   const [filter, setFilter] = useState<FilterType>("active");
   const [couponModal, setCouponModal] = useState<{
     visible: boolean;
-    item: DiscountItem | null;
+    item: Deal | null;
   }>({ visible: false, item: null });
 
   const { downloadCoupon, isDownloading } = useCouponDownload();
 
   useEffect(() => {
-    getDiscounts().then((result) => {
-      console.log("[Discounts] fetched:", result?.length, "items");
-    });
+    getDeals();
   }, []);
 
-  const available = discounts.filter((d) => !d.isAvailed && !isExpired(d.endDate));
-  const used = discounts.filter((d) => d.isAvailed || isExpired(d.endDate));
+  // Claimed and sold-out deals drop out of Active and reappear, greyed, under
+  // All — the same bucketing used/expired coupons always had.
+  const { available, used } = partitionDeals(deals);
 
-  const handleAvail = (item: DiscountItem) => {
+  const handleAvail = (item: Deal) => {
     setCouponModal({ visible: true, item });
   };
 
@@ -69,7 +67,7 @@ const DiscountsScreen = () => {
             const success = await downloadCoupon(couponModal.item!);
             if (success) {
               closeCouponModal();
-              await getDiscounts();
+              await getDeals();
             }
           },
         },
@@ -77,10 +75,9 @@ const DiscountsScreen = () => {
     );
   };
 
-  const renderCard = (item: DiscountItem, disabled: boolean, locked = false) => {
-    const title = item.discountPercentage
-      ? `Enjoy ${item.discountPercentage}% off on ${item.brand.companyName} deals`
-      : `Exclusive deal from ${item.brand.companyName}`;
+  const renderCard = (item: Deal, disabled: boolean, locked = false) => {
+    // The brand writes the title in BrandHub; it is not synthesized here.
+    const title = item.title;
 
     return (
       <View key={item._id} style={[styles.card, (disabled || locked) && styles.cardDisabled]}>
@@ -98,11 +95,14 @@ const DiscountsScreen = () => {
             <Text style={[styles.cardTitle, (disabled || locked) && styles.textDisabled]} numberOfLines={2}>
               {title}
             </Text>
-            <View style={[styles.expiryPill, (disabled || locked) && styles.expiryPillDisabled]}>
-              <Text style={[styles.expiryText, (disabled || locked) && styles.textDisabled]}>
-                {isExpired(item.endDate) ? "Expired" : formatExpiry(item.endDate)}
-              </Text>
-            </View>
+            {/* A deal need not be date-bounded — no end date, no pill. */}
+            {item.endDate ? (
+              <View style={[styles.expiryPill, (disabled || locked) && styles.expiryPillDisabled]}>
+                <Text style={[styles.expiryText, (disabled || locked) && styles.textDisabled]}>
+                  {isDealExpired(item) ? "Expired" : formatExpiry(item.endDate)}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -121,7 +121,7 @@ const DiscountsScreen = () => {
             </View>
           ) : (
             <Text style={[styles.availText, disabled && styles.availTextDisabled]}>
-              {item.isAvailed ? "Used" : isExpired(item.endDate) ? "Expired" : "Avail Offer"}
+              {dealCtaLabel(item)}
             </Text>
           )}
         </TouchableOpacity>
@@ -138,7 +138,7 @@ const DiscountsScreen = () => {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={22} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Discounts</Text>
+        <Text style={styles.headerTitle}>Deals</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -166,43 +166,43 @@ const DiscountsScreen = () => {
         >
           <Ionicons name="person-circle-outline" size={22} color="#449EB2" />
           <Text style={styles.profilePromptText}>
-            Complete your profile to unlock discounts
+            Complete your profile to unlock deals
           </Text>
           <Ionicons name="chevron-forward" size={16} color="#449EB2" />
         </TouchableOpacity>
       )}
 
-      {isDiscountsLoading ? (
+      {isDealsLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#449EB2" />
         </View>
-      ) : discountsError ? (
+      ) : dealsError ? (
         <View style={styles.emptyState}>
           <Ionicons name="warning-outline" size={48} color="#e53e3e" />
           <Text style={[styles.emptyTitle, { color: "#e53e3e", fontSize: 16, marginTop: 12 }]}>
-            {discountsError}
+            {dealsError}
           </Text>
         </View>
-      ) : discounts.length === 0 ? (
+      ) : deals.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconCircle}>
             <Ionicons name="pricetag-outline" size={60} color="#449EB2" />
           </View>
-          <Text style={styles.emptyTitle}>No Discounts Available{"\n"}Right Now</Text>
+          <Text style={styles.emptyTitle}>No Deals Available{"\n"}Right Now</Text>
         </View>
       ) : available.length === 0 && filter === "active" ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconCircle}>
             <Ionicons name="pricetag-outline" size={60} color="#449EB2" />
           </View>
-          <Text style={styles.emptyTitle}>No Active Coupons</Text>
-          <Text style={styles.emptySubtitle}>All your coupons have expired or been used.</Text>
+          <Text style={styles.emptyTitle}>No Active Deals</Text>
+          <Text style={styles.emptySubtitle}>All your deals have expired or been used.</Text>
           <TouchableOpacity
             style={styles.showAllButton}
             onPress={() => setFilter("all")}
             activeOpacity={0.8}
           >
-            <Text style={styles.showAllButtonText}>Show All Coupons</Text>
+            <Text style={styles.showAllButtonText}>Show All Deals</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -242,10 +242,17 @@ const DiscountsScreen = () => {
                 </View>
               )}
               <Text style={styles.couponBrandName}>{couponModal.item?.brand.companyName}</Text>
-              {couponModal.item?.discountPercentage ? (
+              {/* A Discount-type deal states a percentage or a fixed amount. */}
+              {couponModal.item?.discountPercentage != null ? (
                 <View style={styles.couponBadge}>
                   <Text style={styles.couponBadgeText}>
                     {couponModal.item.discountPercentage}% OFF
+                  </Text>
+                </View>
+              ) : couponModal.item?.discountAmount != null ? (
+                <View style={styles.couponBadge}>
+                  <Text style={styles.couponBadgeText}>
+                    RS {couponModal.item.discountAmount} OFF
                   </Text>
                 </View>
               ) : null}
@@ -266,6 +273,25 @@ const DiscountsScreen = () => {
                   <Text style={styles.couponExpiry}>
                     {formatExpiry(couponModal.item.endDate)}
                   </Text>
+                </View>
+              ) : null}
+
+              {/* Conditions the card deliberately leaves off, so a deal card
+                  stays visually identical whatever shape the deal takes. */}
+              {couponModal.item?.minimumPurchase != null ? (
+                <View style={styles.expiryRow}>
+                  <Ionicons name="cart-outline" size={14} color="#718096" />
+                  <Text style={styles.couponExpiry}>
+                    Minimum purchase Rs {couponModal.item.minimumPurchase}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Present once claimed. The PDF carries the same code. */}
+              {couponModal.item?.code ? (
+                <View style={styles.codeBox}>
+                  <Text style={styles.codeLabel}>YOUR CODE</Text>
+                  <Text style={styles.codeValue}>{couponModal.item.code}</Text>
                 </View>
               ) : null}
 
@@ -534,6 +560,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#718096",
   },
+  codeBox: {
+    backgroundColor: "#003E47",
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    marginTop: 14,
+    marginBottom: 4,
+  },
+  codeLabel: {
+    fontSize: 10,
+    letterSpacing: 2,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.65)",
+    marginBottom: 6,
+  },
+  codeValue: {
+    fontSize: 24,
+    fontWeight: "800",
+    letterSpacing: 3,
+    color: "#fff",
+  },
   termsDivider: {
     height: 1,
     backgroundColor: "#f0f0f0",
@@ -568,4 +616,4 @@ const styles = StyleSheet.create({
   closeBtnText: { color: "#999", fontSize: 14, fontWeight: "500" },
 });
 
-export default DiscountsScreen;
+export default DealsScreen;
