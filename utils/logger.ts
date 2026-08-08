@@ -39,7 +39,7 @@ export type LogEventType =
   // Actions
   | "PROFILE_UPDATE"
   | "REFERRAL_SENT"
-  | "DISCOUNT_VIEWED"
+  | "DEAL_VIEWED"
   | "BRAND_VIEWED"
   | "ACCOUNT_DELETED"
   // Errors
@@ -65,7 +65,7 @@ const FIREBASE_EVENT_MAP: Partial<Record<LogEventType, string>> = {
   SCREEN_VIEW: "screen_view",
   PROFILE_UPDATE: "profile_update",
   REFERRAL_SENT: "referral_sent",
-  DISCOUNT_VIEWED: "discount_viewed",
+  DEAL_VIEWED: "deal_viewed",
   BRAND_VIEWED: "brand_viewed",
   ACCOUNT_DELETED: "account_deleted",
 };

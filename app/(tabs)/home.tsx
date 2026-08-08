@@ -10,9 +10,10 @@ import {
   upcomingCollectionsForUser,
   upcomingStatusLabel,
 } from "@/constants/mockCollectionsData";
-import { BrandTheme, co2FromWasteKg, useAppStore } from "@/store/store";
+import { co2FromWasteKg, useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
+import { groupDealsByBrand } from "@/utils/deals";
 import { logEvent } from "@/utils/logger";
 import LocationUpdateModal from "@/components/LocationUpdateModal";
 import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
@@ -61,8 +62,19 @@ const openInstagram = async () => {
   }
 };
 
+// Only the fields the card actually renders. Deliberately narrower than
+// BrandTheme: the brand now arrives embedded on a Deal, which carries no
+// accentColor, and requiring one here would be a lie about what is needed.
+type BrandCardBrand = {
+  _id: string;
+  companyName: string;
+  category?: string;
+  logo?: string;
+  themeColor?: string;
+};
+
 type BrandCardProps = {
-  brand: BrandTheme & { status?: string };
+  brand: BrandCardBrand;
   index: number;
   onPress: () => void;
   locked?: boolean;
@@ -175,7 +187,8 @@ export default function HomeScreen() {
   const {
     user,
     wasteToCo2,
-    getBrands,
+    deals,
+    getDeals,
     scheduledCollection,
     loadScheduledCollection,
   } = useAppStore();
@@ -224,15 +237,16 @@ export default function HomeScreen() {
       : undefined;
   }, [showDemoCollections, scheduledCollection, upcomingCollections]);
 
-  const [brands, setBrands] = React.useState<BrandTheme[]>([]);
+  // Derived from the one deals fetch: every deal embeds its brand, so the
+  // brand list no longer needs /api/users/active-campaigns. A brand with no
+  // live deals does not appear here.
+  const brands = React.useMemo(() => groupDealsByBrand(deals), [deals]);
   const [co2, setCo2] = React.useState(0);
 
   useEffect(() => {
     wasteToCo2().then((value: number) => setCo2(value));
-    getBrands().then((result) => {
-      if (Array.isArray(result)) setBrands(result);
-    });
-  }, [wasteToCo2, getBrands]);
+    getDeals();
+  }, [wasteToCo2, getDeals]);
 
   // The booking outlives the session, so pull it back from SecureStore once the
   // user is known — keyed on the id, since the stored schedule is per-user.
@@ -252,7 +266,7 @@ export default function HomeScreen() {
   // the backend does not reflect the mock pickup history.
   const points = isDemoUser ? TOTAL_POINTS_EARNED : user?.points;
 
-  // active-campaigns only ever returns APPROVED brands, so no filtering here.
+  // /api/users/deals only returns deals from APPROVED brands, so no filtering.
   const cardsContainerHeight = brands.length * VISIBLE + OVERLAP + 80;
   // The "going live soon" teaser has nowhere to send the user yet — only a
   // booked or upcoming collection makes the card worth tapping.
@@ -395,9 +409,9 @@ export default function HomeScreen() {
         {/* Coupons */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Your Coupons</Text>
-            <Text style={styles.seeAllText} onPress={() => router.push("/discounts")}>
-              View all discounts
+            <Text style={styles.sectionTitle}>Your Deals</Text>
+            <Text style={styles.seeAllText} onPress={() => router.push("/deals")}>
+              View all deals
             </Text>
           </View>
 
@@ -409,7 +423,7 @@ export default function HomeScreen() {
             >
               <Ionicons name="person-circle-outline" size={22} color="#449EB2" />
               <Text style={styles.profilePromptText}>
-                Complete your profile to unlock coupons
+                Complete your profile to unlock deals
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#449EB2" />
             </TouchableOpacity>
@@ -423,7 +437,7 @@ export default function HomeScreen() {
             >
               <Ionicons name="location-outline" size={22} color="#449EB2" />
               <Text style={styles.profilePromptText}>
-                We're working on bringing collections to your area. Update your location to see available coupons.
+                We're working on bringing collections to your area. Update your location to see available deals.
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#449EB2" />
             </TouchableOpacity>
@@ -433,7 +447,7 @@ export default function HomeScreen() {
             {brands.map((brand, index) => (
               <BrandCard
                 key={brand._id}
-                brand={brand as BrandTheme & { status?: string }}
+                brand={brand}
                 index={index}
                 locked={!profileComplete}
                 onPress={() => {
