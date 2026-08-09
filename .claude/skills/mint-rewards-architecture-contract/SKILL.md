@@ -49,7 +49,7 @@ registers every screen (all `headerShown: false` except `+not-found`), with
 | `/otp-screen` | `app/otp-screen.tsx` | OTP verification |
 | `/change-password` | `app/change-password.tsx` | Set new password |
 | `/redeem` | `app/redeem.tsx` | Brand campaign detail + coupon download (takes `brandId` search param) |
-| `/discounts` | `app/discounts.tsx` | User's coupon list ("My Discounts") + download |
+| `/deals` | `app/deals.tsx` | User's Deal list ("My Deals") + claim + coupon download |
 | `/editProfile` | `app/editProfile.tsx` | Profile editing (this is where users complete phone/province/city) |
 | `/collections` | `app/collections.tsx` | Waste pickup history |
 | `/notifications` | `app/notifications.tsx` | Notifications |
@@ -155,7 +155,7 @@ Three components use this in this repo:
   - `utils/logger.ts` `sendLog` (~line 97). **Deliberate**: unauthenticated
     fire-and-forget; logging must never trigger navigation.
   - `hooks/useCouponDownload.ts` (~line 391) → raw `fetch` to
-    `PATCH /api/coupons/{id}/redeem` **with the Authorization header**. This is
+    `POST /api/users/deals/{dealId}/redeem` **with the Authorization header**. This is
     the ONE authenticated call that bypasses the wrapper. Nothing in the code
     marks it intentional — a 401 here shows a "Cannot Download" alert instead
     of signing out. **Treat as a bug (WP-7); route the fix through
@@ -234,7 +234,7 @@ Three components use this in this repo:
   - `app/(tabs)/home.tsx` lines 121–124:
     `!!(user?.phone?.trim() && user?.province?.trim() && user?.city?.trim())`
     — gates the coupon stack and shows the "complete your profile" banner.
-  - `app/discounts.tsx` line 30: the same expression on one line — gates
+  - `app/deals.tsx` line 30: the same expression on one line — gates
     download buttons on the discounts screen.
 - **Known-weak point (WP-8)**: the fields do NOT currently diverge, but the
   logic is duplicated with no shared helper, so nothing stops them diverging.
@@ -269,7 +269,7 @@ Three components use this in this repo:
 ### INV-7: Coupon redeem ordering — backend marks used BEFORE PDF exists
 
 - **Statement**: in `hooks/useCouponDownload.ts` `downloadCoupon`, Step 1 is
-  `PATCH /api/coupons/{couponId}/redeem` (backend marks the single-use coupon
+  `POST /api/users/deals/{dealId}/redeem` (backend issues the single-use code
   used and returns `couponCode` + `referenceCode`); Step 2 generates the PDF
   (`expo-print` `printToFileAsync`) and shares it (`expo-sharing`). If Step 2
   throws, the coupon is ALREADY burned — the catch block explicitly refuses to
@@ -280,7 +280,7 @@ Three components use this in this repo:
   current backend couples "give me the code" with "mark it used" in one PATCH.
   This is the project's acknowledged hardest live problem (owner, 2026-07-07).
 - **Where enforced**: the sequential structure of `downloadCoupon`
-  (`hooks/useCouponDownload.ts` ~377–469). Callers: `app/discounts.tsx` (~68)
+  (`hooks/useCouponDownload.ts` ~377–469). Callers: `app/deals.tsx` (~68)
   and `app/redeem.tsx` (~97), both of which refresh state only on success.
 - **Do not touch casually**: any reordering, retry logic, code-caching, or
   backend contract change here goes through
@@ -301,7 +301,7 @@ Three components use this in this repo:
 | WP-5 | `any` types on user arrays | `store/store.ts` lines 45, 48: `referrals?: any[]`, `pickupHistory?: any[]` | Zero type safety on referral and pickup rendering; backend shape changes surface as runtime crashes, not compile errors | Open |
 | WP-6 | logger.ts duplicates API_URL | `utils/logger.ts` lines 9–10 redefine the base URL (no trailing-slash strip; commented-out LAN IP nearby) | Violates INV-3; logs can silently go to a different backend than the app during env changes | Open |
 | WP-7 | useCouponDownload bypasses authenticatedFetch | `hooks/useCouponDownload.ts` ~391 raw `fetch` with Authorization header | 401 on redeem shows "Cannot Download" instead of the global sign-out; user retries forever with a dead token. Appears unintentional (no comment claims otherwise) | Open — fix belongs to `mint-rewards-coupon-reliability-campaign` |
-| WP-8 | Duplicated isProfileComplete | `app/(tabs)/home.tsx` 121–124 and `app/discounts.tsx` 30 (identical today: phone/province/city) | Divergence risk on the owner's #2 non-negotiable; one-sided edits split the gate | Open |
+| WP-8 | Duplicated isProfileComplete | `app/(tabs)/home.tsx` 121–124 and `app/deals.tsx` 30 (identical today: phone/province/city) | Divergence risk on the owner's #2 non-negotiable; one-sided edits split the gate | Open |
 | WP-9 | Always-true conditional in coupon HTML | `hooks/useCouponDownload.ts` line 341: `${expiryFormatted \|\| true ? \`...\` : ""}` — the meta row ALWAYS renders (inner ternary handles the empty-expiry case anyway) | Harmless today (dead branch), but it reads as intent to hide the row and will confuse the next editor; the "SINGLE USE" chip always shows regardless | Open |
 | WP-10 | No request timeout outside signIn/signUp | `fetchWithTimeout` (15 s) is used ONLY at store ~295 and ~369; `authenticatedFetch`, `forgotPassword`, `verifyOTP`, `setPassword`, logger, and the coupon redeem all use bare `fetch` | On Pakistani mobile networks a hung request = spinner forever (and in the redeem path, ambiguity about whether the coupon burned) | Open |
 | WP-11 | Redeem burns coupon before PDF | See INV-7 | PDF/share failure after a successful redeem = user paid points, has no coupon artifact except an alert telling them to screenshot | Open — THE active reliability campaign |
@@ -389,7 +389,7 @@ HEAD 45013c5). Re-verify before trusting line numbers:
 - INV-2 raw token: `grep -rn "Bearer\|Authorization" --include="*.ts*" app hooks utils store`
 - INV-3/WP-6 URL definitions: `grep -rn "EXPO_PUBLIC_API_URL" utils/`
 - INV-4 keys: `grep -rn "ItemAsync(" --include="*.ts*" app store utils`
-- INV-5/WP-8 gating: `grep -n "isProfileComplete" app/\(tabs\)/home.tsx app/discounts.tsx`
+- INV-5/WP-8 gating: `grep -n "isProfileComplete" app/\(tabs\)/home.tsx app/deals.tsx`
 - INV-6 lazy loading: `grep -n "require('@react-native-google-signin\|import(\"expo-print\"" utils/googleAuth.ts hooks/useCouponDownload.ts`
 - INV-7/WP-11 ordering: `grep -n "redeem\`\|printToFileAsync\|marked used" hooks/useCouponDownload.ts`
 - WP-1 token log: `grep -n "getDiscounts] token" store/store.ts`

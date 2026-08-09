@@ -1,5 +1,6 @@
-import { BrandTheme, Campaign, DiscountItem, useAppStore } from "@/store/store";
+import { Deal, useAppStore } from "@/store/store";
 import { brandSurface } from "@/utils/brandTheme";
+import { groupDealsByBrand, isDealExpired } from "@/utils/deals";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -23,38 +24,35 @@ const formatExpiry = (endDate: string) => {
   return `Expires ${d.getDate()} ${d.toLocaleString("en-US", { month: "long" })} ${d.getFullYear()}`;
 };
 
-const isExpired = (endDate: string) => new Date(endDate) < new Date();
-
 const RedeemScreen = () => {
   const { brandId } = useLocalSearchParams();
-  const { user, brandsWithCampaigns, getBrandsWithCampaigns } = useAppStore();
+  const { deals, getDeals } = useAppStore();
   const { downloadCoupon, isDownloading } = useCouponDownload();
 
-  const isUsedByUser = (campaign: Campaign) =>
-    !!(user?._id && campaign.users?.includes(user._id));
+  // Derived from the one deals fetch rather than a second endpoint: every deal
+  // carries its own brand, so grouping client-side gives this screen what
+  // /api/users/active-campaigns used to.
+  const brand = React.useMemo(
+    () => groupDealsByBrand(deals).find((b) => b._id === brandId) ?? null,
+    [deals, brandId],
+  );
 
-  const [brand, setBrand] = useState<(BrandTheme & { campaigns: Campaign[] }) | null>(null);
   const [detailModal, setDetailModal] = useState<{
     visible: boolean;
-    campaign: Campaign | null;
-  }>({ visible: false, campaign: null });
+    deal: Deal | null;
+  }>({ visible: false, deal: null });
 
   useEffect(() => {
-    getBrandsWithCampaigns();
-  }, [getBrandsWithCampaigns]);
+    getDeals();
+  }, []);
 
   useEffect(() => {
-    if (!brandsWithCampaigns.length) return; // still loading
-    const found = brandsWithCampaigns.find((d) => d._id === brandId);
-    if (found) {
-      setBrand(found);
-    } else {
-      setBrand(null);
-      Alert.alert("Error", "Invalid brand", [
-        { text: "OK", onPress: () => router.back() },
-      ]);
-    }
-  }, [brandsWithCampaigns]);
+    if (!deals.length) return; // still loading
+    if (brand) return;
+    Alert.alert("Error", "Invalid brand", [
+      { text: "OK", onPress: () => router.back() },
+    ]);
+  }, [deals, brand]);
 
   const getDaysLeft = (endDate: string) => {
     const diff = new Date(endDate).getTime() - Date.now();
@@ -62,47 +60,29 @@ const RedeemScreen = () => {
     return days > 0 ? days : 0;
   };
 
-  // Map Campaign + brand into the DiscountItem shape useCouponDownload expects
-  const toDiscountItem = (campaign: Campaign): DiscountItem => ({
-    _id: campaign._id,
-    name: campaign.name,
-    discountPercentage: campaign.discountPercentage,
-    brand: {
-      _id: brand?._id ?? "",
-      companyName: brand?.companyName ?? "",
-      logo: brand?.logo,
-      themeColor: brand?.themeColor,
-      category: brand?.category,
-    },
-    startDate: campaign.startDate,
-    endDate: campaign.endDate,
-    isAvailed: false,
-  });
-
-  const handleCampaignPress = (campaign: Campaign) => {
-    setDetailModal({ visible: true, campaign });
+  const handleDealPress = (deal: Deal) => {
+    setDetailModal({ visible: true, deal });
   };
 
   const closeDetailModal = () =>
-    setDetailModal({ visible: false, campaign: null });
+    setDetailModal({ visible: false, deal: null });
 
   const handleDownloadPress = () => {
-    if (!detailModal.campaign) return;
-    const campaignName = detailModal.campaign.name;
+    if (!detailModal.deal) return;
+    const dealTitle = detailModal.deal.title;
     Alert.alert(
       "Download & Mark as Used?",
-      `This ${campaignName} coupon is SINGLE USE. Once downloaded it will be marked as used and cannot be redeemed again.`,
+      `This ${dealTitle} coupon is SINGLE USE. Once downloaded it will be marked as used and cannot be redeemed again.`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Yes, Download",
           style: "destructive",
           onPress: async () => {
-            const item = toDiscountItem(detailModal.campaign!);
-            const success = await downloadCoupon(item);
+            const success = await downloadCoupon(detailModal.deal!);
             if (success) {
               closeDetailModal();
-              await getBrandsWithCampaigns();
+              await getDeals();
             }
           },
         },
@@ -159,35 +139,37 @@ const RedeemScreen = () => {
         )}
       </View>
 
-      {/* Campaign list */}
+      {/* Deal list */}
       <ScrollView
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {brand?.campaigns && brand.campaigns.length > 0 && (
-          <Text style={styles.sectionTitle}>Available Campaigns</Text>
+        {brand?.deals && brand.deals.length > 0 && (
+          <Text style={styles.sectionTitle}>Available Deals</Text>
         )}
 
-        {brand?.campaigns && brand.campaigns.length > 0 ? (
-          brand.campaigns.map((campaign) => {
-            const daysLeft = getDaysLeft(campaign.endDate);
-            const expired = isExpired(campaign.endDate);
-            const used = isUsedByUser(campaign);
+        {brand?.deals && brand.deals.length > 0 ? (
+          brand.deals.map((deal) => {
+            const expired = isDealExpired(deal);
+            const daysLeft = deal.endDate ? getDaysLeft(deal.endDate) : 0;
+            const used = deal.isAvailed;
+            const soldOut = deal.soldOut;
+            const locked = expired || used || soldOut;
             return (
               <TouchableOpacity
-                key={campaign._id}
-                style={[styles.campaignCard, (expired || used) && styles.campaignCardExpired]}
+                key={deal._id}
+                style={[styles.dealCard, locked && styles.dealCardExpired]}
                 activeOpacity={0.7}
-                disabled={expired || used}
-                onPress={() => handleCampaignPress(campaign)}
+                disabled={locked}
+                onPress={() => handleDealPress(deal)}
               >
-                <View style={styles.campaignHeader}>
-                  <View style={styles.campaignTitleRow}>
-                    <Text style={styles.campaignName} numberOfLines={1}>
-                      {campaign.name}
+                <View style={styles.dealHeader}>
+                  <View style={styles.dealTitleRow}>
+                    <Text style={styles.dealName} numberOfLines={1}>
+                      {deal.title}
                     </Text>
-                    {campaign.discountPercentage && (
+                    {deal.discountPercentage != null ? (
                       <LinearGradient
                         colors={["#00528A", "#0078c8"]}
                         style={styles.discountBadge}
@@ -195,47 +177,76 @@ const RedeemScreen = () => {
                         end={{ x: 1, y: 0 }}
                       >
                         <Text style={styles.discountBadgeText}>
-                          {campaign.discountPercentage}% OFF
+                          {deal.discountPercentage}% OFF
                         </Text>
                       </LinearGradient>
-                    )}
+                    ) : deal.discountAmount != null ? (
+                      <LinearGradient
+                        colors={["#00528A", "#0078c8"]}
+                        style={styles.discountBadge}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                      >
+                        <Text style={styles.discountBadgeText}>
+                          RS {deal.discountAmount} OFF
+                        </Text>
+                      </LinearGradient>
+                    ) : null}
                   </View>
                 </View>
 
-                <View style={styles.campaignDetails}>
-                  <View style={styles.detailRow}>
-                    <Ionicons name="calendar-outline" size={15} color="#718096" />
-                    <Text style={styles.detailText}>
-                      {new Date(campaign.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                      {" – "}
-                      {new Date(campaign.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                    </Text>
-                  </View>
-                  {campaign.addresses.length > 0 && (
+                <View style={styles.dealDetails}>
+                  {/* A deal need not be date-bounded at either end. */}
+                  {deal.startDate || deal.endDate ? (
                     <View style={styles.detailRow}>
-                      <Ionicons name="location-outline" size={15} color="#718096" />
+                      <Ionicons name="calendar-outline" size={15} color="#718096" />
+                      <Text style={styles.detailText}>
+                        {deal.startDate
+                          ? new Date(deal.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+                          : "Available now"}
+                        {" – "}
+                        {deal.endDate
+                          ? new Date(deal.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+                          : "No expiry"}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {deal.minimumPurchase != null && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="cart-outline" size={15} color="#718096" />
                       <Text style={styles.detailText} numberOfLines={1}>
-                        {campaign.addresses.map((a) => a.city).filter(Boolean).join(", ")}
+                        Minimum purchase Rs {deal.minimumPurchase}
                       </Text>
                     </View>
                   )}
                 </View>
 
-                <View style={styles.campaignFooter}>
+                <View style={styles.dealFooter}>
                   {used ? (
                     <View style={styles.usedBadge}>
                       <Ionicons name="checkmark-circle" size={14} color="#38a169" />
                       <Text style={styles.usedBadgeText}>Used</Text>
                     </View>
+                  ) : soldOut ? (
+                    <View style={styles.daysLeftBadge}>
+                      <Ionicons name="close-circle-outline" size={14} color="#aaa" />
+                      <Text style={[styles.daysLeftText, { color: "#aaa" }]}>Sold Out</Text>
+                    </View>
                   ) : (
                     <View style={styles.daysLeftBadge}>
                       <Ionicons name="time-outline" size={14} color={expired ? "#aaa" : "#e67e22"} />
                       <Text style={[styles.daysLeftText, expired && { color: "#aaa" }]}>
-                        {expired ? "Expired" : daysLeft > 0 ? `${daysLeft} days left` : "Ending soon"}
+                        {expired
+                          ? "Expired"
+                          : !deal.endDate
+                            ? "No expiry"
+                            : daysLeft > 0
+                              ? `${daysLeft} days left`
+                              : "Ending soon"}
                       </Text>
                     </View>
                   )}
-                  {!expired && !used && (
+                  {!locked && (
                     <View style={styles.redeemCta}>
                       <Text style={styles.redeemCtaText}>View Offer</Text>
                       <Ionicons name="chevron-forward" size={16} color="#00528A" />
@@ -246,19 +257,19 @@ const RedeemScreen = () => {
             );
           })
         ) : (
-          <View style={styles.emptyCampaigns}>
+          <View style={styles.emptyDeals}>
             <View style={styles.emptyIconCircle}>
               <Ionicons name="lock-closed" size={40} color="#00528A" />
             </View>
-            <Text style={styles.emptyCampaignsText}>Not Eligible Yet!</Text>
-            <Text style={styles.emptyCampaignsSubtext}>
-              Start collecting points to unlock exclusive offers and discounts from {brand?.companyName}.
+            <Text style={styles.emptyDealsText}>Not Eligible Yet!</Text>
+            <Text style={styles.emptyDealsSubtext}>
+              Start collecting points to unlock exclusive deals from {brand?.companyName}.
             </Text>
           </View>
         )}
       </ScrollView>
 
-      {/* Campaign detail modal */}
+      {/* Deal detail modal */}
       <Modal
         visible={detailModal.visible}
         transparent
@@ -280,10 +291,16 @@ const RedeemScreen = () => {
                 </View>
               )}
               <Text style={styles.modalBrandName}>{brand?.companyName}</Text>
-              {detailModal.campaign?.discountPercentage ? (
+              {detailModal.deal?.discountPercentage != null ? (
                 <View style={styles.modalBadge}>
                   <Text style={styles.modalBadgeText}>
-                    {detailModal.campaign.discountPercentage}% OFF
+                    {detailModal.deal.discountPercentage}% OFF
+                  </Text>
+                </View>
+              ) : detailModal.deal?.discountAmount != null ? (
+                <View style={styles.modalBadge}>
+                  <Text style={styles.modalBadgeText}>
+                    RS {detailModal.deal.discountAmount} OFF
                   </Text>
                 </View>
               ) : null}
@@ -298,11 +315,20 @@ const RedeemScreen = () => {
 
             {/* Body */}
             <View style={styles.modalBody}>
-              {detailModal.campaign?.endDate ? (
+              {detailModal.deal?.endDate ? (
                 <View style={styles.expiryRow}>
                   <Ionicons name="time-outline" size={14} color="#718096" />
                   <Text style={styles.expiryText}>
-                    {formatExpiry(detailModal.campaign.endDate)}
+                    {formatExpiry(detailModal.deal.endDate)}
+                  </Text>
+                </View>
+              ) : null}
+
+              {detailModal.deal?.minimumPurchase != null ? (
+                <View style={styles.expiryRow}>
+                  <Ionicons name="cart-outline" size={14} color="#718096" />
+                  <Text style={styles.expiryText}>
+                    Minimum purchase Rs {detailModal.deal.minimumPurchase}
                   </Text>
                 </View>
               ) : null}
@@ -317,7 +343,7 @@ const RedeemScreen = () => {
                 • Mint Rewards reserves the right to modify or cancel this offer at any time.
               </Text>
 
-              {detailModal.campaign && isUsedByUser(detailModal.campaign) ? (
+              {detailModal.deal?.isAvailed ? (
                 <View style={styles.alreadyUsedBox}>
                   <Ionicons name="checkmark-circle" size={20} color="#38a169" />
                   <Text style={styles.alreadyUsedText}>
@@ -401,7 +427,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingTop: 24, paddingBottom: 40, paddingHorizontal: 20 },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: "#2d3748", marginBottom: 16 },
 
-  campaignCard: {
+  dealCard: {
     backgroundColor: "#ffffff",
     borderRadius: 16,
     padding: 18,
@@ -412,21 +438,21 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  campaignCardExpired: { opacity: 0.5 },
-  campaignHeader: { marginBottom: 12 },
-  campaignTitleRow: {
+  dealCardExpired: { opacity: 0.5 },
+  dealHeader: { marginBottom: 12 },
+  dealTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
   },
-  campaignName: { fontSize: 17, fontWeight: "700", color: "#2d3748", flex: 1 },
+  dealName: { fontSize: 17, fontWeight: "700", color: "#2d3748", flex: 1 },
   discountBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   discountBadgeText: { color: "#ffffff", fontSize: 13, fontWeight: "bold" },
-  campaignDetails: { gap: 8, marginBottom: 14 },
+  dealDetails: { gap: 8, marginBottom: 14 },
   detailRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   detailText: { fontSize: 14, color: "#718096", flex: 1 },
-  campaignFooter: {
+  dealFooter: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -447,7 +473,7 @@ const styles = StyleSheet.create({
   redeemCta: { flexDirection: "row", alignItems: "center", gap: 4 },
   redeemCtaText: { fontSize: 14, fontWeight: "700", color: "#00528A" },
 
-  emptyCampaigns: { alignItems: "center", paddingVertical: 60 },
+  emptyDeals: { alignItems: "center", paddingVertical: 60 },
   emptyIconCircle: {
     width: 80,
     height: 80,
@@ -457,8 +483,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
-  emptyCampaignsText: { fontSize: 18, fontWeight: "600", color: "#4a5568" },
-  emptyCampaignsSubtext: {
+  emptyDealsText: { fontSize: 18, fontWeight: "600", color: "#4a5568" },
+  emptyDealsSubtext: {
     fontSize: 14,
     color: "#718096",
     marginTop: 8,
