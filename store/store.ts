@@ -2,6 +2,7 @@ import { logAuthEvent, logError, logEvent } from "@/utils/logger";
 import { authenticatedFetch } from "@/utils/api";
 import { API_BASE_URL } from "@/utils/constants";
 import { setUnauthorizedHandler } from "@/utils/session";
+import { signOutGoogle } from "@/utils/googleAuth";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 
@@ -643,6 +644,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   signOut: async () => {
+    // End the native Google session too. Without this the app forgets the user
+    // while Google still considers them signed in, so the next sign-in can be
+    // served from that stale native session instead of minting a fresh token.
+    // Best-effort: never let it block clearing our own session.
+    await signOutGoogle();
+
     await SecureStore.deleteItemAsync("userToken");
     await SecureStore.deleteItemAsync("userEmail");
     await SecureStore.deleteItemAsync("userName");
