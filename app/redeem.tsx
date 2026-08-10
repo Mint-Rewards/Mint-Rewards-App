@@ -1,6 +1,6 @@
 import { Deal, useAppStore } from "@/store/store";
 import { brandSurface } from "@/utils/brandTheme";
-import { groupDealsByBrand, isDealExpired } from "@/utils/deals";
+import { isDealExpired, mergeBrandsWithDeals } from "@/utils/deals";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -26,15 +26,24 @@ const formatExpiry = (endDate: string) => {
 
 const RedeemScreen = () => {
   const { brandId } = useLocalSearchParams();
-  const { deals, getDeals } = useAppStore();
+  const {
+    deals,
+    getDeals,
+    brands: approvedBrands,
+    getBrands,
+    isBrandsLoading,
+  } = useAppStore();
   const { downloadCoupon, isDownloading } = useCouponDownload();
 
-  // Derived from the one deals fetch rather than a second endpoint: every deal
-  // carries its own brand, so grouping client-side gives this screen what
-  // /api/users/active-campaigns used to.
+  // Approved brands are the list, deals are what each carries — so this screen
+  // resolves for a brand with no live deals too, and renders the "Not Eligible
+  // Yet!" state below instead of bouncing the user out as an invalid brand.
   const brand = React.useMemo(
-    () => groupDealsByBrand(deals).find((b) => b._id === brandId) ?? null,
-    [deals, brandId],
+    () =>
+      mergeBrandsWithDeals(approvedBrands, deals).find(
+        (b) => b._id === brandId,
+      ) ?? null,
+    [approvedBrands, deals, brandId],
   );
 
   const [detailModal, setDetailModal] = useState<{
@@ -44,15 +53,20 @@ const RedeemScreen = () => {
 
   useEffect(() => {
     getDeals();
+    getBrands();
   }, []);
 
   useEffect(() => {
-    if (!deals.length) return; // still loading
+    // Gated on the brands fetch, not the deals one: a brand can legitimately
+    // have zero deals now, so `deals.length` no longer distinguishes "still
+    // loading" from "this brand has nothing live".
+    if (isBrandsLoading) return;
+    if (!approvedBrands.length) return; // not fetched yet, or the fetch failed
     if (brand) return;
     Alert.alert("Error", "Invalid brand", [
       { text: "OK", onPress: () => router.back() },
     ]);
-  }, [deals, brand]);
+  }, [approvedBrands, isBrandsLoading, brand]);
 
   const getDaysLeft = (endDate: string) => {
     const diff = new Date(endDate).getTime() - Date.now();

@@ -13,7 +13,7 @@ import {
 import { co2FromWasteKg, useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
-import { groupDealsByBrand } from "@/utils/deals";
+import { mergeBrandsWithDeals } from "@/utils/deals";
 import { logEvent } from "@/utils/logger";
 import LocationUpdateModal from "@/components/LocationUpdateModal";
 import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
@@ -192,6 +192,8 @@ export default function HomeScreen() {
     wasteToCo2,
     deals,
     getDeals,
+    brands: approvedBrands,
+    getBrands,
     scheduledCollection,
     loadScheduledCollection,
   } = useAppStore();
@@ -240,16 +242,20 @@ export default function HomeScreen() {
       : undefined;
   }, [showDemoCollections, scheduledCollection, upcomingCollections]);
 
-  // Derived from the one deals fetch: every deal embeds its brand, so the
-  // brand list no longer needs /api/users/active-campaigns. A brand with no
-  // live deals does not appear here.
-  const brands = React.useMemo(() => groupDealsByBrand(deals), [deals]);
+  // Approved brands are the list; deals are what each one carries. A brand
+  // approved in BrandHub appears here even with no live deals yet — tapping it
+  // lands on redeem's "Not Eligible Yet!" state rather than nothing at all.
+  const brands = React.useMemo(
+    () => mergeBrandsWithDeals(approvedBrands, deals),
+    [approvedBrands, deals],
+  );
   const [co2, setCo2] = React.useState(0);
 
   useEffect(() => {
     wasteToCo2().then((value: number) => setCo2(value));
     getDeals();
-  }, [wasteToCo2, getDeals]);
+    getBrands();
+  }, [wasteToCo2, getDeals, getBrands]);
 
   // The booking outlives the session, so pull it back from SecureStore once the
   // user is known — keyed on the id, since the stored schedule is per-user.
@@ -269,7 +275,8 @@ export default function HomeScreen() {
   // the backend does not reflect the mock pickup history.
   const points = isDemoUser ? TOTAL_POINTS_EARNED : user?.points;
 
-  // /api/users/deals only returns deals from APPROVED brands, so no filtering.
+  // Both /api/users/brands and /api/users/deals return APPROVED brands only,
+  // so no filtering here.
   const cardsContainerHeight = brands.length * VISIBLE + OVERLAP + 80;
   // The "going live soon" teaser has nowhere to send the user yet — only a
   // booked or upcoming collection makes the card worth tapping.

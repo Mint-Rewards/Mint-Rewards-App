@@ -307,6 +307,18 @@ interface DealSlice {
   dealsError: string | null;
   getDeals: () => Promise<Deal[]>;
   /**
+   * Every APPROVED brand, whether or not it currently has a live deal.
+   *
+   * Kept separate from `deals` rather than folded into it: a brand's presence
+   * in the app follows BrandHub approval, and a deal's presence follows deal
+   * moderation plus its dates. Merging the two into one payload would tie a
+   * brand's visibility back to its deals, which is the bug this exists to fix.
+   */
+  brands: Deal["brand"][];
+  isBrandsLoading: boolean;
+  brandsError: string | null;
+  getBrands: () => Promise<Deal["brand"][]>;
+  /**
    * Claims one code for this deal. Idempotent per user: re-claiming returns
    * the same code rather than consuming another.
    */
@@ -964,6 +976,48 @@ export const useAppStore = create<AppStore>((set, get) => ({
   deals: [],
   isDealsLoading: false,
   dealsError: null,
+  brands: [],
+  isBrandsLoading: false,
+  brandsError: null,
+
+  getBrands: async () => {
+    set({ isBrandsLoading: true, brandsError: null });
+    try {
+      const token = get().token || get().user?.token;
+
+      const response = await authenticatedFetch(`${API_URL}/api/users/brands`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          // Raw token, no "Bearer " prefix — the backend reads it as-is.
+          ...(token ? { Authorization: token } : {}),
+        },
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        const brands: Deal["brand"][] = data.brands || [];
+        set({ brands, isBrandsLoading: false, brandsError: null });
+        return brands;
+      }
+
+      // The previously-loaded list is left in place. Brands are the shell the
+      // deals render into, so blanking it on a transient failure would empty a
+      // screen that still has perfectly good deals to show.
+      set({
+        brandsError: data.error || "Failed to fetch brands.",
+        isBrandsLoading: false,
+      });
+      return get().brands;
+    } catch {
+      set({
+        brandsError: "Network error. Please try again.",
+        isBrandsLoading: false,
+      });
+      return get().brands;
+    }
+  },
 
   getDeals: async () => {
     set({ isDealsLoading: true, dealsError: null });

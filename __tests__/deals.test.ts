@@ -5,6 +5,7 @@ import {
   groupDealsByBrand,
   isDealClaimable,
   isDealExpired,
+  mergeBrandsWithDeals,
   partitionDeals,
 } from "@/utils/deals";
 
@@ -134,5 +135,74 @@ describe("groupDealsByBrand", () => {
 
   it("returns no brands for no deals — a brand with nothing live does not appear", () => {
     expect(groupDealsByBrand([])).toEqual([]);
+  });
+});
+
+describe("mergeBrandsWithDeals", () => {
+  it("keeps an approved brand that has no deals", () => {
+    const merged = mergeBrandsWithDeals([brand("a", "Alpha")], []);
+
+    expect(merged.map((b) => b._id)).toEqual(["a"]);
+    expect(merged[0].deals).toEqual([]);
+  });
+
+  it("attaches each brand's own deals", () => {
+    const a1 = deal({ _id: "a1", brand: brand("a") });
+    const a2 = deal({ _id: "a2", brand: brand("a") });
+    const b1 = deal({ _id: "b1", brand: brand("b") });
+
+    const merged = mergeBrandsWithDeals(
+      [brand("a", "Alpha"), brand("b", "Beta"), brand("c", "Gamma")],
+      [a1, b1, a2],
+    );
+
+    expect(merged.map((b) => b._id)).toEqual(["a", "b", "c"]);
+    expect(merged[0].deals.map((d) => d._id)).toEqual(["a1", "a2"]);
+    expect(merged[1].deals.map((d) => d._id)).toEqual(["b1"]);
+    expect(merged[2].deals).toEqual([]);
+  });
+
+  it("follows the brands payload order, not the order deals arrive in", () => {
+    const merged = mergeBrandsWithDeals(
+      [brand("b", "Beta"), brand("a", "Alpha")],
+      [deal({ _id: "a1", brand: brand("a") })],
+    );
+
+    expect(merged.map((b) => b._id)).toEqual(["b", "a"]);
+  });
+
+  it("prefers the brand record over the copy denormalised onto a deal", () => {
+    const merged = mergeBrandsWithDeals(
+      [brand("a", "Renamed Alpha")],
+      [deal({ _id: "a1", brand: brand("a", "Stale Alpha") })],
+    );
+
+    expect(merged[0].companyName).toBe("Renamed Alpha");
+  });
+
+  it("appends a brand that only the deals payload knows about", () => {
+    const merged = mergeBrandsWithDeals(
+      [brand("a", "Alpha")],
+      [deal({ _id: "z1", brand: brand("z", "Zeta") })],
+    );
+
+    expect(merged.map((b) => b._id)).toEqual(["a", "z"]);
+    expect(merged[1].deals.map((d) => d._id)).toEqual(["z1"]);
+  });
+
+  it("renders a duplicated brand once, without duplicating its deals", () => {
+    const merged = mergeBrandsWithDeals(
+      [brand("a", "Alpha"), brand("a", "Alpha")],
+      [deal({ _id: "a1", brand: brand("a") })],
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].deals.map((d) => d._id)).toEqual(["a1"]);
+  });
+
+  it("falls back to the deals payload when no brands are loaded", () => {
+    const a1 = deal({ _id: "a1", brand: brand("a", "Alpha") });
+
+    expect(mergeBrandsWithDeals([], [a1])).toEqual(groupDealsByBrand([a1]));
   });
 });
