@@ -1,5 +1,7 @@
 # Expo Updates (OTA) Rollout Implementation Plan
 
+> **SUPERSEDED** by the UpdateGate implementation (`components/UpdateGate.tsx`, `utils/versionGate.ts`, backend `/api/app-config`). Do not execute this plan: `utils/otaUpdates.ts` was never built and will not be, and the plan is stale on config facts — `app.config.js` now has a live `updates` block and `runtimeVersion` is `appVersion`, not `fingerprint`. Kept for history only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn on Expo OTA updates end-to-end for the `preview` channel — config is already correct, this plan adds startup visibility into update status and validates the whole flow on a real rebuilt binary.
