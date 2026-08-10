@@ -1,5 +1,7 @@
 # Expo Updates (OTA) Rollout — Design
 
+> **SUPERSEDED** by the UpdateGate implementation (`components/UpdateGate.tsx`, `utils/versionGate.ts`, backend `/api/app-config`). The planned `utils/otaUpdates.ts` was never built and will not be; this document is also stale on config facts — `app.config.js` now has a live `updates` block and `runtimeVersion` is `appVersion`, not `fingerprint`. Kept for history only.
+
 Date: 2026-07-30
 
 ## Context

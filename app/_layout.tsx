@@ -16,6 +16,7 @@ import { useEffect, useRef } from "react";
 import { configureGoogleSignIn } from '@/utils/googleAuth';
 import { logScreenView } from "@/utils/logger";
 import { EnvBanner } from "@/components/EnvBanner";
+import UpdateGate from "@/components/UpdateGate";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { PostHogProvider } from "posthog-react-native";
 import { posthog } from "@/utils/posthog";
@@ -104,6 +105,11 @@ export default function RootLayout() {
           <Stack.Screen name="notifications" options={{ headerShown: false }} />
           <Stack.Screen name="+not-found" />
           </Stack>
+          {/* Sibling overlay, not a replacement for <Stack>: checkAuth() above
+              keeps running and routing underneath, so when the gate clears the
+              user lands where they were already headed rather than back on the
+              loading screen. Renders null unless it decides to block. */}
+          <UpdateGate />
           {/* Pinned to "dark" (dark glyphs) rather than "auto". "auto" follows
               the ThemeProvider above and resolves to light glyphs in dark mode,
               which vanish against the hardcoded-white screens. Same reason the

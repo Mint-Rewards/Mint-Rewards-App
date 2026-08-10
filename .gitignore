@@ -20,4 +20,12 @@ MintRewards.app
 *.aab
 *.ipa
 
+# Local agent/tooling scratch. None of this is part of the app build, and it
+# churns constantly — kept on disk, out of the repo.
 .claude/
+.impeccable/
+.superpowers/
+.specify/
+.vscode/
+graphify-out/
+docs/
