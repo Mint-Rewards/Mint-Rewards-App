@@ -67,7 +67,10 @@ const openInstagram = async () => {
 // accentColor, and requiring one here would be a lie about what is needed.
 type BrandCardBrand = {
   _id: string;
-  brandName: string;
+  // The backend guarantees companyName; brandName is the consumer-facing name
+  // when set, so the card prefers it and falls back.
+  companyName: string;
+  brandName?: string;
   category?: string;
   logo?: string;
   themeColor?: string;
@@ -134,7 +137,7 @@ const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps)
               {brand.category}
             </Text>
             <Text style={[styles.couponName, { color: surface.onSurface }]} numberOfLines={1}>
-              {brand.brandName}
+              {brand.brandName || brand.companyName}
             </Text>
           </View>
 
@@ -460,7 +463,7 @@ export default function HomeScreen() {
                     userEmail: user?.email,
                     extra: {
                       brandId: brand._id,
-                      brandName: brand.brandName,
+                      brandName: brand.brandName || brand.companyName,
                       brandCategory: brand.category,
                     },
                   });
