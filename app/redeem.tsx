@@ -123,7 +123,7 @@ const RedeemScreen = () => {
           <Image source={{ uri: brand?.logo }} style={styles.brandLogo} resizeMode="contain" />
         </View>
         <Text style={[styles.brandName, { color: surface.onSurface }]}>
-          {brand?.companyName}
+          {brand?.brandName}
         </Text>
         {brand?.category && (
           <View
