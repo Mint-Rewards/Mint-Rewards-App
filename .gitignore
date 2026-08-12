@@ -29,3 +29,4 @@ MintRewards.app
 .vscode/
 graphify-out/
 docs/
+.env.local
