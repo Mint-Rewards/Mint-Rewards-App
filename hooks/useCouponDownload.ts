@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Alert } from "react-native";
 import { useAppStore, Deal } from "@/store/store";
 import { buildCouponHtml } from "@/utils/couponHtml";
+import { captureError } from "@/utils/sentry";
 
 // expo-print and expo-sharing are loaded lazily inside downloadCoupon so that
 // importing this hook never crashes the screen in environments where the native
@@ -74,6 +75,22 @@ export function useCouponDownload() {
         "dealId:", dealId,
         err,
       );
+      // The worst failure in the app: the backend has burned the user's deal
+      // and they have no voucher. Unrecoverable for them and, without this,
+      // invisible to us — the Alert below is the only other signal, and it
+      // reaches nobody who can act on it. dealId is what support needs to
+      // reissue, and the code is deliberately absent (it is the redeemable
+      // secret; `referenceCode` is derived from dealId anyway).
+      captureError("coupon PDF generation failed after redeem", err, {
+        dealId,
+        referenceCode,
+        brand: item.brand?.companyName,
+        // Distinguishes "expo-print isn't linked in this build" — the common
+        // cause per the debugging playbook — from a genuine render failure.
+        nativeModuleMissing: /Cannot find native module/i.test(
+          err instanceof Error ? err.message : String(err),
+        ),
+      });
       Alert.alert(
         "PDF Generation Failed",
         "Your coupon was marked as used but the PDF could not be created. " +
