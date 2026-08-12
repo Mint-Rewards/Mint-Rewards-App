@@ -31,6 +31,7 @@ import {
   TouchableOpacity,
   View,
   Linking,
+  Button
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -39,6 +40,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+import * as Sentry from "@sentry/react-native";
 
 const INSTAGRAM_HANDLE = 'mymintrewards'; // replace with actual handle
 
@@ -220,6 +222,26 @@ export default function HomeScreen() {
     () => upcomingCollectionsForUser(user),
     [user],
   );
+  // Dev-only smoke test for the Sentry wiring in app/_layout.tsx: exercises the
+  // four signals we care about (logs, breadcrumbs, messages, exceptions) so a
+  // single tap proves the DSN, transport and source maps all work.
+  const sendSentryTestEvent = React.useCallback(() => {
+    Sentry.setUser(
+      user?.email ? { email: user.email, id: user._id } : null,
+    );
+    Sentry.logger.info("Sentry test log from home screen", {
+      screen: "home",
+      email: user?.email,
+    });
+    Sentry.addBreadcrumb({
+      category: "debug",
+      level: "info",
+      message: "Sentry test button pressed",
+    });
+    Sentry.captureMessage("Sentry test message from home screen", "info");
+    Sentry.captureException(new Error("Sentry test error from home screen"));
+  }, [user?.email, user?._id]);
+
   const isDemoUser = isDemoCollectionsUser(user?.email);
   const showDemoCollections = isDemoUser && upcomingCollections.length > 0;
   const nextCollection = showDemoCollections ? upcomingCollections[0] : undefined;
@@ -310,6 +332,12 @@ export default function HomeScreen() {
             <StatValue value={co2Saved || 0} unit="%" />
           </LinearGradient>
         </View>
+
+        {/* {__DEV__ && (
+          <View style={styles.section}>
+            <Button title="Send Sentry test event" onPress={sendSentryTestEvent} />
+          </View>
+        )} */}
 
         {/* Upcoming Collections */}
         <View style={styles.section}>

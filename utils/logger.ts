@@ -1,6 +1,7 @@
 import { ENV } from "@/config/env";
 import * as Device from "expo-device";
 import { Platform } from "react-native";
+import { captureError } from "@/utils/sentry";
 
 // ============================================================================
 // CONFIG
@@ -216,6 +217,14 @@ async function sendLog(payload: LogPayload): Promise<void> {
   } catch (err) {
     // Never let logging break the app
     console.warn("[Logger] Failed to send log:", err);
+    // Sentry is the only reporter here that is not the thing that just broke.
+    // Without this, a dead /api/logs endpoint or an unlinked Firebase module
+    // looks exactly like an app that has stopped producing events.
+    captureError("logger delivery failed", err, {
+      event: payload.event,
+      level: payload.level,
+      destination: FIREBASE_EVENT_MAP[payload.event] ? "firebase" : "backend",
+    });
   }
 }
 
@@ -307,6 +316,18 @@ export const logError = async (
     error?: unknown;
   }
 ): Promise<void> => {
+  // Every error path in store/store.ts already funnels through here, so this
+  // single call is what puts all of them in Sentry — deliberately in place of
+  // adding a capture to each call site, which would drift the moment someone
+  // adds a fifteenth.
+  captureError(message, options?.error, {
+    userId: options?.userId,
+    route: options?.route,
+    appVersion: APP_VERSION,
+    buildNumber: BUILD_NUMBER,
+    environment: ENVIRONMENT,
+  });
+
   const payload: LogPayload = {
     ...buildBasePayload("APP_ERROR", "error"),
     userId: options?.userId,

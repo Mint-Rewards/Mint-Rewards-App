@@ -98,6 +98,17 @@ function reportFailure(step: string, error: unknown) {
  * Returning early always means "do not block".
  */
 async function runUpdateChecks(publish: (next: GateState) => void) {
+  // Never gate a dev client. Its buildNumber is whatever app.config.js last
+  // declared locally (14), while the backend floor tracks the EAS remote
+  // counter (25+) — so the store check trips on every local run, and the store
+  // link it offers cannot update a dev build anyway. Comment this out to
+  // exercise the gate itself.
+  //
+  // The NODE_ENV clause is load-bearing: Jest also runs with __DEV__ === true,
+  // and without it every case in __tests__/updateGate.test.tsx returns here
+  // before reaching the behaviour it asserts on.
+  if (__DEV__ && process.env.NODE_ENV !== "test") return;
+
   const platform = Platform.OS;
   if (platform !== "ios" && platform !== "android") return; // web: nothing to gate
 
