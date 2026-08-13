@@ -1,12 +1,13 @@
 import Navbar from "@/components/ui/navbar";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useState } from "react";
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,6 +22,14 @@ interface EmailField {
   email: string;
   error?: string;
 }
+
+// 4-base spacing scale. Tight values group, generous values separate; nothing
+// on this screen should reach for a number that isn't here.
+const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
+
+// Row padding + ordinal chip + gap. Error text hangs off the input's left edge,
+// not the row's, so it reads as belonging to the field it describes.
+const FIELD_TEXT_INSET = space.md + 28 + space.md;
 
 const ShareScreen = () => {
   const { sendReferral, isLoading, error, user } = useAppStore();
@@ -136,27 +145,31 @@ const ShareScreen = () => {
   };
 
   const renderEmailField = (field: EmailField, index: number) => (
-    <View key={field.id} style={styles.emailFieldContainer}>
-      <View style={styles.emailInputContainer}>
-        <View style={styles.emailIconContainer}>
-          <Ionicons name="mail" size={20} color="#00528A" />
+    <View key={field.id}>
+      <View style={[styles.emailRow, field.error && styles.emailRowError]}>
+        <View style={styles.ordinal}>
+          <Text style={styles.ordinalText}>{index + 1}</Text>
         </View>
         <TextInput
-          style={[styles.emailInput, field.error && styles.emailInputError]}
+          style={styles.emailInput}
           value={field.email}
           onChangeText={(text) => updateEmailField(field.id, text)}
-          placeholder={`Email ${index + 1}`}
-          placeholderTextColor="#a0aec0"
+          placeholder="name@example.com"
+          placeholderTextColor="#718096"
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+          accessibilityLabel={`Email address ${index + 1}`}
         />
         {emailFields.length > 1 && (
           <TouchableOpacity
             onPress={() => removeEmailField(field.id)}
             style={styles.removeButton}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove email address ${index + 1}`}
           >
-            <Ionicons name="close-circle" size={24} color="#e53e3e" />
+            <Ionicons name="close" size={18} color="#4a5568" />
           </TouchableOpacity>
         )}
       </View>
@@ -164,102 +177,91 @@ const ShareScreen = () => {
     </View>
   );
 
+  const readyCount = emailFields.filter((f) => f.email.trim()).length;
+
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       <StatusBar style="light" />
 
       <Navbar user={user} />
 
-      {/* Content */}
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={{
-          flexGrow: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          paddingHorizontal: 20,
-          paddingBottom: tabBarOverflow,
-        }}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.comingSoonContainer}>
-          {/* Email Form */}
-
-          <View style={styles.formContainer}>
-            <Text style={styles.formTitle}>Enter Email Addresses</Text>
-
-            <View style={styles.emailFieldsContainer}>
-              {emailFields.map((field, index) =>
-                renderEmailField(field, index),
-              )}
-            </View>
-
-            <TouchableOpacity
-              style={styles.addEmailButton}
-              onPress={addEmailField}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add-circle" size={24} color="#00528A" />
-              <Text style={styles.addEmailButtonText}>Add Another Email</Text>
-            </TouchableOpacity>
-
-            {error && (
-              <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle" size={20} color="#e53e3e" />
-                <Text style={styles.errorMessage}>{error}</Text>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.sendButton, isLoading && styles.buttonDisabled]}
-              onPress={handleSendReferrals}
-              disabled={isLoading}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={
-                  isLoading ? ["#a0aec0", "#00528A"] : ["#00528A", "#00528A"]
-                }
-                style={styles.sendGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                {isLoading ? (
-                  <Text style={styles.sendButtonText}>Sending...</Text>
-                ) : (
-                  <>
-                    <Ionicons name="send" size={20} color="#ffffff" />
-                    <Text style={styles.sendButtonText}>
-                      Send Invitations (
-                      {emailFields.filter((f) => f.email.trim()).length})
-                    </Text>
-                  </>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-
-          {/* Action Buttons */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => router.push("/(tabs)/home")}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={["#00528A", "#00528A"]}
-                style={styles.gradientButton}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <Ionicons name="home" size={20} color="#ffffff" />
-                <Text style={styles.primaryButtonText}>Back to Home</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
+        {/* The one peak on this screen. Flat navy panel, display type at full
+            strength — home.tsx's card radius and shadow, none of its gradients. */}
+        <View style={styles.introPanel}>
+          <Text style={styles.title} allowFontScaling>
+            Invite friends
+          </Text>
+          <Text style={styles.subtitle}>
+            Send an invitation and they can start collecting points for
+            recycling too.
+          </Text>
         </View>
+
+        <View style={styles.fieldList}>
+          {emailFields.map((field, index) => renderEmailField(field, index))}
+        </View>
+
+        <TouchableOpacity
+          style={styles.addEmailButton}
+          onPress={addEmailField}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Add another email address"
+        >
+          <Ionicons name="add" size={20} color="#00528A" />
+          <Text style={styles.addEmailButtonText}>Add another email</Text>
+        </TouchableOpacity>
+
+        {error && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={20} color="#e53e3e" />
+            <Text style={styles.errorMessage}>{error}</Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={styles.homeLink}
+          onPress={() => router.push("/(tabs)/home")}
+          activeOpacity={0.6}
+          accessibilityRole="button"
+        >
+          <Text style={styles.homeLinkText}>Back to home</Text>
+        </TouchableOpacity>
       </ScrollView>
-    </View>
+
+      {/* The one primary action stays reachable however long the list grows. */}
+      <View style={[styles.footer, { paddingBottom: tabBarOverflow + space.lg }]}>
+        <TouchableOpacity
+          style={[styles.sendButton, isLoading && styles.buttonDisabled]}
+          onPress={handleSendReferrals}
+          disabled={isLoading}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+        >
+          {isLoading ? (
+            <Text style={styles.sendButtonText}>Sending…</Text>
+          ) : (
+            <>
+              <Ionicons name="send" size={18} color="#ffffff" />
+              <Text style={styles.sendButtonText}>
+                {readyCount > 1
+                  ? `Send ${readyCount} invitations`
+                  : "Send invitation"}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -268,301 +270,167 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#ffffff",
   },
-  headerSection: {
-    backgroundColor: "#ffffff",
-  },
-  header: {
-    paddingTop: 50,
-    paddingHorizontal: 20,
-    paddingBottom: 15,
-    zIndex: 10,
-  },
-  headerGradient: {
-    borderRadius: 20,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-  },
-  userInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
-  },
-  userDetails: {
-    flex: 1,
-  },
-  welcomeText: {
-    fontSize: 14,
-    opacity: 0.9,
-  },
-  userName: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  headerContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#ffffff",
-  },
-  headerIcons: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  iconButton: {
-    marginLeft: 15,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
   scrollView: {
     flex: 1,
   },
-  comingSoonContainer: {
-    alignItems: "center",
-    maxWidth: 320,
+  scrollContent: {
+    paddingHorizontal: space.xl,
+    paddingBottom: space.xxl,
   },
-  illustrationContainer: {
-    position: "relative",
-    marginBottom: 40,
-  },
-  illustrationBackground: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  sparkleContainer: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    top: -20,
-    left: -20,
-  },
-  sparkle1: {
-    position: "absolute",
-    top: 20,
-    right: 30,
-  },
-  sparkle2: {
-    position: "absolute",
-    bottom: 40,
-    left: 20,
-  },
-  sparkle3: {
-    position: "absolute",
-    top: 60,
-    left: 30,
-  },
-  textContainer: {
-    alignItems: "center",
-    marginBottom: 40,
+
+  // Intro leads, then falls away hard so the field list reads as the work.
+  // A tint, not a fill. The panel still anchors the screen, but it sits under
+  // the content rather than shouting over it — no shadow, no saturated slab.
+  introPanel: {
+    backgroundColor: "#F0F8FF",
+    borderRadius: 16,
+    paddingVertical: space.xxl,
+    paddingHorizontal: space.xl,
+    marginBottom: space.xxl,
   },
   title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#2d3748",
-    textAlign: "center",
-    marginBottom: 12,
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: "700",
+    // Matches the system's own display tracking rather than exaggerating it.
+    letterSpacing: -0.4,
+    color: "#00528A",
+    marginBottom: space.sm,
   },
   subtitle: {
-    fontSize: 16,
-    color: "#4a5568",
-    textAlign: "center",
-    marginBottom: 8,
-    lineHeight: 24,
-  },
-  description: {
-    fontSize: 14,
-    color: "#718096",
-    textAlign: "center",
+    fontSize: 15,
     lineHeight: 22,
+    // The accent at reduced opacity — a darker shade of the surface's own hue,
+    // never gray on a colored ground.
+    color: "rgba(0, 82, 138, 0.75)",
+    maxWidth: 280,
   },
-  actionButtons: {
-    width: "100%",
-    marginBottom: 40,
+
+  fieldList: {
+    gap: space.md,
   },
-  primaryButton: {
-    marginBottom: 12,
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  gradientButton: {
+  emailRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    gap: 10,
-  },
-  primaryButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  formContainer: {
-    marginBottom: 30,
-  },
-  formTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#2d3748",
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  emailFieldsContainer: {
-    marginBottom: 15,
-  },
-  emailFieldContainer: {
-    marginBottom: 15,
-  },
-  emailInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
+    gap: space.md,
     backgroundColor: "#f8f9fa",
     borderWidth: 1,
     borderColor: "#e2e8f0",
     borderRadius: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: space.md,
+    minHeight: 52,
   },
-  emailIconContainer: {
-    marginRight: 12,
-  },
-  emailInput: {
-    flex: 1,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: "#2d3748",
-  },
-  emailInputError: {
+  emailRowError: {
     borderColor: "#e53e3e",
     backgroundColor: "#fef5f5",
   },
+  ordinal: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ordinalText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#00528A",
+  },
+  emailInput: {
+    flex: 1,
+    paddingVertical: space.md,
+    fontSize: 16,
+    color: "#2d3748",
+  },
   removeButton: {
-    marginLeft: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
   errorText: {
-    color: "#e53e3e",
-    fontSize: 14,
-    marginTop: 4,
-    marginLeft: 44,
+    color: "#c53030",
+    fontSize: 13,
+    marginTop: space.xs,
+    paddingLeft: FIELD_TEXT_INSET,
   },
+
+  // Sits close to the list it extends, far from what follows.
   addEmailButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#f8f9fa",
+    gap: space.sm,
     borderWidth: 1,
-    borderColor: "#00528A",
+    borderColor: "#e2e8f0",
     borderRadius: 12,
-    paddingVertical: 12,
-    marginBottom: 20,
-    gap: 8,
+    paddingVertical: space.md,
+    marginTop: space.md,
+    minHeight: 48,
   },
   addEmailButtonText: {
     color: "#00528A",
-    fontSize: 16,
-    fontWeight: "500",
+    fontSize: 15,
+    fontWeight: "600",
   },
+
   errorContainer: {
     flexDirection: "row",
     alignItems: "center",
+    gap: space.sm,
     backgroundColor: "#fef5f5",
-    padding: 12,
-    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#feb2b2",
-    marginBottom: 20,
-    gap: 8,
+    borderRadius: 12,
+    padding: space.md,
+    marginTop: space.xl,
   },
   errorMessage: {
-    color: "#e53e3e",
+    color: "#c53030",
     fontSize: 14,
     flex: 1,
   },
+
+  homeLink: {
+    alignSelf: "center",
+    marginTop: space.xxl,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
+  },
+  homeLinkText: {
+    color: "#4a5568",
+    fontSize: 15,
+    fontWeight: "500",
+  },
+
+  footer: {
+    paddingHorizontal: space.xl,
+    paddingTop: space.lg,
+    backgroundColor: "#ffffff",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e2e8f0",
+  },
   sendButton: {
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  sendGradient: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 16,
+    gap: space.sm,
+    backgroundColor: "#00528A",
     borderRadius: 16,
-    gap: 10,
+    paddingVertical: space.lg,
+    minHeight: 52,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   sendButtonText: {
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
-  },
-  rewardsContainer: {
-    backgroundColor: "#f8f9fa",
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  rewardsTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#2d3748",
-    marginBottom: 16,
-    textAlign: "center",
-  },
-  rewardsList: {
-    gap: 12,
-  },
-  rewardItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  rewardText: {
-    fontSize: 14,
-    color: "#4a5568",
-    flex: 1,
   },
 });
 
