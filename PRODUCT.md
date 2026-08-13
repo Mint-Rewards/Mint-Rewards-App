@@ -1,8 +1,7 @@
 # Product
 
-## Register
-
-product
+## Platform
+adaptive
 
 ## Users
 Consumers who recycle waste and collect reward points through the Mint Rewards program, redeeming points for brand discounts/coupons. Mobile-first (Expo/React Native, iOS + Android), used in short sessions — checking points, scanning/redeeming discounts, signing in on the go.
