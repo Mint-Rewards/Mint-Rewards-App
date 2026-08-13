@@ -227,15 +227,6 @@ const ShareScreen = () => {
             <Text style={styles.errorMessage}>{error}</Text>
           </View>
         )}
-
-        <TouchableOpacity
-          style={styles.homeLink}
-          onPress={() => router.push("/(tabs)/home")}
-          activeOpacity={0.6}
-          accessibilityRole="button"
-        >
-          <Text style={styles.homeLinkText}>Back to home</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       {/* The one primary action stays reachable however long the list grows. */}
