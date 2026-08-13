@@ -23,7 +23,7 @@ interface EmailField {
 }
 
 const ShareScreen = () => {
-  const { sendRefferal, isLoading, error, user } = useAppStore();
+  const { sendReferral, isLoading, error, user } = useAppStore();
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
   // absolutely positioned, so the scroll has to clear it by its full height.
   const tabBarOverflow = useBottomTabOverflow();
@@ -108,7 +108,7 @@ const ShareScreen = () => {
     }
 
     try {
-      const result = await sendRefferal(emails);
+      const result = await sendReferral(emails);
 
       if (result.Status === "Success") {
         Alert.alert(
@@ -183,53 +183,9 @@ const ShareScreen = () => {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.comingSoonContainer}>
-          {/* Illustration */}
-          <View style={styles.illustrationContainer}>
-            <LinearGradient
-              colors={["#f8f9fa", "#e9ecef"]}
-              style={styles.illustrationBackground}
-            >
-              <Ionicons name="share-social" size={80} color="#00528A" />
-            </LinearGradient>
-
-            {/* Decorative elements */}
-            <View style={styles.sparkleContainer}>
-              <Ionicons
-                name="star"
-                size={16}
-                color="#FFD700"
-                style={styles.sparkle1}
-              />
-              <Ionicons
-                name="heart"
-                size={12}
-                color="#FF69B4"
-                style={styles.sparkle2}
-              />
-              <Ionicons
-                name="diamond"
-                size={14}
-                color="#00CED1"
-                style={styles.sparkle3}
-              />
-            </View>
-          </View>
-
-          {/* Title and Description */}
-          <View style={styles.textContainer}>
-            <Text style={styles.title}>Referrals Coming Soon!</Text>
-            <Text style={styles.subtitle}>
-              We&apos;re building something amazing for you.
-            </Text>
-            <Text style={styles.description}>
-              Share Mint Rewards with your friends and earn points for every
-              successful referral!
-            </Text>
-          </View>
-
           {/* Email Form */}
 
-          {/* <View style={styles.formContainer}>
+          <View style={styles.formContainer}>
             <Text style={styles.formTitle}>Enter Email Addresses</Text>
 
             <View style={styles.emailFieldsContainer}>
@@ -281,7 +237,7 @@ const ShareScreen = () => {
                 )}
               </LinearGradient>
             </TouchableOpacity>
-          </View> */}
+          </View>
 
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
