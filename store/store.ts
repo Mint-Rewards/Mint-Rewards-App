@@ -94,7 +94,7 @@ export interface User {
   points?: number;
   totalCollections?: string;
   totalWasteCollected?: string;
-  referrals?: any[];
+  referrals?: string[];
   firstTimeLogin?: boolean;
   emailVerified?: boolean;
   pickupHistory?: any[];
@@ -283,7 +283,7 @@ interface ProfileSlice {
   }>;
   setProfileLoading: (loading: boolean) => void;
   setProfileError: (error: string | null) => void;
-  sendRefferal: (referralEmails: string[]) => Promise<{
+  sendReferral: (referralEmails: string[]) => Promise<{
     Status: string;
     Message?: string;
     ErrorMessage?: string;
@@ -919,7 +919,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setProfileLoading: (loading) => set({ isProfileLoading: loading }),
   setProfileError: (error) => set({ profileError: error }),
 
-  sendRefferal: async (referralEmails) => {
+  sendReferral: async (referralEmails) => {
     set({ isLoading: true, error: null });
     try {
       const token =
@@ -958,7 +958,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const errorMessage =
         "Network error. Please check your connection and try again.";
       set({ error: errorMessage, isLoading: false });
-      await logError("sendRefferal exception", {
+      await logError("sendReferral exception", {
         userId: get().user?.mintId,
         error,
       });
