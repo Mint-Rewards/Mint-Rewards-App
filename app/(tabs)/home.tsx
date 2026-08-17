@@ -82,10 +82,9 @@ type BrandCardProps = {
   brand: BrandCardBrand;
   index: number;
   onPress: () => void;
-  locked?: boolean;
 };
 
-const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps) => {
+const BrandCard = React.memo(({ brand, index, onPress }: BrandCardProps) => {
   const offsetY = useSharedValue(80);
   const entryOpacity = useSharedValue(0);
   const pressScale = useSharedValue(1);
@@ -114,7 +113,7 @@ const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps)
       <Pressable
         onPress={onPress}
         onPressIn={() => {
-          if (!locked) pressScale.value = withSpring(0.96, { damping: 20, stiffness: 400 });
+          pressScale.value = withSpring(0.96, { damping: 20, stiffness: 400 });
         }}
         onPressOut={() => {
           pressScale.value = withSpring(1, { damping: 20, stiffness: 400 });
@@ -128,7 +127,6 @@ const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps)
               styles.couponCardLight,
               { borderColor: surface.hairline! },
             ],
-            locked && styles.couponCardLocked,
           ]}
         >
           <View style={styles.couponTextBlock}>
@@ -150,13 +148,6 @@ const BrandCard = React.memo(({ brand, index, onPress, locked }: BrandCardProps)
               resizeMode="contain"
             />
           </View>
-
-          {locked && (
-            <View style={styles.lockedOverlay}>
-              <Ionicons name="lock-closed" size={28} color="#ffffff" />
-              <Text style={styles.lockedText}>Complete your profile to unlock</Text>
-            </View>
-          )}
         </View>
       </Pressable>
     </Animated.View>
@@ -302,6 +293,11 @@ export default function HomeScreen() {
   const cardsContainerHeight = brands.length * VISIBLE + OVERLAP + 80;
   // The "going live soon" teaser has nowhere to send the user yet — only a
   // booked or upcoming collection makes the card worth tapping.
+  // The brand cards are only ever tappable for a complete profile with a set
+  // location — showing them greyed out just repeated the prompt banner behind
+  // them, so they are hidden entirely until the user can actually use them.
+  const showBrandCards =
+    profileComplete && !locationUpdateNeeded && hasLocation && hasAddress;
   const canOpenCollections = !!booked || !!(showDemoCollections && nextCollection && nextSlot);
 
   return (
@@ -467,6 +463,22 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
+          {/* Profile can be "complete" while the exact location is still
+              missing; without this the section would be empty. */}
+          {profileComplete && !locationUpdateNeeded && !(hasLocation && hasAddress) && (
+            <TouchableOpacity
+              style={styles.profilePromptCard}
+              onPress={() => router.push("/editProfile")}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="location-outline" size={22} color="#449EB2" />
+              <Text style={styles.profilePromptText}>
+                Set your location to unlock deals
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#449EB2" />
+            </TouchableOpacity>
+          )}
+
           {locationUpdateNeeded && (
             <TouchableOpacity
               style={styles.profilePromptCard}
@@ -481,18 +493,14 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
+          {showBrandCards && (
           <View style={{ height: cardsContainerHeight, position: "relative" }}>
             {brands.map((brand, index) => (
               <BrandCard
                 key={brand._id}
                 brand={brand}
                 index={index}
-                locked={!profileComplete}
                 onPress={() => {
-                  if (!profileComplete) {
-                    router.push("/editProfile");
-                    return;
-                  }
                   logEvent("BRAND_VIEWED", {
                     userId: user?._id,
                     userEmail: user?.email,
@@ -507,6 +515,7 @@ export default function HomeScreen() {
               />
             ))}
           </View>
+          )}
         </View>
       </ScrollView>
 
@@ -666,24 +675,6 @@ const styles = StyleSheet.create({
   couponName: { fontSize: 26, fontWeight: "700", letterSpacing: -0.3 },
   couponLogoWrapper: { width: 110, height: 110, alignItems: "center", justifyContent: "center" },
   couponLogo: { width: 110, height: 110 },
-  couponCardLocked: {
-    opacity: 0.45,
-  },
-  lockedOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  lockedText: {
-    color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "600",
-    textAlign: "center",
-    paddingHorizontal: 20,
-  },
   profilePromptCard: {
     flexDirection: "row",
     alignItems: "center",
