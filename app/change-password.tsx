@@ -13,7 +13,12 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Constants, Utils } from "../utils/constants";
+import {
+  Constants,
+  Utils,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+} from "../utils/constants";
 
 const ChangePasswordScreen = () => {
   const [password1, setPassword1] = useState("");
@@ -40,7 +45,9 @@ const ChangePasswordScreen = () => {
     }
 
     if (!Utils.validatePassword(password1)) {
-      Constants.showDialog("Password must be at least 8 characters");
+      Constants.showDialog(
+        `Password must be between ${PASSWORD_MIN_LENGTH} and ${PASSWORD_MAX_LENGTH} characters`,
+      );
       return;
     }
 
@@ -108,6 +115,7 @@ const ChangePasswordScreen = () => {
               <TextInput
                 style={styles.passwordTextInput}
                 value={password1}
+                maxLength={PASSWORD_MAX_LENGTH}
                 onChangeText={setPassword1}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -134,6 +142,7 @@ const ChangePasswordScreen = () => {
               <TextInput
                 style={styles.passwordTextInput}
                 value={password2}
+                maxLength={PASSWORD_MAX_LENGTH}
                 onChangeText={setPassword2}
                 autoCapitalize="none"
                 autoCorrect={false}

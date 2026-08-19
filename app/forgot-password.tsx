@@ -25,7 +25,7 @@ const ForgotPasswordScreen = () => {
   const resetPasswordPressed = async () => {
     if (email.trim() === "") {
       Constants.showDialog("Please enter your email address");
-    } else if (!Utils.isEmail(email)) {
+    } else if (!Utils.isEmail(email.trim())) {
       Constants.showDialog("Please enter valid email address");
     } else {
       setLoading(true);
@@ -91,7 +91,8 @@ const ForgotPasswordScreen = () => {
               <TextInput
                 style={styles.textInput}
                 value={email}
-                onChangeText={setEmail}
+                // Trim on entry: an address can never contain whitespace.
+                onChangeText={(t) => setEmail(t.trim())}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}

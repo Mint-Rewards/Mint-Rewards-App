@@ -29,6 +29,14 @@ export const Constants = {
   },
 };
 
+/** Minimum password length, mirrored by the backend. */
+export const PASSWORD_MIN_LENGTH = 8;
+/**
+ * Maximum password length. bcrypt silently truncates at 72 bytes, so cap well
+ * below that rather than accepting input the hash would ignore.
+ */
+export const PASSWORD_MAX_LENGTH = 64;
+
 // Utility functions
 export const Utils = {
   isEmail: (email: string): boolean => {
@@ -37,6 +45,9 @@ export const Utils = {
   },
 
   validatePassword: (password: string): boolean => {
-    return password.length >= 8;
+    return (
+      password.length >= PASSWORD_MIN_LENGTH &&
+      password.length <= PASSWORD_MAX_LENGTH
+    );
   },
 };

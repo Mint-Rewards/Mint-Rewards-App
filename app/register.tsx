@@ -18,7 +18,13 @@ import {
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import * as SecureStore from "expo-secure-store";
-import { Constants, Utils, API_BASE_URL } from "../utils/constants";
+import {
+  Constants,
+  Utils,
+  API_BASE_URL,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+} from "../utils/constants";
 import { AppleAuthenticationButtonType } from 'expo-apple-authentication';
 import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
 
@@ -216,10 +222,16 @@ const RegisterScreen = () => {
       Constants.showDialog("Please enter your name");
     } else if (email.trim() === "") {
       Constants.showDialog("Please enter your email address");
-    } else if (!Utils.isEmail(email)) {
+    } else if (!Utils.isEmail(email.trim())) {
       Constants.showDialog("Please enter a valid email address");
-    } else if (password.length < 8) {
-      Constants.showDialog("Password must be at least 8 characters");
+    } else if (password.length < PASSWORD_MIN_LENGTH) {
+      Constants.showDialog(
+        `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+      );
+    } else if (password.length > PASSWORD_MAX_LENGTH) {
+      Constants.showDialog(
+        `Password must be at most ${PASSWORD_MAX_LENGTH} characters`,
+      );
     } else {
       setLoading(true);
       try {
@@ -286,7 +298,9 @@ const RegisterScreen = () => {
               <TextInput
                 style={styles.textInput}
                 value={email}
-                onChangeText={setEmail}
+                // Trim on entry: an address can never contain whitespace, and
+                // a stray leading space made signup fail validation.
+                onChangeText={(t) => setEmail(t.trim())}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -302,6 +316,7 @@ const RegisterScreen = () => {
               <TextInput
                 style={styles.passwordTextInput}
                 value={password}
+                maxLength={PASSWORD_MAX_LENGTH}
                 onChangeText={setPassword}
                 secureTextEntry={hidePassword}
                 placeholder="Min. 8 characters"
