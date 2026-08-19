@@ -1,4 +1,5 @@
 import Navbar from "@/components/ui/navbar";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -8,6 +9,9 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const NotificationsScreen = () => {
+  // Keeps the centred empty state optically centred in the space above the
+  // absolutely-positioned iOS tab bar. No-op on Android.
+  const tabBarOverflow = useBottomTabOverflow();
   const { user } = useAppStore();
   return (
     <View style={styles.container}>
@@ -16,7 +20,7 @@ const NotificationsScreen = () => {
       <Navbar user={user} />
 
       {/* Main Content */}
-      <View style={styles.content}>
+      <View style={[styles.content, { paddingBottom: tabBarOverflow }]}>
         <View style={styles.emptyStateContainer}>
           {/* Illustration */}
           <View style={styles.illustrationContainer}>

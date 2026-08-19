@@ -2,6 +2,7 @@ import { Deal, useAppStore } from "@/store/store";
 import { brandSurface } from "@/utils/brandTheme";
 import { isDealExpired, mergeBrandsWithDeals } from "@/utils/deals";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -25,6 +26,9 @@ const formatExpiry = (endDate: string) => {
 };
 
 const RedeemScreen = () => {
+  // The iOS tab bar is absolutely positioned, so the last deal card would sit
+  // underneath it without this. No-op on Android, where the bar takes layout.
+  const tabBarOverflow = useBottomTabOverflow();
   const { brandId } = useLocalSearchParams();
   const {
     deals,
@@ -157,7 +161,10 @@ const RedeemScreen = () => {
       <ScrollView
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 40 + tabBarOverflow },
+        ]}
       >
         {brand?.deals && brand.deals.length > 0 && (
           <Text style={styles.sectionTitle}>Available Deals</Text>

@@ -1,4 +1,5 @@
 import Navbar from "@/components/ui/navbar";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
 import {
   PICKUPS_COMPLETED_COUNT,
@@ -156,6 +157,9 @@ const DemoCollectionsScreen = ({
   user: User | null;
   initialSection: SectionKey;
 }) => {
+  // The iOS tab bar is absolutely positioned, so the list needs to clear it.
+  // No-op on Android, where the bar takes layout.
+  const tabBarOverflow = useBottomTabOverflow();
   const [activeSection, setActiveSection] = React.useState<SectionKey>(initialSection);
   // Every row is placed in this user's own town/city, resolved once here.
   const pastPickups = React.useMemo(() => pastPickupsForUser(user), [user]);
@@ -397,7 +401,7 @@ const DemoCollectionsScreen = ({
               );
             })}
 
-        <View style={styles.listBottomSpacing} />
+        <View style={[styles.listBottomSpacing, { height: 40 + tabBarOverflow }]} />
       </ScrollView>
     </View>
   );
