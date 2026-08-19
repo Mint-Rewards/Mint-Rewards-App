@@ -114,6 +114,13 @@ export default function TabLayout() {
           ),
         }}
       />
+      {/* Reachable by route but not by a tab button: href: null keeps them out
+          of the bar while still rendering them inside the tab navigator, so
+          the bar stays visible and tapping a tab from here switches properly. */}
+      <Tabs.Screen name="redeem" options={{ href: null }} />
+      <Tabs.Screen name="deals" options={{ href: null }} />
+      <Tabs.Screen name="collections" options={{ href: null }} />
+      <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
     </View>
   );

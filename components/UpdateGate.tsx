@@ -98,6 +98,17 @@ function reportFailure(step: string, error: unknown) {
  * Returning early always means "do not block".
  */
 async function runUpdateChecks(publish: (next: GateState) => void) {
+  // Never gate a bundle served by Metro. A local checkout's version is
+  // routinely behind the published minSupportedVersion, which would strand
+  // every developer on ForceUpdateScreen with no way through — the store build
+  // it points at is not the build they are trying to run.
+  //
+  // `__DEV__`, not IS_DEV: config/env.ts draws the distinction deliberately.
+  // IS_DEV is the build *variant*, and a development-variant release build on
+  // a real device still must be gated. `__DEV__` is the axis that actually
+  // means "served by Metro right now", which is the case being exempted.
+  if (__DEV__) return;
+
   const platform = Platform.OS;
   if (platform !== "ios" && platform !== "android") return; // web: nothing to gate
 
