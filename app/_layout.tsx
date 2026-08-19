@@ -96,13 +96,12 @@ export default function RootLayout() {
           <Stack.Screen name="register" options={{ headerShown: false }} />
           <Stack.Screen name="verify-email" options={{ headerShown: false }} />
           <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-          <Stack.Screen name="redeem" options={{ headerShown: false }} />
+          {/* redeem / deals / collections / notifications now live inside
+              (tabs) so the bottom nav bar renders on them. Route paths are
+              unchanged — a group segment adds nothing to the URL. */}
           <Stack.Screen name="editProfile" options={{ headerShown: false }} />
-          <Stack.Screen name="deals" options={{ headerShown: false }} />
-          <Stack.Screen name="collections" options={{ headerShown: false }} />
           <Stack.Screen name="otp-screen" options={{ headerShown: false }} />
           <Stack.Screen name="change-password" options={{ headerShown: false }} />
-          <Stack.Screen name="notifications" options={{ headerShown: false }} />
           <Stack.Screen name="+not-found" />
           </Stack>
           {/* Sibling overlay, not a replacement for <Stack>: checkAuth() above

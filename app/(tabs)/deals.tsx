@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { dealCtaLabel, isDealExpired, partitionDeals } from "@/utils/deals";
 
 const formatExpiry = (endDate: string) => {
@@ -26,6 +27,9 @@ const formatExpiry = (endDate: string) => {
 type FilterType = "all" | "active";
 
 const DealsScreen = () => {
+  // The iOS tab bar is absolutely positioned; without this the last card
+  // scrolls under it. No-op on Android, where the bar takes layout.
+  const tabBarOverflow = useBottomTabOverflow();
   const { user, getDeals, deals, isDealsLoading, dealsError } = useAppStore();
   const profileComplete = isProfileComplete(user);
 
@@ -206,7 +210,10 @@ const DealsScreen = () => {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.list, { paddingBottom: 32 + tabBarOverflow }]}
+          showsVerticalScrollIndicator={false}
+        >
           {available.map((item) => renderCard(item, false, !profileComplete))}
           {filter === "all" && used.length > 0 && available.length > 0 && (
             <View style={styles.sectionGap} />
