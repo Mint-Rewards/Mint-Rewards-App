@@ -297,7 +297,7 @@ const LoginScreen = () => {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={hidePassword}
-                placeholder="Password"
+                placeholder="Enter Your Password"
                 placeholderTextColor="#999999"
               />
               <TouchableOpacity
