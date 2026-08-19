@@ -18,13 +18,12 @@ import {
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import * as SecureStore from "expo-secure-store";
+import { Constants, Utils, API_BASE_URL } from "../utils/constants";
 import {
-  Constants,
-  Utils,
-  API_BASE_URL,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
-} from "../utils/constants";
+  passwordHint,
+} from "../utils/password";
 import { AppleAuthenticationButtonType } from 'expo-apple-authentication';
 import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
 
@@ -319,7 +318,7 @@ const RegisterScreen = () => {
                 maxLength={PASSWORD_MAX_LENGTH}
                 onChangeText={setPassword}
                 secureTextEntry={hidePassword}
-                placeholder="Min. 8 characters"
+                placeholder={`Min. ${PASSWORD_MIN_LENGTH} characters`}
                 placeholderTextColor="#999999"
               />
               <TouchableOpacity
@@ -333,6 +332,15 @@ const RegisterScreen = () => {
                 />
               </TouchableOpacity>
             </View>
+            <Text
+              style={[
+                styles.passwordHint,
+                passwordHint(password).invalid && styles.passwordHintError,
+              ]}
+              accessibilityLiveRegion="polite"
+            >
+              {passwordHint(password).message}
+            </Text>
           </View>
 
           <TouchableOpacity
@@ -453,6 +461,16 @@ const styles = StyleSheet.create({
   inputGroup: {
     marginBottom: 20,
   },
+  passwordHint: {
+    fontSize: 13,
+    color: "#999999",
+    marginTop: 6,
+    marginLeft: 4,
+  },
+  passwordHintError: {
+    color: "#d32f2f",
+  },
+
   inputLabel: {
     fontSize: 16,
     fontWeight: "500",

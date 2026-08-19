@@ -13,12 +13,12 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { Constants, Utils } from "../utils/constants";
 import {
-  Constants,
-  Utils,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
-} from "../utils/constants";
+  passwordHint,
+} from "../utils/password";
 
 const ChangePasswordScreen = () => {
   const [password1, setPassword1] = useState("");
@@ -119,7 +119,7 @@ const ChangePasswordScreen = () => {
                 onChangeText={setPassword1}
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="Min. 8 characters"
+                placeholder={`Min. ${PASSWORD_MIN_LENGTH} characters`}
                 placeholderTextColor="#999999"
                 secureTextEntry={hidePassword}
                 accessibilityLabel="New password"
@@ -135,6 +135,15 @@ const ChangePasswordScreen = () => {
                 />
               </TouchableOpacity>
             </View>
+            <Text
+              style={[
+                styles.passwordHint,
+                passwordHint(password1).invalid && styles.passwordHintError,
+              ]}
+              accessibilityLiveRegion="polite"
+            >
+              {passwordHint(password1).message}
+            </Text>
           </View>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Confirm Password</Text>
@@ -218,6 +227,15 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     marginBottom: 20,
+  },
+  passwordHint: {
+    fontSize: 13,
+    color: "#999999",
+    marginTop: 6,
+    marginLeft: 4,
+  },
+  passwordHintError: {
+    color: "#d32f2f",
   },
   inputLabel: {
     fontSize: 16,

@@ -18,12 +18,8 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import {
-  Constants,
-  Utils,
-  API_BASE_URL,
-  PASSWORD_MAX_LENGTH,
-} from "../utils/constants";
+import { Constants, Utils, API_BASE_URL } from "../utils/constants";
+import { PASSWORD_MAX_LENGTH } from "../utils/password";
 import * as SecureStore from 'expo-secure-store';
 import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
 
