@@ -7,6 +7,8 @@ import React, { useEffect, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -108,8 +110,18 @@ const OtpScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       {/* Green Header Section */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
       <View style={styles.headerSection}>
         {/* Welcome Section */}
         <View style={styles.welcomeSection}>
@@ -122,11 +134,6 @@ const OtpScreen = () => {
 
       {/* White Content Section */}
       <View style={styles.contentSection}>
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
           {locked && (
             <OtpStatusBanner
               tone="lockout"
@@ -203,9 +210,9 @@ const OtpScreen = () => {
           <TouchableOpacity style={styles.backToLoginContainer} onPress={() => router.back()}>
             <Text style={styles.backToLoginText}>← Back to Forgot Password</Text>
           </TouchableOpacity>
-        </ScrollView>
-      </View>
-    </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -242,6 +249,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     paddingHorizontal: 20,
     paddingTop: 30,
+  // Keeps the last field scrollable clear of the software keyboard.
+    paddingBottom: 40,
   },
   inputGroup: {
     marginBottom: 12,
