@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
   ScrollView,
