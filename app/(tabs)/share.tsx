@@ -5,7 +5,6 @@ import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -15,6 +14,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
+import { alertOnce } from "@/utils/alert";
 import { useAppStore } from "../../store/store";
 
 interface EmailField {
@@ -102,7 +103,7 @@ const ShareScreen = () => {
     return !hasErrors;
   };
 
-  const handleSendReferrals = async () => {
+  const sendReferrals = async () => {
     if (!validateAllEmails()) {
       return;
     }
@@ -112,7 +113,7 @@ const ShareScreen = () => {
       .filter((email) => email);
 
     if (emails.length === 0) {
-      Alert.alert("Error", "Please add at least one email address");
+      alertOnce("Error", "Please add at least one email address");
       return;
     }
 
@@ -120,7 +121,7 @@ const ShareScreen = () => {
       const result = await sendReferral(emails);
 
       if (result.Status === "Success") {
-        Alert.alert(
+        alertOnce(
           "Success",
           `Referral invitations sent to ${emails.length} email${
             emails.length > 1 ? "s" : ""
@@ -136,13 +137,20 @@ const ShareScreen = () => {
           ],
         );
       } else {
-        Alert.alert("Error", result.ErrorMessage || "Failed to send referrals");
+        alertOnce("Error", result.ErrorMessage || "Failed to send referrals");
       }
     } catch (err) {
       console.error("Referral error:", err);
-      Alert.alert("Error", "An unexpected error occurred");
+      alertOnce("Error", "An unexpected error occurred");
     }
   };
+
+  // The store's `isLoading` already gates the button, but it is set
+  // asynchronously — two taps in the same frame both read the stale `false`
+  // and fire two referral batches. The ref latch inside useSingleFlight is set
+  // synchronously, so the second tap is dropped.
+  const { run: handleSendReferrals, inFlight: sending } =
+    useSingleFlight(sendReferrals);
 
   const renderEmailField = (field: EmailField, index: number) => (
     <View key={field.id}>

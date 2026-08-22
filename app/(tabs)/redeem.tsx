@@ -2,6 +2,8 @@ import { Deal, useAppStore } from "@/store/store";
 import { brandSurface } from "@/utils/brandTheme";
 import { isDealExpired, mergeBrandsWithDeals } from "@/utils/deals";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
+import { alertOnce } from "@/utils/alert";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -9,7 +11,6 @@ import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   ScrollView,
@@ -25,6 +26,9 @@ const formatExpiry = (endDate: string) => {
 };
 
 const RedeemScreen = () => {
+  // The iOS tab bar is absolutely positioned, so the last deal card would sit
+  // underneath it without this. No-op on Android, where the bar takes layout.
+  const tabBarOverflow = useBottomTabOverflow();
   const { brandId } = useLocalSearchParams();
   const {
     deals,
@@ -63,7 +67,7 @@ const RedeemScreen = () => {
     if (isBrandsLoading) return;
     if (!approvedBrands.length) return; // not fetched yet, or the fetch failed
     if (brand) return;
-    Alert.alert("Error", "Invalid brand", [
+    alertOnce("Error", "Invalid brand", [
       { text: "OK", onPress: () => router.back() },
     ]);
   }, [approvedBrands, isBrandsLoading, brand]);
@@ -84,7 +88,7 @@ const RedeemScreen = () => {
   const handleDownloadPress = () => {
     if (!detailModal.deal) return;
     const dealTitle = detailModal.deal.title;
-    Alert.alert(
+    alertOnce(
       "Download & Mark as Used?",
       `This ${dealTitle} coupon is SINGLE USE. Once downloaded it will be marked as used and cannot be redeemed again.`,
       [
@@ -157,7 +161,10 @@ const RedeemScreen = () => {
       <ScrollView
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 40 + tabBarOverflow },
+        ]}
       >
         {brand?.deals && brand.deals.length > 0 && (
           <Text style={styles.sectionTitle}>Available Deals</Text>

@@ -8,6 +8,8 @@ import {
   requiresSubArea,
 } from "@/utils/pakistan_areas";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
+import { alertOnce } from "@/utils/alert";
 import { needsLocationUpdate } from "@/utils/profile";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,9 +17,10 @@ import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
 import {
-  Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,6 +29,7 @@ import {
   View,
 } from "react-native";
 import { useAppStore, UserProfile } from "../store/store";
+import { isPhone, sanitizePhone } from "../utils/phone";
 
 type PickerField = "province" | "city" | "town" | "subArea";
 
@@ -261,6 +265,8 @@ const EditProfile = () => {
     if (!formData.email?.trim())     newErrors.email = "Email is required";
     else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = "Please enter a valid email";
     if (!formData.phone?.trim())     newErrors.phone = "Phone number is required";
+    else if (!isPhone(formData.phone))
+      newErrors.phone = "Please enter a valid phone number (10-15 digits)";
     if (!formData.province?.trim())  newErrors.province = "Province is required";
     if (!formData.city?.trim())      newErrors.city = "City is required";
     // Either a canonical town or free-text "Other" satisfies the requirement.
@@ -281,7 +287,10 @@ const EditProfile = () => {
   };
 
   const handleUpdateField = (field: keyof UserProfile, value: string) => {
-    setFormData((p) => ({ ...p, [field]: value }));
+    // `phone-pad` still offers *, #, + and ; and pasting bypasses the keyboard
+    // entirely, so strip anything that is not a digit (or a leading +) here.
+    const next = field === "phone" ? sanitizePhone(value) : value;
+    setFormData((p) => ({ ...p, [field]: next }));
     clearError(field as string);
   };
 
@@ -322,21 +331,25 @@ const EditProfile = () => {
     return { ...formData, town, townOther, subArea, subAreaOther };
   };
 
-  const handleSubmit = async () => {
+  const submitProfile = async () => {
     if (!validateForm()) return;
     try {
       const result = await updateProfile(buildPayload());
       if (result.Status === "Success") {
-        Alert.alert("Success", "Profile updated successfully!", [
+        alertOnce("Success", "Profile updated successfully!", [
           { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
         ]);
       } else {
-        Alert.alert("Error", result.ErrorMessage || "Failed to update profile");
+        alertOnce("Error", result.ErrorMessage || "Failed to update profile");
       }
     } catch {
-      Alert.alert("Error", "An unexpected error occurred");
+      alertOnce("Error", "An unexpected error occurred");
     }
   };
+
+  // isProfileLoading is store state and lands a frame late, so it cannot stop
+  // two taps in the same frame from firing two updateProfile calls.
+  const { run: handleSubmit, inFlight: submitting } = useSingleFlight(submitProfile);
 
   // ── Render helpers ─────────────────────────────────────────────────────────
   const renderInput = (
@@ -366,6 +379,7 @@ const EditProfile = () => {
         autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
         readOnly={field === "email"}
         multiline={multiline}
+        maxLength={field === "phone" ? 16 : undefined}
         textAlignVertical={multiline ? "top" : "center"}
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
@@ -569,7 +583,17 @@ const EditProfile = () => {
       <StatusBar style="light" />
       <Navbar user={user} />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
         <View style={styles.formContainer}>
           <View style={styles.profileIconContainer}>
             <LinearGradient
@@ -658,18 +682,18 @@ const EditProfile = () => {
           )}
 
           <TouchableOpacity
-            style={[styles.submitButton, isProfileLoading && styles.buttonDisabled]}
+            style={[styles.submitButton, (isProfileLoading || submitting) && styles.buttonDisabled]}
             onPress={handleSubmit}
-            disabled={isProfileLoading}
+            disabled={isProfileLoading || submitting}
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={isProfileLoading ? ["#a0aec0", "#718096"] : ["#00528A", "#00528A"]}
+              colors={(isProfileLoading || submitting) ? ["#a0aec0", "#718096"] : ["#00528A", "#00528A"]}
               style={styles.submitGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              {isProfileLoading ? (
+              {(isProfileLoading || submitting) ? (
                 <Text style={styles.submitButtonText}>Updating...</Text>
               ) : (
                 <>
@@ -689,7 +713,8 @@ const EditProfile = () => {
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* ── Picker Modal ── */}
       <Modal
@@ -747,6 +772,8 @@ const EditProfile = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#ffffff" },
   content: { flex: 1 },
+  // Room to scroll the last fields clear of the keyboard.
+  contentContainer: { paddingBottom: 120 },
   formContainer: { padding: 20 },
   profileIconContainer: { alignItems: "center", marginBottom: 30 },
   profileIconBackground: {

@@ -5,7 +5,6 @@ import React, { useEffect, useState } from "react";
 import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   ScrollView,
@@ -16,7 +15,10 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
+import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { dealCtaLabel, isDealExpired, partitionDeals } from "@/utils/deals";
+import { useDebouncedNavigation } from "@/hooks/useDebouncedNavigation";
+import { alertOnce } from "@/utils/alert";
 
 const formatExpiry = (endDate: string) => {
   const d = new Date(endDate);
@@ -26,6 +28,9 @@ const formatExpiry = (endDate: string) => {
 type FilterType = "all" | "active";
 
 const DealsScreen = () => {
+  // The iOS tab bar is absolutely positioned; without this the last card
+  // scrolls under it. No-op on Android, where the bar takes layout.
+  const tabBarOverflow = useBottomTabOverflow();
   const { user, getDeals, deals, isDealsLoading, dealsError } = useAppStore();
   const profileComplete = isProfileComplete(user);
   const hasLocation = !!(user?.latitude && user?.longitude && user?.address);
@@ -42,6 +47,7 @@ const DealsScreen = () => {
   }>({ visible: false, item: null });
 
   const { downloadCoupon, isDownloading } = useCouponDownload();
+  const navigateOnce = useDebouncedNavigation();
 
   useEffect(() => {
     getDeals();
@@ -61,7 +67,7 @@ const DealsScreen = () => {
   const handleDownloadPress = () => {
     if (!couponModal.item) return;
     const brandName = couponModal.item.brand.companyName;
-    Alert.alert(
+    alertOnce(
       "Download & Mark as Used?",
       `This ${brandName} coupon is SINGLE USE. Once downloaded it will be marked as used and cannot be redeemed again.`,
       [
@@ -236,7 +242,10 @@ const DealsScreen = () => {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.list, { paddingBottom: 32 + tabBarOverflow }]}
+          showsVerticalScrollIndicator={false}
+        >
           {available.map((item) => renderCard(item, false))}
           {filter === "all" && used.length > 0 && available.length > 0 && (
             <View style={styles.sectionGap} />

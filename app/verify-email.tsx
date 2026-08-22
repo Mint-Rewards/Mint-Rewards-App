@@ -7,6 +7,8 @@ import React, { useEffect, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -118,7 +120,17 @@ const VerifyEmailScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
       <View style={styles.headerSection}>
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Verify Your Email</Text>
@@ -130,11 +142,6 @@ const VerifyEmailScreen = () => {
       </View>
 
       <View style={styles.contentSection}>
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
           {locked && (
             <OtpStatusBanner
               tone="lockout"
@@ -205,9 +212,9 @@ const VerifyEmailScreen = () => {
               )}
             </TouchableOpacity>
           )}
-        </ScrollView>
-      </View>
-    </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -244,6 +251,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     paddingHorizontal: 20,
     paddingTop: 30,
+  // Keeps the last field scrollable clear of the software keyboard.
+    paddingBottom: 40,
   },
   inputGroup: {
     marginBottom: 12,
