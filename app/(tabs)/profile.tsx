@@ -6,13 +6,15 @@ import {
   TOTAL_POINTS_EARNED,
   TOTAL_WASTE_KG,
 } from "@/constants/mockCollectionsData";
+import { useDebouncedNavigation } from "@/hooks/useDebouncedNavigation";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { useAppStore } from "@/store/store";
+import { alertOnce } from "@/utils/alert";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -34,9 +36,35 @@ const ProfileScreen = () => {
   // Demo-only: allowlisted accounts get the mock pickup history behind these
   // rows. Everyone else keeps today's behavior (plain rows → empty state).
   const showDemoCollections = isDemoCollectionsUser(user?.email);
+  const navigateOnce = useDebouncedNavigation();
+
+  // Navigate first, sign out second. signOut() sets `user` to null, and this
+  // screen renders `user` — leaving it mounted while null flashed a "Guest
+  // User" header for a frame before the replace landed. replace() commits
+  // synchronously, so by the time the store clears, this screen is gone.
+  const leaveForLogin = async () => {
+    router.replace("/login");
+    await signOut();
+  };
+
+  // useSingleFlight wraps the *work*, not the dialog: alertOnce already stops
+  // the dialog from stacking, but the confirm button inside it is a second,
+  // independent double-tap surface.
+  const { run: confirmLogout, inFlight: loggingOut } = useSingleFlight(leaveForLogin);
+
+  const { run: confirmDelete, inFlight: deleting } = useSingleFlight(async () => {
+    const result = await deleteAccount();
+    if (result.Status === "Success") {
+      await leaveForLogin();
+    } else {
+      alertOnce("Error", result.ErrorMessage || "Account deletion failed. Please try again.");
+    }
+  });
+
+  const busy = loggingOut || deleting;
 
   const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
+    alertOnce("Logout", "Are you sure you want to logout?", [
       {
         text: "Cancel",
         style: "cancel",
@@ -44,16 +72,13 @@ const ProfileScreen = () => {
       {
         text: "Logout",
         style: "destructive",
-        onPress: async () => {
-          await signOut();
-          router.replace("/login");
-        },
+        onPress: () => confirmLogout(),
       },
     ]);
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
+    alertOnce(
       "Delete Account",
       "Are you sure you want to delete your account? This action cannot be undone.",
       [
@@ -64,15 +89,10 @@ const ProfileScreen = () => {
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            const result = await deleteAccount();
-            if (result.Status === "Success") {
-              await signOut();
-              router.replace("/login");
-            } else {
-              Alert.alert("Error", result.ErrorMessage || "Account deletion failed. Please try again.");
-            }
-          },
+          // The failure branch raises its own alert. alertOnce releases its
+          // latch in this handler before the async work resolves, so that
+          // second alert is not blocked by this one.
+          onPress: () => confirmDelete(),
         },
       ],
     );
@@ -159,8 +179,10 @@ const ProfileScreen = () => {
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() =>
-                router.push(
-                  showDemoCollections ? "/collections?section=past" : "/collections",
+                navigateOnce(() =>
+                  router.push(
+                    showDemoCollections ? "/collections?section=past" : "/collections",
+                  ),
                 )
               }
               activeOpacity={0.7}
@@ -177,8 +199,10 @@ const ProfileScreen = () => {
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() =>
-                router.push(
-                  showDemoCollections ? "/collections?section=past" : "/collections",
+                navigateOnce(() =>
+                  router.push(
+                    showDemoCollections ? "/collections?section=past" : "/collections",
+                  ),
                 )
               }
               activeOpacity={0.7}
@@ -195,8 +219,10 @@ const ProfileScreen = () => {
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() =>
-                router.push(
-                  showDemoCollections ? "/collections?section=rewards" : "/collections",
+                navigateOnce(() =>
+                  router.push(
+                    showDemoCollections ? "/collections?section=rewards" : "/collections",
+                  ),
                 )
               }
               activeOpacity={0.7}
@@ -216,16 +242,18 @@ const ProfileScreen = () => {
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
             <TouchableOpacity
-              style={styles.logoutButton}
+              style={[styles.logoutButton, busy && styles.actionButtonBusy]}
               onPress={handleLogout}
+              disabled={busy}
               activeOpacity={0.8}
             >
               <Text style={styles.logoutButtonText}>Logout</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.deleteButton}
+              style={[styles.deleteButton, busy && styles.actionButtonBusy]}
               onPress={handleDeleteAccount}
+              disabled={busy}
               activeOpacity={0.8}
             >
               <Text style={styles.deleteButtonText}>Delete Account</Text>
@@ -350,6 +378,9 @@ const styles = StyleSheet.create({
   actionButtons: {
     paddingHorizontal: 20,
     marginTop: 10,
+  },
+  actionButtonBusy: {
+    opacity: 0.5,
   },
   logoutButton: {
     backgroundColor: "#00528A",

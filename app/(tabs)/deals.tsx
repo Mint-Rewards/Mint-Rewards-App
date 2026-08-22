@@ -5,7 +5,6 @@ import React, { useEffect, useState } from "react";
 import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   ScrollView,
@@ -18,6 +17,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { dealCtaLabel, isDealExpired, partitionDeals } from "@/utils/deals";
+import { useDebouncedNavigation } from "@/hooks/useDebouncedNavigation";
+import { alertOnce } from "@/utils/alert";
 
 const formatExpiry = (endDate: string) => {
   const d = new Date(endDate);
@@ -46,6 +47,7 @@ const DealsScreen = () => {
   }>({ visible: false, item: null });
 
   const { downloadCoupon, isDownloading } = useCouponDownload();
+  const navigateOnce = useDebouncedNavigation();
 
   useEffect(() => {
     getDeals();
@@ -65,7 +67,7 @@ const DealsScreen = () => {
   const handleDownloadPress = () => {
     if (!couponModal.item) return;
     const brandName = couponModal.item.brand.companyName;
-    Alert.alert(
+    alertOnce(
       "Download & Mark as Used?",
       `This ${brandName} coupon is SINGLE USE. Once downloaded it will be marked as used and cannot be redeemed again.`,
       [

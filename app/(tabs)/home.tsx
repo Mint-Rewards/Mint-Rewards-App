@@ -1,5 +1,6 @@
 import Navbar from "@/components/ui/navbar";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
+import { useDebouncedNavigation } from "@/hooks/useDebouncedNavigation";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
 import {
   TOTAL_POINTS_EARNED,
@@ -290,6 +291,7 @@ export default function HomeScreen() {
 
   // Both /api/users/brands and /api/users/deals return APPROVED brands only,
   // so no filtering here.
+  const navigateOnce = useDebouncedNavigation();
   const cardsContainerHeight = brands.length * VISIBLE + OVERLAP + 80;
   // The "going live soon" teaser has nowhere to send the user yet — only a
   // booked or upcoming collection makes the card worth tapping.
@@ -342,10 +344,12 @@ export default function HomeScreen() {
             {hasLocation && (
               <TouchableOpacity
                 onPress={() =>
-                  router.push(
-                    showDemoCollections
-                      ? "/collections?section=upcoming"
-                      : "/collections",
+                  navigateOnce(() =>
+                    router.push(
+                      showDemoCollections
+                        ? "/collections?section=upcoming"
+                        : "/collections",
+                    ),
                   )
                 }
               >
@@ -363,10 +367,12 @@ export default function HomeScreen() {
               onPress={
                 canOpenCollections
                   ? () =>
-                      router.push(
-                        showDemoCollections
-                          ? "/collections?section=upcoming"
-                          : "/collections",
+                      navigateOnce(() =>
+                        router.push(
+                          showDemoCollections
+                            ? "/collections?section=upcoming"
+                            : "/collections",
+                        ),
                       )
                   : undefined
               }
@@ -426,7 +432,7 @@ export default function HomeScreen() {
           ) : (
             <TouchableOpacity
               style={styles.locationPromptCard}
-              onPress={() => router.push("/editProfile")}
+              onPress={() => navigateOnce(() => router.push("/editProfile"))}
               activeOpacity={0.8}
             >
               <Ionicons name="location-outline" size={28} color="#449EB2" />
@@ -444,7 +450,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Your Deals</Text>
-            <Text style={styles.seeAllText} onPress={() => router.push("/deals")}>
+            <Text style={styles.seeAllText} onPress={() => navigateOnce(() => router.push("/deals"))}>
               View all deals
             </Text>
           </View>
@@ -452,7 +458,7 @@ export default function HomeScreen() {
           {!profileComplete && !locationUpdateNeeded && (
             <TouchableOpacity
               style={styles.profilePromptCard}
-              onPress={() => router.push("/editProfile")}
+              onPress={() => navigateOnce(() => router.push("/editProfile"))}
               activeOpacity={0.8}
             >
               <Ionicons name="person-circle-outline" size={22} color="#449EB2" />
@@ -482,7 +488,7 @@ export default function HomeScreen() {
           {locationUpdateNeeded && (
             <TouchableOpacity
               style={styles.profilePromptCard}
-              onPress={() => router.push("/editProfile")}
+              onPress={() => navigateOnce(() => router.push("/editProfile"))}
               activeOpacity={0.8}
             >
               <Ionicons name="location-outline" size={22} color="#449EB2" />
@@ -510,7 +516,7 @@ export default function HomeScreen() {
                       brandCategory: brand.category,
                     },
                   });
-                  router.push(`/redeem?brandId=${brand._id}`);
+                  navigateOnce(() => router.push(`/redeem?brandId=${brand._id}`));
                 }}
               />
             ))}
@@ -524,7 +530,7 @@ export default function HomeScreen() {
         onLater={dismissLocationPrompt}
         onUpdate={() => {
           dismissLocationPrompt();
-          router.push("/editProfile");
+          navigateOnce(() => router.push("/editProfile"));
         }}
       />
     </View>

@@ -8,6 +8,8 @@ import {
   requiresSubArea,
 } from "@/utils/pakistan_areas";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
+import { alertOnce } from "@/utils/alert";
 import { needsLocationUpdate } from "@/utils/profile";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,7 +17,6 @@ import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
 import {
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -330,21 +331,25 @@ const EditProfile = () => {
     return { ...formData, town, townOther, subArea, subAreaOther };
   };
 
-  const handleSubmit = async () => {
+  const submitProfile = async () => {
     if (!validateForm()) return;
     try {
       const result = await updateProfile(buildPayload());
       if (result.Status === "Success") {
-        Alert.alert("Success", "Profile updated successfully!", [
+        alertOnce("Success", "Profile updated successfully!", [
           { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
         ]);
       } else {
-        Alert.alert("Error", result.ErrorMessage || "Failed to update profile");
+        alertOnce("Error", result.ErrorMessage || "Failed to update profile");
       }
     } catch {
-      Alert.alert("Error", "An unexpected error occurred");
+      alertOnce("Error", "An unexpected error occurred");
     }
   };
+
+  // isProfileLoading is store state and lands a frame late, so it cannot stop
+  // two taps in the same frame from firing two updateProfile calls.
+  const { run: handleSubmit, inFlight: submitting } = useSingleFlight(submitProfile);
 
   // ── Render helpers ─────────────────────────────────────────────────────────
   const renderInput = (
@@ -677,18 +682,18 @@ const EditProfile = () => {
           )}
 
           <TouchableOpacity
-            style={[styles.submitButton, isProfileLoading && styles.buttonDisabled]}
+            style={[styles.submitButton, (isProfileLoading || submitting) && styles.buttonDisabled]}
             onPress={handleSubmit}
-            disabled={isProfileLoading}
+            disabled={isProfileLoading || submitting}
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={isProfileLoading ? ["#a0aec0", "#718096"] : ["#00528A", "#00528A"]}
+              colors={(isProfileLoading || submitting) ? ["#a0aec0", "#718096"] : ["#00528A", "#00528A"]}
               style={styles.submitGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              {isProfileLoading ? (
+              {(isProfileLoading || submitting) ? (
                 <Text style={styles.submitButtonText}>Updating...</Text>
               ) : (
                 <>
