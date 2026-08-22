@@ -34,28 +34,6 @@ const NotificationsScreen = () => {
                 color="#00528A"
               />
             </LinearGradient>
-
-            {/* Decorative elements */}
-            {/* <View style={styles.sparkleContainer}>
-              <Ionicons
-                name="mail"
-                size={16}
-                color="#FFD700"
-                style={styles.sparkle1}
-              />
-              <Ionicons
-                name="chatbubble"
-                size={12}
-                color="#FF69B4"
-                style={styles.sparkle2}
-              />
-              <Ionicons
-                name="alert-circle"
-                size={14}
-                color="#00CED1"
-                style={styles.sparkle3}
-              />
-            </View> */}
           </View>
 
           {/* Text Content */}
@@ -69,25 +47,6 @@ const NotificationsScreen = () => {
               and special offers!
             </Text>
           </View>
-
-          {/* Action Buttons */}
-          {/* <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => router.push("/(tabs)/home")}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={["#00528A", "#00528A"]}
-                style={styles.gradientButton}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <Ionicons name="home" size={20} color="#ffffff" />
-                <Text style={styles.primaryButtonText}>Back to Home</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View> */}
         </View>
       </View>
     </View>
