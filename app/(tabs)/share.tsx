@@ -66,6 +66,20 @@ const ShareScreen = () => {
     );
   };
 
+  const handleEmailBlur = (id: string) => {
+    setEmailFields((prev) =>
+      prev.map((field) => {
+        if (field.id !== id) return field;
+        const trimmed = field.email.trim();
+        if (!trimmed) return field;
+        if (!validateEmail(trimmed)) {
+          return { ...field, error: "Please enter a valid email" };
+        }
+        return field;
+      }),
+    );
+  };
+
   const validateAllEmails = (): boolean => {
     let hasErrors = false;
 
@@ -162,6 +176,7 @@ const ShareScreen = () => {
           style={styles.emailInput}
           value={field.email}
           onChangeText={(text) => updateEmailField(field.id, text)}
+          onBlur={() => handleEmailBlur(field.id)}
           placeholder="name@example.com"
           placeholderTextColor="#718096"
           keyboardType="email-address"
@@ -211,6 +226,10 @@ const ShareScreen = () => {
           <Text style={styles.subtitle}>
             Send an invitation and they can start collecting points for
             recycling too.
+          </Text>
+          <Text style={styles.requirementText}>
+            You'll both earn 50 points once your friend completes their
+            profile.
           </Text>
         </View>
 
@@ -302,6 +321,14 @@ const styles = StyleSheet.create({
     // The accent at reduced opacity — a darker shade of the surface's own hue,
     // never gray on a colored ground.
     color: "rgba(0, 82, 138, 0.75)",
+    maxWidth: 280,
+  },
+  requirementText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+    color: "#00528A",
+    marginTop: space.md,
     maxWidth: 280,
   },
 
