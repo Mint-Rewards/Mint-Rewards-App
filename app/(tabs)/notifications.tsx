@@ -36,7 +36,7 @@ const NotificationsScreen = () => {
             </LinearGradient>
 
             {/* Decorative elements */}
-            <View style={styles.sparkleContainer}>
+            {/* <View style={styles.sparkleContainer}>
               <Ionicons
                 name="mail"
                 size={16}
@@ -55,7 +55,7 @@ const NotificationsScreen = () => {
                 color="#00CED1"
                 style={styles.sparkle3}
               />
-            </View>
+            </View> */}
           </View>
 
           {/* Text Content */}
