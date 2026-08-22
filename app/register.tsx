@@ -7,6 +7,7 @@ import React, { useState } from "react";
 import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,11 @@ import {
 import Svg, { Path } from "react-native-svg";
 import * as SecureStore from "expo-secure-store";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  passwordHint,
+} from "../utils/password";
 import { AppleAuthenticationButtonType } from 'expo-apple-authentication';
 import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
 
@@ -215,10 +221,16 @@ const RegisterScreen = () => {
       Constants.showDialog("Please enter your name");
     } else if (email.trim() === "") {
       Constants.showDialog("Please enter your email address");
-    } else if (!Utils.isEmail(email)) {
+    } else if (!Utils.isEmail(email.trim())) {
       Constants.showDialog("Please enter a valid email address");
-    } else if (password.length < 8) {
-      Constants.showDialog("Password must be at least 8 characters");
+    } else if (password.length < PASSWORD_MIN_LENGTH) {
+      Constants.showDialog(
+        `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+      );
+    } else if (password.length > PASSWORD_MAX_LENGTH) {
+      Constants.showDialog(
+        `Password must be at most ${PASSWORD_MAX_LENGTH} characters`,
+      );
     } else {
       setLoading(true);
       try {
@@ -243,7 +255,17 @@ const RegisterScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
       <View style={styles.headerSection}>
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Join Mint Rewards!</Text>
@@ -254,11 +276,6 @@ const RegisterScreen = () => {
       </View>
 
       <View style={styles.contentSection}>
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Name</Text>
             <View style={styles.inputContainer}>
@@ -280,7 +297,9 @@ const RegisterScreen = () => {
               <TextInput
                 style={styles.textInput}
                 value={email}
-                onChangeText={setEmail}
+                // Trim on entry: an address can never contain whitespace, and
+                // a stray leading space made signup fail validation.
+                onChangeText={(t) => setEmail(t.trim())}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -296,9 +315,10 @@ const RegisterScreen = () => {
               <TextInput
                 style={styles.passwordTextInput}
                 value={password}
+                maxLength={PASSWORD_MAX_LENGTH}
                 onChangeText={setPassword}
                 secureTextEntry={hidePassword}
-                placeholder="Min. 8 characters"
+                placeholder={`Min. ${PASSWORD_MIN_LENGTH} characters`}
                 placeholderTextColor="#999999"
               />
               <TouchableOpacity
@@ -312,6 +332,15 @@ const RegisterScreen = () => {
                 />
               </TouchableOpacity>
             </View>
+            <Text
+              style={[
+                styles.passwordHint,
+                passwordHint(password).invalid && styles.passwordHintError,
+              ]}
+              accessibilityLiveRegion="polite"
+            >
+              {passwordHint(password).message}
+            </Text>
           </View>
 
           <TouchableOpacity
@@ -378,18 +407,18 @@ const RegisterScreen = () => {
               />
             </View>
           )}
-        </ScrollView>
+        </View>
+      </ScrollView>
 
-        <View style={styles.bottomSection}>
-          <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => router.replace("/login")}>
-              <Text style={styles.loginLinkText}>Sign in</Text>
-            </TouchableOpacity>
-          </View>
+      <View style={styles.bottomSection}>
+        <View style={styles.loginContainer}>
+          <Text style={styles.loginText}>Already have an account? </Text>
+          <TouchableOpacity onPress={() => router.replace("/login")}>
+            <Text style={styles.loginLinkText}>Sign in</Text>
+          </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -426,10 +455,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     paddingHorizontal: 20,
     paddingTop: 30,
+  // Keeps the last field scrollable clear of the software keyboard.
+    paddingBottom: 40,
   },
   inputGroup: {
     marginBottom: 20,
   },
+  passwordHint: {
+    fontSize: 13,
+    color: "#999999",
+    marginTop: 6,
+    marginLeft: 4,
+  },
+  passwordHintError: {
+    color: "#d32f2f",
+  },
+
   inputLabel: {
     fontSize: 16,
     fontWeight: "500",

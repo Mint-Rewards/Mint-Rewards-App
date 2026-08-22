@@ -7,17 +7,19 @@ import React, { useState } from "react";
 import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
+  useWindowDimensions,
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
+import { PASSWORD_MAX_LENGTH } from "../utils/password";
 import * as SecureStore from 'expo-secure-store';
 import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
 
@@ -212,14 +214,14 @@ const LoginScreen = () => {
   const loginPressed = async () => {
     if (email.trim() === "") {
       Constants.showDialog("Please enter your email address");
-    } else if (!Utils.isEmail(email)) {
+    } else if (!Utils.isEmail(email.trim())) {
       Constants.showDialog("Please enter valid email address");
     } else if (password === "") {
       Constants.showDialog("Please enter password");
     } else {
       setLoading(true);
       try {
-        const result = await signIn(email, password);
+        const result = await signIn(email.trim(), password);
         if (result.Status === "Success") {
           const storeUser = useAppStore.getState().user;
           if (storeUser?._id) {
@@ -247,8 +249,18 @@ const LoginScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       {/* Green Header Section */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
       <View style={[styles.headerSection, isSmallScreen && styles.headerSectionSmall]}>
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Welcome!</Text>
@@ -260,11 +272,6 @@ const LoginScreen = () => {
 
       {/* White Content Section */}
       <View style={[styles.contentSection, isSmallScreen && styles.contentSectionSmall]}>
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
           {/* Email Input */}
           <View style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}>
             <Text style={styles.inputLabel}>Email</Text>
@@ -272,7 +279,9 @@ const LoginScreen = () => {
               <TextInput
                 style={styles.textInput}
                 value={email}
-                onChangeText={setEmail}
+                // Trim on entry: an address can never contain whitespace, and
+                // a stray leading space made login fail with "invalid email".
+                onChangeText={(t) => setEmail(t.trim())}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -289,9 +298,10 @@ const LoginScreen = () => {
               <TextInput
                 style={styles.passwordTextInput}
                 value={password}
+                maxLength={PASSWORD_MAX_LENGTH}
                 onChangeText={setPassword}
                 secureTextEntry={hidePassword}
-                placeholder="Password"
+                placeholder="Enter Your Password"
                 placeholderTextColor="#999999"
               />
               <TouchableOpacity
@@ -380,21 +390,21 @@ const LoginScreen = () => {
               />
             </View>
           )}
-        </ScrollView>
+        </View>
+      </ScrollView>
 
-        {/* Bottom Register Link */}
-        <View style={styles.bottomSection}>
-          <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>
-              Don&apos;t Have An Account?{" "}
-            </Text>
-            <TouchableOpacity onPress={() => router.push("/register")}>
-              <Text style={styles.registerLinkText}>Sign up</Text>
-            </TouchableOpacity>
-          </View>
+      {/* Bottom Register Link */}
+      <View style={styles.bottomSection}>
+        <View style={styles.registerContainer}>
+          <Text style={styles.registerText}>
+            Don&apos;t Have An Account?{" "}
+          </Text>
+          <TouchableOpacity onPress={() => router.push("/register")}>
+            <Text style={styles.registerLinkText}>Sign up</Text>
+          </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -435,6 +445,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     paddingHorizontal: 20,
     paddingTop: 30,
+  // Keeps the last field scrollable clear of the software keyboard.
+    paddingBottom: 40,
   },
   contentSectionSmall: {
     paddingTop: 16,

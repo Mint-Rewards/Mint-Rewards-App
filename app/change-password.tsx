@@ -3,6 +3,8 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,6 +14,11 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Constants, Utils } from "../utils/constants";
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  passwordHint,
+} from "../utils/password";
 
 const ChangePasswordScreen = () => {
   const [password1, setPassword1] = useState("");
@@ -38,7 +45,9 @@ const ChangePasswordScreen = () => {
     }
 
     if (!Utils.validatePassword(password1)) {
-      Constants.showDialog("Password must be at least 8 characters");
+      Constants.showDialog(
+        `Password must be between ${PASSWORD_MIN_LENGTH} and ${PASSWORD_MAX_LENGTH} characters`,
+      );
       return;
     }
 
@@ -75,8 +84,18 @@ const ChangePasswordScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       {/* Green Header Section */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
       <View style={styles.headerSection}>
         {/* Welcome Section */}
         <View style={styles.welcomeSection}>
@@ -89,11 +108,6 @@ const ChangePasswordScreen = () => {
 
       {/* White Content Section */}
       <View style={styles.contentSection}>
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
           {/* Password Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>New Password</Text>
@@ -101,10 +115,11 @@ const ChangePasswordScreen = () => {
               <TextInput
                 style={styles.passwordTextInput}
                 value={password1}
+                maxLength={PASSWORD_MAX_LENGTH}
                 onChangeText={setPassword1}
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="Min. 8 characters"
+                placeholder={`Min. ${PASSWORD_MIN_LENGTH} characters`}
                 placeholderTextColor="#999999"
                 secureTextEntry={hidePassword}
                 accessibilityLabel="New password"
@@ -120,6 +135,15 @@ const ChangePasswordScreen = () => {
                 />
               </TouchableOpacity>
             </View>
+            <Text
+              style={[
+                styles.passwordHint,
+                passwordHint(password1).invalid && styles.passwordHintError,
+              ]}
+              accessibilityLiveRegion="polite"
+            >
+              {passwordHint(password1).message}
+            </Text>
           </View>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Confirm Password</Text>
@@ -127,6 +151,7 @@ const ChangePasswordScreen = () => {
               <TextInput
                 style={styles.passwordTextInput}
                 value={password2}
+                maxLength={PASSWORD_MAX_LENGTH}
                 onChangeText={setPassword2}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -158,9 +183,9 @@ const ChangePasswordScreen = () => {
           >
             <Text style={styles.backToLoginText}>← Back to Login</Text>
           </TouchableOpacity>
-        </ScrollView>
-      </View>
-    </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -197,9 +222,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     paddingHorizontal: 20,
     paddingTop: 30,
+  // Keeps the last field scrollable clear of the software keyboard.
+    paddingBottom: 40,
   },
   inputGroup: {
     marginBottom: 20,
+  },
+  passwordHint: {
+    fontSize: 13,
+    color: "#999999",
+    marginTop: 6,
+    marginLeft: 4,
+  },
+  passwordHintError: {
+    color: "#d32f2f",
   },
   inputLabel: {
     fontSize: 16,

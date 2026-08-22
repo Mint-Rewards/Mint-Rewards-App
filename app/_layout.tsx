@@ -20,8 +20,28 @@ import UpdateGate from "@/components/UpdateGate";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { PostHogProvider } from "posthog-react-native";
 import { posthog } from "@/utils/posthog";
+import * as Sentry from '@sentry/react-native';
 
-export default function RootLayout() {
+Sentry.init({
+  dsn: 'https://d5c83cd62b2035ca71795b5d663d8ddd@o4511899441233920.ingest.de.sentry.io/4511899447394384',
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  // Enable Logs
+  enableLogs: true,
+
+  // Configure Session Replay
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1,
+  integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
+
+export default Sentry.wrap(function RootLayout() {
   const colorScheme = useColorScheme();
   const { setUserData, getProfile, user } = useAppStore();
   const pathname = usePathname();
@@ -118,4 +138,4 @@ export default function RootLayout() {
       </PostHogProvider>
     </SafeAreaProvider>
   );
-}
+});

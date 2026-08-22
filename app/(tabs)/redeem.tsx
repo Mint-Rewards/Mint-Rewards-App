@@ -3,6 +3,7 @@ import { brandSurface } from "@/utils/brandTheme";
 import { isDealExpired, mergeBrandsWithDeals } from "@/utils/deals";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
+import { alertOnce } from "@/utils/alert";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -67,7 +68,7 @@ const RedeemScreen = () => {
     if (isBrandsLoading) return;
     if (!approvedBrands.length) return; // not fetched yet, or the fetch failed
     if (brand) return;
-    Alert.alert("Error", "Invalid brand", [
+    alertOnce("Error", "Invalid brand", [
       { text: "OK", onPress: () => router.back() },
     ]);
   }, [approvedBrands, isBrandsLoading, brand]);
@@ -88,7 +89,7 @@ const RedeemScreen = () => {
   const handleDownloadPress = () => {
     if (!detailModal.deal) return;
     const dealTitle = detailModal.deal.title;
-    Alert.alert(
+    alertOnce(
       "Download & Mark as Used?",
       `This ${dealTitle} coupon is SINGLE USE. Once downloaded it will be marked as used and cannot be redeemed again.`,
       [

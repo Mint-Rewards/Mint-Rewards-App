@@ -2,6 +2,7 @@ import { logAuthEvent, logError, logEvent } from "@/utils/logger";
 import { authenticatedFetch } from "@/utils/api";
 import { API_BASE_URL } from "@/utils/constants";
 import { setUnauthorizedHandler } from "@/utils/session";
+import { setSentryUser } from "@/utils/sentry";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 
@@ -93,7 +94,7 @@ export interface User {
   points?: number;
   totalCollections?: string;
   totalWasteCollected?: string;
-  referrals?: any[];
+  referrals?: string[];
   firstTimeLogin?: boolean;
   emailVerified?: boolean;
   pickupHistory?: any[];
@@ -282,7 +283,7 @@ interface ProfileSlice {
   }>;
   setProfileLoading: (loading: boolean) => void;
   setProfileError: (error: string | null) => void;
-  sendRefferal: (referralEmails: string[]) => Promise<{
+  sendReferral: (referralEmails: string[]) => Promise<{
     Status: string;
     Message?: string;
     ErrorMessage?: string;
@@ -918,7 +919,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setProfileLoading: (loading) => set({ isProfileLoading: loading }),
   setProfileError: (error) => set({ profileError: error }),
 
-  sendRefferal: async (referralEmails) => {
+  sendReferral: async (referralEmails) => {
     set({ isLoading: true, error: null });
     try {
       const token =
@@ -957,7 +958,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const errorMessage =
         "Network error. Please check your connection and try again.";
       set({ error: errorMessage, isLoading: false });
-      await logError("sendRefferal exception", {
+      await logError("sendReferral exception", {
         userId: get().user?.mintId,
         error,
       });
@@ -1132,3 +1133,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
 // Lets authenticatedFetch sign the user out on 401 without importing the store
 // (which would reintroduce the store -> api -> store require cycle).
 setUnauthorizedHandler(() => useAppStore.getState().signOut());
+
+// Keeps Sentry's identity in lockstep with `user`, for every path that can
+// change it: signIn, signUp, getProfile, updateProfile, cold-start hydration,
+// signOut, and the global 401 boundary. Subscribing once is why none of those
+// need their own setUser call — and why signing out can never leave the
+// previous account's identity attached to the next user's error reports.
+setSentryUser(useAppStore.getState().user);
+useAppStore.subscribe((state, prevState) => {
+  if (state.user?._id === prevState.user?._id) return;
+  setSentryUser(state.user);
+});

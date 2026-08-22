@@ -5,6 +5,8 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,7 +25,7 @@ const ForgotPasswordScreen = () => {
   const resetPasswordPressed = async () => {
     if (email.trim() === "") {
       Constants.showDialog("Please enter your email address");
-    } else if (!Utils.isEmail(email)) {
+    } else if (!Utils.isEmail(email.trim())) {
       Constants.showDialog("Please enter valid email address");
     } else {
       setLoading(true);
@@ -58,8 +60,18 @@ const ForgotPasswordScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       {/* Green Header Section */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
       <View style={styles.headerSection}>
         {/* Welcome Section */}
         <View style={styles.welcomeSection}>
@@ -72,11 +84,6 @@ const ForgotPasswordScreen = () => {
 
       {/* White Content Section */}
       <View style={styles.contentSection}>
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
           {/* Email Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Email</Text>
@@ -84,7 +91,8 @@ const ForgotPasswordScreen = () => {
               <TextInput
                 style={styles.textInput}
                 value={email}
-                onChangeText={setEmail}
+                // Trim on entry: an address can never contain whitespace.
+                onChangeText={(t) => setEmail(t.trim())}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -107,9 +115,9 @@ const ForgotPasswordScreen = () => {
               <Text style={styles.loginButtonText}>Submit</Text>
             )}
           </TouchableOpacity>
-        </ScrollView>
-      </View>
-    </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -164,6 +172,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     paddingHorizontal: 20,
     paddingTop: 30,
+  // Keeps the last field scrollable clear of the software keyboard.
+    paddingBottom: 40,
   },
   inputGroup: {
     marginBottom: 20,

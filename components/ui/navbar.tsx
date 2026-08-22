@@ -20,9 +20,19 @@ const Navbar = ({ user }: { user: User | null }) => {
           />
           <View style={styles.userDetails}>
             <Text style={styles.welcomeText}>Welcome,</Text>
-            <Text style={styles.userName} numberOfLines={1}>
-              {user ? `${user.userName}`.trim() : "Guest User"}
-            </Text>
+            {/* No "Guest User" fallback. There is no guest mode in this app:
+                a null user only ever means the profile has not landed yet, or
+                sign-out has cleared it while this screen is still mounted.
+                Naming that state "Guest User" showed testers an account that
+                appeared to exist and then vanished into the login screen. A
+                skeleton says "loading" without inventing an identity. */}
+            {user ? (
+              <Text style={styles.userName} numberOfLines={1}>
+                {`${user.userName}`.trim()}
+              </Text>
+            ) : (
+              <View style={styles.userNameSkeleton} />
+            )}
           </View>
           <View style={styles.headerIcons}>
             <TouchableOpacity
@@ -72,6 +82,15 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 18,
     fontWeight: "bold",
+  },
+  // Sized to the line box of `userName` (18px * ~1.3 leading) so the header
+  // does not change height when the real name arrives.
+  userNameSkeleton: {
+    height: 23,
+    width: "55%",
+    borderRadius: 6,
+    backgroundColor: "#ECECEC",
+    marginTop: 2,
   },
   headerIcons: {
     flexDirection: "row",

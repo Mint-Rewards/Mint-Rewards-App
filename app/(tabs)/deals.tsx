@@ -2,7 +2,7 @@ import { Deal, useAppStore } from "@/store/store";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
-import { isProfileComplete } from "@/utils/profile";
+import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { dealCtaLabel, isDealExpired, partitionDeals } from "@/utils/deals";
+import { useDebouncedNavigation } from "@/hooks/useDebouncedNavigation";
+import { alertOnce } from "@/utils/alert";
 
 const formatExpiry = (endDate: string) => {
   const d = new Date(endDate);
@@ -32,6 +34,12 @@ const DealsScreen = () => {
   const tabBarOverflow = useBottomTabOverflow();
   const { user, getDeals, deals, isDealsLoading, dealsError } = useAppStore();
   const profileComplete = isProfileComplete(user);
+  const hasLocation = !!(user?.latitude && user?.longitude && user?.address);
+  const locationUpdateNeeded = needsLocationUpdate(user);
+  // Same rule as home: an incomplete profile or an unset/stale location means
+  // no deal is actually redeemable, so the list is hidden rather than shown
+  // greyed out behind a prompt.
+  const dealsUnlocked = profileComplete && hasLocation && !locationUpdateNeeded;
 
   const [filter, setFilter] = useState<FilterType>("active");
   const [couponModal, setCouponModal] = useState<{
@@ -40,6 +48,7 @@ const DealsScreen = () => {
   }>({ visible: false, item: null });
 
   const { downloadCoupon, isDownloading } = useCouponDownload();
+  const navigateOnce = useDebouncedNavigation();
 
   useEffect(() => {
     getDeals();
@@ -59,7 +68,7 @@ const DealsScreen = () => {
   const handleDownloadPress = () => {
     if (!couponModal.item) return;
     const brandName = couponModal.item.brand.companyName;
-    Alert.alert(
+    alertOnce(
       "Download & Mark as Used?",
       `This ${brandName} coupon is SINGLE USE. Once downloaded it will be marked as used and cannot be redeemed again.`,
       [
@@ -79,12 +88,12 @@ const DealsScreen = () => {
     );
   };
 
-  const renderCard = (item: Deal, disabled: boolean, locked = false) => {
+  const renderCard = (item: Deal, disabled: boolean) => {
     // The brand writes the title in BrandHub; it is not synthesized here.
     const title = item.title;
 
     return (
-      <View key={item._id} style={[styles.card, (disabled || locked) && styles.cardDisabled]}>
+      <View key={item._id} style={[styles.card, disabled && styles.cardDisabled]}>
         <View style={styles.cardBody}>
           {item.brand.logo ? (
             <Image source={{ uri: item.brand.logo }} style={styles.logo} resizeMode="contain" />
@@ -96,13 +105,13 @@ const DealsScreen = () => {
             </View>
           )}
           <View style={styles.cardInfo}>
-            <Text style={[styles.cardTitle, (disabled || locked) && styles.textDisabled]} numberOfLines={2}>
+            <Text style={[styles.cardTitle, disabled && styles.textDisabled]} numberOfLines={2}>
               {title}
             </Text>
             {/* A deal need not be date-bounded — no end date, no pill. */}
             {item.endDate ? (
-              <View style={[styles.expiryPill, (disabled || locked) && styles.expiryPillDisabled]}>
-                <Text style={[styles.expiryText, (disabled || locked) && styles.textDisabled]}>
+              <View style={[styles.expiryPill, disabled && styles.expiryPillDisabled]}>
+                <Text style={[styles.expiryText, disabled && styles.textDisabled]}>
                   {isDealExpired(item) ? "Expired" : formatExpiry(item.endDate)}
                 </Text>
               </View>
@@ -115,19 +124,12 @@ const DealsScreen = () => {
         <TouchableOpacity
           style={styles.availRow}
           disabled={disabled}
-          onPress={() => locked ? router.push("/editProfile") : handleAvail(item)}
+          onPress={() => handleAvail(item)}
           activeOpacity={0.7}
         >
-          {locked ? (
-            <View style={styles.lockedRow}>
-              <Ionicons name="lock-closed" size={14} color="#aaa" />
-              <Text style={styles.availTextDisabled}>Complete profile to unlock</Text>
-            </View>
-          ) : (
-            <Text style={[styles.availText, disabled && styles.availTextDisabled]}>
-              {dealCtaLabel(item)}
-            </Text>
-          )}
+          <Text style={[styles.availText, disabled && styles.availTextDisabled]}>
+            {dealCtaLabel(item)}
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -146,7 +148,8 @@ const DealsScreen = () => {
         <View style={{ width: 36 }} />
       </View>
 
-      {/* Filter Row */}
+      {/* Filter Row — pointless while there is no list to filter. */}
+      {dealsUnlocked && (
       <View style={styles.filterRow}>
         {(["active", "all"] as FilterType[]).map((f) => (
           <TouchableOpacity
@@ -161,22 +164,52 @@ const DealsScreen = () => {
           </TouchableOpacity>
         ))}
       </View>
+      )}
 
-      {!profileComplete && (
+      {!dealsUnlocked && (
         <TouchableOpacity
           style={styles.profilePromptCard}
           onPress={() => router.push("/editProfile")}
           activeOpacity={0.8}
         >
-          <Ionicons name="person-circle-outline" size={22} color="#449EB2" />
+          <Ionicons
+            name={profileComplete ? "location-outline" : "person-circle-outline"}
+            size={22}
+            color="#449EB2"
+          />
           <Text style={styles.profilePromptText}>
-            Complete your profile to unlock deals
+            {!profileComplete
+              ? "Complete your profile to unlock deals"
+              : locationUpdateNeeded
+                ? "We're working on bringing collections to your area. Update your location to see available deals."
+                : "Set your location to unlock deals"}
           </Text>
           <Ionicons name="chevron-forward" size={16} color="#449EB2" />
         </TouchableOpacity>
       )}
 
-      {isDealsLoading ? (
+      {!dealsUnlocked ? (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIconCircle}>
+            <Ionicons name="lock-closed-outline" size={60} color="#449EB2" />
+          </View>
+          <Text style={styles.emptyTitle}>Deals Locked</Text>
+          <Text style={styles.emptySubtitle}>
+            {profileComplete
+              ? "Update your location to see the deals available to you."
+              : "Complete your profile to see the deals available to you."}
+          </Text>
+          <TouchableOpacity
+            style={styles.showAllButton}
+            onPress={() => router.push("/editProfile")}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.showAllButtonText}>
+              {profileComplete ? "Update Location" : "Complete Profile"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : isDealsLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#449EB2" />
         </View>
@@ -214,7 +247,7 @@ const DealsScreen = () => {
           contentContainerStyle={[styles.list, { paddingBottom: 32 + tabBarOverflow }]}
           showsVerticalScrollIndicator={false}
         >
-          {available.map((item) => renderCard(item, false, !profileComplete))}
+          {available.map((item) => renderCard(item, false))}
           {filter === "all" && used.length > 0 && available.length > 0 && (
             <View style={styles.sectionGap} />
           )}
@@ -466,7 +499,6 @@ const styles = StyleSheet.create({
   expiryPillDisabled: { borderColor: "#ccc", backgroundColor: "#f5f5f5" },
   expiryText: { fontSize: 12, color: "#449EB2", fontWeight: "500" },
   divider: { height: 1, backgroundColor: "#f0f0f0", marginHorizontal: 14 },
-  lockedRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   availRow: { alignItems: "center", paddingVertical: 12 },
   availText: { fontSize: 15, fontWeight: "600", color: "#449EB2" },
   availTextDisabled: { color: "#aaa" },

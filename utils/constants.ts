@@ -1,5 +1,6 @@
 import { Alert, Dimensions } from "react-native";
 import { ENV } from "@/config/env";
+import { isValidPassword } from "@/utils/password";
 
 const { width, height } = Dimensions.get("window");
 
@@ -36,7 +37,5 @@ export const Utils = {
     return emailRegex.test(email);
   },
 
-  validatePassword: (password: string): boolean => {
-    return password.length >= 8;
-  },
+  validatePassword: (password: string): boolean => isValidPassword(password),
 };
