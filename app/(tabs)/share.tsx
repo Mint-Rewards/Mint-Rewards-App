@@ -32,6 +32,54 @@ const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 // not the row's, so it reads as belonging to the field it describes.
 const FIELD_TEXT_INSET = space.md + 28 + space.md;
 
+/**
+ * Turns the backend's per-address counts into something true.
+ *
+ * The old message read "Referral invitations sent to N emails!" using the
+ * SUBMITTED count, because the route only ever answered a fixed success
+ * string. Addresses that were skipped or that failed to send were reported as
+ * delivered (Mint-Rewards-Backend #144, defect 5).
+ *
+ * The counts carry no reasons, on purpose — the endpoint must not disclose
+ * whether an address is already referred, already registered, or simply
+ * bounced. So the copy names the category of outcome without claiming to know
+ * which applied to whom, and stays vague enough to be honest.
+ *
+ * `sent` is optional: a client newer than the deployed backend receives no
+ * counts at all, and a count-free confirmation beats rendering "undefined".
+ */
+function referralOutcomeAlert(
+  result: { sent?: number; skipped?: number },
+  submitted: number,
+): [string, string] {
+  const { sent, skipped } = result;
+
+  if (typeof sent !== "number") {
+    return ["Invitations sent", "Thanks for sharing Mint Rewards!"];
+  }
+
+  const plural = (n: number) => (n === 1 ? "invitation" : "invitations");
+
+  if (sent === 0) {
+    return [
+      "Nothing to send",
+      submitted === 1
+        ? "We couldn't send an invitation to that address. It may already have been invited, or already have an account."
+        : "We couldn't send invitations to those addresses. They may already have been invited, or already have accounts.",
+    ];
+  }
+
+  if (!skipped) {
+    return ["Invitations sent", `We sent ${sent} ${plural(sent)}.`];
+  }
+
+  return [
+    "Invitations sent",
+    `We sent ${sent} ${plural(sent)}. We skipped ${skipped} — those ` +
+      "addresses may already have been invited, or already have accounts.",
+  ];
+}
+
 const ShareScreen = () => {
   const { sendReferral, isLoading, error, user } = useAppStore();
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
@@ -135,21 +183,16 @@ const ShareScreen = () => {
       const result = await sendReferral(emails);
 
       if (result.Status === "Success") {
-        alertOnce(
-          "Success",
-          `Referral invitations sent to ${emails.length} email${
-            emails.length > 1 ? "s" : ""
-          }!`,
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                // Reset form
-                setEmailFields([{ id: "1", email: "" }]);
-              },
+        const [title, message] = referralOutcomeAlert(result, emails.length);
+        alertOnce(title, message, [
+          {
+            text: "OK",
+            onPress: () => {
+              // Reset form
+              setEmailFields([{ id: "1", email: "" }]);
             },
-          ],
-        );
+          },
+        ]);
       } else {
         alertOnce("Error", result.ErrorMessage || "Failed to send referrals");
       }

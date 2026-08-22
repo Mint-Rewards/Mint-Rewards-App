@@ -287,6 +287,25 @@ interface ProfileSlice {
     Status: string;
     Message?: string;
     ErrorMessage?: string;
+    /**
+     * Per-address counts from the backend (Mint-Rewards-Backend #144). The
+     * route used to answer a fixed success string, so the UI reported the
+     * SUBMITTED count as the sent count — it claimed delivery to addresses
+     * that were silently skipped or that failed to send.
+     *
+     * `skipped` is deliberately one bucket with no reasons attached: the
+     * endpoint must not answer questions about an address it was handed, so
+     * already-referred, already-registered, and failed-to-send are
+     * indistinguishable here by design. Do not ask the backend to break them
+     * out.
+     *
+     * Optional because a client can be newer than the deployed backend; the
+     * UI falls back to a count-free message rather than rendering
+     * "undefined".
+     */
+    requested?: number;
+    sent?: number;
+    skipped?: number;
   }>;
 }
 
@@ -936,10 +955,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       if (response.ok) {
         // ✅ Log referral sent
+        //
+        // referralCount is what was submitted; sent/skipped are what actually
+        // happened. Logging only the first made a batch where every send
+        // failed indistinguishable from one where every send worked.
         await logEvent("REFERRAL_SENT", {
           userId: get().user?.mintId,
           userEmail: get().user?.email,
-          extra: { referralCount: referralEmails.length },
+          extra: {
+            referralCount: referralEmails.length,
+            sent: data?.sent,
+            skipped: data?.skipped,
+          },
         });
 
         set({ isLoading: false });
