@@ -71,7 +71,7 @@ const NotificationsScreen = () => {
           </View>
 
           {/* Action Buttons */}
-          <View style={styles.actionButtons}>
+          {/* <View style={styles.actionButtons}>
             <TouchableOpacity
               style={styles.primaryButton}
               onPress={() => router.push("/(tabs)/home")}
@@ -87,7 +87,7 @@ const NotificationsScreen = () => {
                 <Text style={styles.primaryButtonText}>Back to Home</Text>
               </LinearGradient>
             </TouchableOpacity>
-          </View>
+          </View> */}
         </View>
       </View>
     </View>
