@@ -1,2 +1,51 @@
+# Files not needed by the EAS build.
+# NOTE: when this file exists it REPLACES .gitignore for the upload, so
+# everything that should stay out has to be listed here.
+
+# Native dirs — EAS runs `expo prebuild`, these are regenerated
 android
 ios
+
+# Dependencies / build output (EAS installs and builds these itself)
+node_modules
+dist
+.expo
+web-build
+*.tar.gz
+MintRewards.app
+
+# Previously produced binaries
+*.aab
+*.ipa
+*.apk
+*.app.zip
+
+# VCS / OS junk
+.git
+.github
+.DS_Store
+*.log
+
+# Local agent + tooling scratch
+.claude
+.impeccable
+.superpowers
+.specify
+.vscode
+.idea
+graphify-out
+coverage
+
+# Tests & lint/test config (not used at build time)
+__tests__
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
+jest.config.js
+eslint.config.js
+
+# Docs
+docs
+README.md
+PRODUCT.md
+posthog-setup-report.md
