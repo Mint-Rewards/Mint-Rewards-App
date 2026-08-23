@@ -236,7 +236,6 @@ module.exports = () => ({
         NSLocationAlwaysAndWhenInUseUsageDescription:
           "Mint Rewards uses your location to let you pin your exact address for waste collection pickups.",
       },
-      buildNumber: "25",
       googleServicesFile: firebaseConfigFile(
         "./firebase/GoogleService-Info.dev.plist",
         "./firebase/GoogleService-Info.plist"
