@@ -14,8 +14,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useFeatureFlag } from "posthog-react-native";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { alertOnce } from "@/utils/alert";
+import { captureError } from "@/utils/sentry";
 import { useAppStore } from "../../store/store";
 
 interface EmailField {
@@ -82,6 +84,14 @@ function referralOutcomeAlert(
 
 const ShareScreen = () => {
   const { sendReferral, isLoading, error, user } = useAppStore();
+  // Kill switch for the whole invite flow — lets referrals be paused (backend
+  // incident, abuse, a mailer outage) without shipping a build.
+  //
+  // `!== false` is the same default-on convention login.tsx uses for the
+  // social sign-in flags: while flags are still loading the value is
+  // undefined, and treating that as "off" would flash a paused screen at
+  // every user on every cold start.
+  const referralsEnabled = useFeatureFlag("referrals-enabled") !== false;
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
   // absolutely positioned, so the scroll has to clear it by its full height.
   const tabBarOverflow = useBottomTabOverflow();
@@ -166,6 +176,17 @@ const ShareScreen = () => {
   };
 
   const sendReferrals = async () => {
+    // The button is hidden when the flag is off, but the flag can flip while
+    // the screen is mounted — this stops an in-flight tap from reaching a
+    // paused endpoint.
+    if (!referralsEnabled) {
+      alertOnce(
+        "Invitations paused",
+        "Invitations are temporarily unavailable. Please try again later.",
+      );
+      return;
+    }
+
     if (!validateAllEmails()) {
       return;
     }
@@ -198,6 +219,12 @@ const ShareScreen = () => {
       }
     } catch (err) {
       console.error("Referral error:", err);
+      // sendReferral resolves rather than throws for every failure it knows
+      // about, so anything landing here is unanticipated — the one referral
+      // failure with no other reporter.
+      captureError("referral submit failed", err, {
+        referralCount: emails.length,
+      });
       alertOnce("Error", "An unexpected error occurred");
     }
   };
@@ -271,57 +298,77 @@ const ShareScreen = () => {
             recycling too.
           </Text>
           <Text style={styles.requirementText}>
-            You'll both earn 50 points once your friend completes their
-            profile.
+            You'll both earn 50 points once your friend completes their profile.
           </Text>
         </View>
 
-        <View style={styles.fieldList}>
-          {emailFields.map((field, index) => renderEmailField(field, index))}
-        </View>
-
-        <TouchableOpacity
-          style={styles.addEmailButton}
-          onPress={addEmailField}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Add another email address"
-        >
-          <Ionicons name="add" size={20} color="#00528A" />
-          <Text style={styles.addEmailButtonText}>Add another email</Text>
-        </TouchableOpacity>
-
-        {error && (
-          <View style={styles.errorContainer}>
-            <Ionicons name="alert-circle" size={20} color="#e53e3e" />
-            <Text style={styles.errorMessage}>{error}</Text>
+        {!referralsEnabled ? (
+          <View style={styles.pausedPanel}>
+            <Ionicons name="time-outline" size={22} color="#4a5568" />
+            <Text style={styles.pausedText}>
+              Invitations are paused right now. Check back soon — your points
+              and referrals so far are unaffected.
+            </Text>
           </View>
+        ) : (
+          <>
+            <View style={styles.fieldList}>
+              {emailFields.map((field, index) =>
+                renderEmailField(field, index),
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={styles.addEmailButton}
+              onPress={addEmailField}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Add another email address"
+            >
+              <Ionicons name="add" size={20} color="#00528A" />
+              <Text style={styles.addEmailButtonText}>Add another email</Text>
+            </TouchableOpacity>
+
+            {error && (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle" size={20} color="#e53e3e" />
+                <Text style={styles.errorMessage}>{error}</Text>
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
 
-      {/* The one primary action stays reachable however long the list grows. */}
-      <View style={[styles.footer, { paddingBottom: tabBarOverflow + space.lg }]}>
-        <TouchableOpacity
-          style={[styles.sendButton, isLoading && styles.buttonDisabled]}
-          onPress={handleSendReferrals}
-          disabled={isLoading}
-          activeOpacity={0.8}
-          accessibilityRole="button"
+      {/* The one primary action stays reachable however long the list grows.
+          With the flag off there is no action to reach, so the whole bar goes
+          rather than leaving a disabled button implying it will come back
+          within the session. */}
+      {referralsEnabled && (
+        <View
+          style={[styles.footer, { paddingBottom: tabBarOverflow + space.lg }]}
         >
-          {isLoading ? (
-            <Text style={styles.sendButtonText}>Sending…</Text>
-          ) : (
-            <>
-              <Ionicons name="send" size={18} color="#ffffff" />
-              <Text style={styles.sendButtonText}>
-                {readyCount > 1
-                  ? `Send ${readyCount} invitations`
-                  : "Send invitation"}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={[styles.sendButton, isLoading && styles.buttonDisabled]}
+            onPress={handleSendReferrals}
+            disabled={isLoading}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+          >
+            {isLoading ? (
+              <Text style={styles.sendButtonText}>Sending…</Text>
+            ) : (
+              <>
+                <Ionicons name="send" size={18} color="#ffffff" />
+                <Text style={styles.sendButtonText}>
+                  {readyCount > 1
+                    ? `Send ${readyCount} invitations`
+                    : "Send invitation"}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 };
@@ -373,6 +420,25 @@ const styles = StyleSheet.create({
     color: "#00528A",
     marginTop: space.md,
     maxWidth: 280,
+  },
+
+  // Quiet, neutral, and deliberately not an error: the flow is fine, it is
+  // just switched off.
+  pausedPanel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    backgroundColor: "#f8f9fa",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    padding: space.lg,
+  },
+  pausedText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#4a5568",
   },
 
   fieldList: {

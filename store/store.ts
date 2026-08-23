@@ -2,7 +2,7 @@ import { logAuthEvent, logError, logEvent } from "@/utils/logger";
 import { authenticatedFetch } from "@/utils/api";
 import { API_BASE_URL } from "@/utils/constants";
 import { setUnauthorizedHandler } from "@/utils/session";
-import { setSentryUser } from "@/utils/sentry";
+import { addBreadcrumb, captureWarning, setSentryUser } from "@/utils/sentry";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 
@@ -940,6 +940,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   sendReferral: async (referralEmails) => {
     set({ isLoading: true, error: null });
+    // Only the batch size — never the addresses. Referral emails belong to
+    // people who have not agreed to anything with us, so they must not be
+    // copied into a third-party service by a breadcrumb.
+    addBreadcrumb("referral", "sendReferral started", {
+      referralCount: referralEmails.length,
+    });
     try {
       const token =
         get().token || get().user?.token || (await SecureStore.getItemAsync("userToken"));
@@ -969,6 +975,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
         });
 
+        // A 200 where nothing was sent is the failure mode this endpoint is
+        // most likely to hide: the UI shows a polite "nothing to send" and no
+        // error is ever raised. Counting it as a warning is the only way a
+        // backend regression that skips every address becomes visible.
+        if (typeof data?.sent === "number" && data.sent === 0) {
+          captureWarning("referral batch sent nothing", {
+            referralCount: referralEmails.length,
+            skipped: data?.skipped,
+          });
+        }
+
         set({ isLoading: false });
         return {
           Status: "Success",
@@ -978,6 +995,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
       } else {
         const errorMessage =
           data.error || "Failed to send referral. Please try again.";
+        // A rejected referral is a warning, not an exception: 4xx responses
+        // are routine (rate limits, malformed addresses) and would otherwise
+        // drown the issue stream, but a spike in them is exactly what needs
+        // to be noticeable.
+        captureWarning("referral request rejected", {
+          status: response.status,
+          errorMessage,
+          referralCount: referralEmails.length,
+        });
         set({ error: errorMessage, isLoading: false });
         return { Status: "Error", ErrorMessage: errorMessage };
       }
