@@ -2,7 +2,7 @@ import { Deal, useAppStore } from "@/store/store";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
-import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
+import { isProfileComplete } from "@/utils/profile";
 import {
   ActivityIndicator,
   Alert,
@@ -35,11 +35,9 @@ const DealsScreen = () => {
   const { user, getDeals, deals, isDealsLoading, dealsError } = useAppStore();
   const profileComplete = isProfileComplete(user);
   const hasLocation = !!(user?.latitude && user?.longitude && user?.address);
-  const locationUpdateNeeded = needsLocationUpdate(user);
-  // Same rule as home: an incomplete profile or an unset/stale location means
-  // no deal is actually redeemable, so the list is hidden rather than shown
-  // greyed out behind a prompt.
-  const dealsUnlocked = profileComplete && hasLocation && !locationUpdateNeeded;
+  // An incomplete profile or an unset location means no deal is actually
+  // redeemable, so the list is hidden rather than shown greyed out behind a prompt.
+  const dealsUnlocked = profileComplete && hasLocation;
 
   const [filter, setFilter] = useState<FilterType>("active");
   const [couponModal, setCouponModal] = useState<{
@@ -180,9 +178,7 @@ const DealsScreen = () => {
           <Text style={styles.profilePromptText}>
             {!profileComplete
               ? "Complete your profile to unlock deals"
-              : locationUpdateNeeded
-                ? "We're working on bringing collections to your area. Update your location to see available deals."
-                : "Set your location to unlock deals"}
+              : "Set your location to unlock deals"}
           </Text>
           <Ionicons name="chevron-forward" size={16} color="#449EB2" />
         </TouchableOpacity>
@@ -196,7 +192,7 @@ const DealsScreen = () => {
           <Text style={styles.emptyTitle}>Deals Locked</Text>
           <Text style={styles.emptySubtitle}>
             {profileComplete
-              ? "Update your location to see the deals available to you."
+              ? "Set your location to see the deals available to you."
               : "Complete your profile to see the deals available to you."}
           </Text>
           <TouchableOpacity
@@ -205,7 +201,7 @@ const DealsScreen = () => {
             activeOpacity={0.8}
           >
             <Text style={styles.showAllButtonText}>
-              {profileComplete ? "Update Location" : "Complete Profile"}
+              {profileComplete ? "Set Location" : "Complete Profile"}
             </Text>
           </TouchableOpacity>
         </View>

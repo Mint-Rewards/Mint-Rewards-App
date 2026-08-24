@@ -16,8 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
 import { mergeBrandsWithDeals } from "@/utils/deals";
 import { logEvent } from "@/utils/logger";
-import LocationUpdateModal from "@/components/LocationUpdateModal";
-import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
+import { isProfileComplete } from "@/utils/profile";
 import { Constants } from "../../utils/constants";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -191,21 +190,12 @@ export default function HomeScreen() {
     scheduledCollection,
     loadScheduledCollection,
   } = useAppStore();
-  const locationPromptShown = useAppStore((s) => s.locationPromptShown);
-  const dismissLocationPrompt = useAppStore((s) => s.dismissLocationPrompt);
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
   // absolutely positioned, so the scroll has to clear it by its full height.
   const tabBarOverflow = useBottomTabOverflow();
   const hasLocation = !!(user?.latitude && user?.longitude);
   const hasAddress = !!user?.address;
   const profileComplete = isProfileComplete(user);
-
-  // Location-specific prompt takes precedence over the generic incomplete
-  // banner: these users ARE incomplete — either their saved town is no longer
-  // canonical, or (for those with a still-canonical town) their sub-area was
-  // never collected — and the generic "complete your profile" copy would tell
-  // them nothing about what actually changed.
-  const locationUpdateNeeded = needsLocationUpdate(user);
 
   // Demo-only: allowlisted accounts see the mock upcoming-collections teaser
   // instead of the static "Warming Up!" card. Everyone else is unaffected.
@@ -299,7 +289,7 @@ export default function HomeScreen() {
   // location — showing them greyed out just repeated the prompt banner behind
   // them, so they are hidden entirely until the user can actually use them.
   const showBrandCards =
-    profileComplete && !locationUpdateNeeded && hasLocation && hasAddress;
+    profileComplete && hasLocation && hasAddress;
   const canOpenCollections = !!booked || !!(showDemoCollections && nextCollection && nextSlot);
 
   return (
@@ -455,7 +445,7 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {!profileComplete && !locationUpdateNeeded && (
+          {!profileComplete && (
             <TouchableOpacity
               style={styles.profilePromptCard}
               onPress={() => navigateOnce(() => router.push("/editProfile"))}
@@ -471,7 +461,7 @@ export default function HomeScreen() {
 
           {/* Profile can be "complete" while the exact location is still
               missing; without this the section would be empty. */}
-          {profileComplete && !locationUpdateNeeded && !(hasLocation && hasAddress) && (
+          {profileComplete && !(hasLocation && hasAddress) && (
             <TouchableOpacity
               style={styles.profilePromptCard}
               onPress={() => router.push("/editProfile")}
@@ -480,20 +470,6 @@ export default function HomeScreen() {
               <Ionicons name="location-outline" size={22} color="#449EB2" />
               <Text style={styles.profilePromptText}>
                 Set your location to unlock deals
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color="#449EB2" />
-            </TouchableOpacity>
-          )}
-
-          {locationUpdateNeeded && (
-            <TouchableOpacity
-              style={styles.profilePromptCard}
-              onPress={() => navigateOnce(() => router.push("/editProfile"))}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="location-outline" size={22} color="#449EB2" />
-              <Text style={styles.profilePromptText}>
-                We're working on bringing collections to your area. Update your location to see available deals.
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#449EB2" />
             </TouchableOpacity>
@@ -525,14 +501,6 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-      <LocationUpdateModal
-        visible={locationUpdateNeeded && !locationPromptShown}
-        onLater={dismissLocationPrompt}
-        onUpdate={() => {
-          dismissLocationPrompt();
-          navigateOnce(() => router.push("/editProfile"));
-        }}
-      />
     </View>
   );
 }
