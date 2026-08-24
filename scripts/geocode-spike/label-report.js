@@ -21,7 +21,14 @@ const { loadRegistry } = require("./loadRegistry");
 const { PROMOTION, PROMOTION_MIN_SAMPLES } = require("./strata");
 
 const OUT = path.join(__dirname, "out");
-const RESULTS = path.join(OUT, "labelled.jsonl");
+const argOf = (n, d) => {
+  const h = process.argv.find((a) => a.startsWith(`--${n}=`));
+  return h ? h.slice(n.length + 3) : d;
+};
+// Must match the --out the sweep wrote to. Strata are separate files because
+// they sample different populations; reporting them together would pool
+// incomparable samples into one meaningless rate.
+const RESULTS = path.resolve(OUT, argOf("in", "labelled.jsonl"));
 const TRUTH = path.join(__dirname, "truth.json");
 const pct = (n, d) => (d === 0 ? "—" : `${Math.round((n / d) * 100)}%`);
 
@@ -36,7 +43,29 @@ function main() {
   if (stamps.length) L.push(`Run: ${stamps[0].slice(0, 16)}Z to ${stamps[stamps.length - 1].slice(0, 16)}Z`);
   L.push(`Sampled: ${rows.length}`);
   L.push(`Placed by Google and resolvable to the registry: ${usable.length} (${pct(usable.length, rows.length)})`);
-  L.push(`Dropped (sea / unnamed / unresolvable): ${rows.length - usable.length}\n`);
+
+  // The two drop reasons mean opposite things and must never be pooled.
+  const unnamed = rows.filter((r) => r.drop === "unnamed").length;
+  const unregistered = rows.filter((r) => r.drop === "unregistered").length;
+  L.push(`Dropped, no name at all (sea / scrub / industry): ${unnamed}`);
+  L.push(`Dropped, named but absent from the registry: ${unregistered} (${pct(unregistered, rows.length)})\n`);
+
+  if (unregistered) {
+    const tally = new Map();
+    for (const r of rows) {
+      if (r.drop !== "unregistered" || !r.googleRaw) continue;
+      tally.set(r.googleRaw, (tally.get(r.googleRaw) ?? 0) + 1);
+    }
+    L.push("### Registry coverage gap\n");
+    L.push("Real places the geocoder named that this registry has no entry for.");
+    L.push("Each is a point a user could plausibly live at and could not pick.\n");
+    L.push("| count | name geocoder returned |");
+    L.push("| ---: | --- |");
+    for (const [n, c] of [...tally].sort((a, b) => b[1] - a[1]).slice(0, 30)) {
+      L.push(`| ${c} | ${n} |`);
+    }
+    L.push("");
+  }
 
   L.push("> **Agreement, not accuracy.** These figures say how often the candidate");
   L.push("> matches Google, not how often either is right. See the calibration");
