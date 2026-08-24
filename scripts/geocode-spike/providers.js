@@ -82,8 +82,11 @@ const PROVIDERS = {
     keyEnv: "GOOGLE_GEOCODING_API_KEY",
     needsBase: false,
     defaultDelayMs: 120,
-    buildUrl: ({ lat, lng, key }) =>
-      `https://maps.googleapis.com/maps/api/geocode/json` +
+    // Overridable so the label/retry paths can be tested against a stub
+    // without spending metered calls.
+    defaultBase: "https://maps.googleapis.com/maps/api",
+    buildUrl: ({ base, lat, lng, key }) =>
+      `${(base || "https://maps.googleapis.com/maps/api").replace(/\/$/, "")}/geocode/json` +
       `?latlng=${lat},${lng}&key=${encodeURIComponent(key)}`,
     parse: parseGoogle,
   },

@@ -93,6 +93,53 @@ The optional labels overlay is also Esri, so using it for orientation is safe.
 It runs as a small server rather than a `file://` page because a `file://` page
 can neither write `extents.json` nor fetch its own sibling JSON.
 
+## Two ways to get points
+
+### A. Label-first (no extents, gives P0.1a *and* P0.1b)
+
+Scatter random points over **one** bounding box, have Google name each, keep the
+ones it can place. That yields **labelled** points — so it answers not just "did
+anything resolvable come back" but "did it resolve to the **correct** area",
+which is the number promotion actually needs.
+
+```bash
+GOOGLE_GEOCODING_API_KEY=... LOCATIONIQ_API_KEY=... \
+  node scripts/geocode-spike/label-sweep.js \
+    --bbox=24.77,66.95,25.05,67.35 --city=Karachi --count=2000 --cap=2000
+node scripts/geocode-spike/label-report.js
+```
+
+Human effort is one box. Points in the sea, on industrial land or in empty
+scrub cost one call and are dropped — if Google cannot name it, it was not a
+useful sample. `--cap` is a hard ceiling so a typo in `--count` cannot become a
+surprise bill.
+
+**This measures agreement with Google, not truth.** Where both providers are
+wrong the same way, it cannot see it. That is what calibration is for:
+
+**`truth.json` is required before the agreement numbers mean anything.** Copy
+`truth.example.json` and collect 20-30 genuinely known points — team members'
+own rooftops, unambiguous landmarks, and some deliberately near area
+boundaries. The report scores *both* providers against it, and if the labeller
+itself is under 70% it says so and tells you not to read the agreement section
+as coverage.
+
+`truth.json` is **gitignored and must stay so** — home rooftop coordinates are
+personal data and do not belong in a repository.
+
+Google is doing measurement here, not production. None of the terms problems
+that rule it out as the provider apply: nothing is cached, shipped, or built
+into a lookup.
+
+### B. Extents-first (draw the areas)
+
+Trace each area, then sample inside it. More human effort and the points are
+unlabelled, but it does not depend on a second provider being right, and it
+gives you per-area extents you keep. Use it for areas you care about
+specifically, or where the label-first sample came back thin.
+
+The two compose: run A for breadth, draw B for the areas A could not cover.
+
 ## Shapes: freehand outlines and boxes
 
 An area is a list of **shapes**. Each is either a traced polygon or a box, and

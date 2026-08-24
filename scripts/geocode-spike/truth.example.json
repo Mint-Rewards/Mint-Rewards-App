@@ -1,0 +1,24 @@
+[
+  {
+    "_comment": [
+      "Genuinely known points — the only real ground truth in this exercise.",
+      "Copy to truth.json. That file is GITIGNORED and must stay that way: these",
+      "are people's home rooftops, which is personal data and does not belong in",
+      "a repository.",
+      "",
+      "Sources, cheapest first:",
+      "  1. Team members' own addresses — a pin on their own roof plus the area",
+      "     name. Twenty of these beat two hundred unlabelled records.",
+      "  2. Unambiguous landmarks — hospitals, universities, markets whose area",
+      "     is not in dispute.",
+      "  3. Points deliberately NEAR area boundaries. That is where geocoders",
+      "     fail and where the containment threshold gets tuned; sampling only",
+      "     comfortable interiors over-reports accuracy.",
+      "",
+      "The coordinates must appear in the sweep for calibration to score them —",
+      "run label-sweep with a bbox that contains them."
+    ]
+  },
+  { "lat": 24.8607, "lng": 67.0011, "city": "Karachi", "area": "Saddar" },
+  { "lat": 24.8138, "lng": 67.0300, "city": "Karachi", "area": "Clifton" }
+]
