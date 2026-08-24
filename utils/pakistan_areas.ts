@@ -1810,7 +1810,7 @@ export function requiresSubArea(city: string, town: string): boolean {
  * "DHA (Defence Housing Authority)", "Gulshan-e-Iqbal"), so comparing raw text
  * would miss obvious matches for what a user actually types.
  */
-function foldName(value: string): string {
+export function foldName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
@@ -1847,4 +1847,398 @@ export function matchCanonicalNames(
   }
 
   return [...exact, ...prefix, ...interior].slice(0, limit);
+}
+
+// ===========================================================================
+// Metadata layer (P0.2)
+// ===========================================================================
+// Additive side-car maps over PAKISTAN_LOCATIONS. Nothing above this line is
+// modified, and nothing here changes what `getSubAreasForTown` returns.
+//
+// WHY SIDE-CAR RATHER THAN RESTRUCTURING: `isLegacyTownValue` treats any stored
+// town that is not in the canonical list as stale, which forces that user
+// through LocationUpdateModal. Renaming or removing a single string therefore
+// invalidates every profile using it. The data above is effectively frozen —
+// these maps hang metadata off it by key instead of touching it.
+
+export type CoverageTier = "A" | "B" | "C";
+
+export interface AreaMeta {
+  /**
+   * Whether reverse geocoding resolves reliably here (P0.1c).
+   *
+   * Defaults to false for EVERY area and is promoted only on evidence: the
+   * spike can only sample areas we actually serve, and defaulting untested
+   * areas to true would ship auto-fill into areas never measured.
+   */
+  geocodeReliable: boolean;
+  /**
+   * What the sub-area field should call itself in this area — "Block",
+   * "Phase", "Sector", "Precinct", "Unit", "Zone", "Sub-sector", or the
+   * generic "Area".
+   *
+   * Derived from the dominant idiom of the area's own sub-area list, never
+   * from the city: Karachi alone contains Blocks (Gulshan-e-Iqbal), Phases
+   * (DHA), Precincts (Bahria Town) and Sectors (North Karachi). Areas whose
+   * list mixes levels, or is made of named places rather than numbered units,
+   * get "Area" — asking a Saddar resident for their "Block" reads as a broken
+   * form.
+   */
+  blockLabel: string;
+  /** Geocoder strings that resolve to this area. Seeded from the P0.1a unmatched log. */
+  aliases?: readonly string[];
+}
+
+export const CITY_COVERAGE_TIER: Record<string, CoverageTier> = {
+  "Karachi": "A",
+  "Lahore": "B",
+  "Islamabad": "B",
+};
+
+export const AREA_META: Record<string, AreaMeta> = {
+  "Lahore::DHA Lahore": { geocodeReliable: false, blockLabel: "Area" },
+  "Lahore::Bahria Town Lahore": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Gulberg": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Model Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Johar Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Wapda Town": { geocodeReliable: false, blockLabel: "Area" },
+  "Lahore::Garden Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Township": { geocodeReliable: false, blockLabel: "Sector" },
+  "Lahore::Cantt": { geocodeReliable: false, blockLabel: "Area" },
+  "Lahore::Iqbal Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Faisal Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::EME Society": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Valencia Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::PCSIR Housing Scheme": { geocodeReliable: false, blockLabel: "Phase" },
+  "Lahore::Punjab Cooperative Housing Society (PCHS)": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Cavalry Ground": { geocodeReliable: false, blockLabel: "Area" },
+  "Lahore::Sui Gas Society": { geocodeReliable: false, blockLabel: "Phase" },
+  "Lahore::Lake City": { geocodeReliable: false, blockLabel: "Sector" },
+  "Lahore::State Life Housing Society": { geocodeReliable: false, blockLabel: "Phase" },
+  "Lahore::PGEHS (Punjab Govt Employees Housing Scheme)": { geocodeReliable: false, blockLabel: "Phase" },
+  "Lahore::LDA Avenue": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Jubilee Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Sabzazar": { geocodeReliable: false, blockLabel: "Block" },
+  "Lahore::Shahdara": { geocodeReliable: false, blockLabel: "Area" },
+  "Lahore::Shadman": { geocodeReliable: false, blockLabel: "Area" },
+  "Karachi::DHA": { geocodeReliable: false, blockLabel: "Phase" },
+  "Karachi::Clifton": { geocodeReliable: false, blockLabel: "Block" },
+  "Karachi::PECHS": { geocodeReliable: false, blockLabel: "Block" },
+  "Karachi::Gulshan-e-Iqbal": { geocodeReliable: false, blockLabel: "Block" },
+  "Karachi::Gulistan-e-Jauhar": { geocodeReliable: false, blockLabel: "Block" },
+  "Karachi::North Karachi": { geocodeReliable: false, blockLabel: "Sector" },
+  "Karachi::North Nazimabad": { geocodeReliable: false, blockLabel: "Block" },
+  "Karachi::Nazimabad": { geocodeReliable: false, blockLabel: "Block" },
+  "Karachi::Federal B. Area": { geocodeReliable: false, blockLabel: "Block" },
+  "Karachi::Liaquatabad": { geocodeReliable: false, blockLabel: "Block" },
+  "Karachi::Korangi": { geocodeReliable: false, blockLabel: "Sector" },
+  "Karachi::Landhi": { geocodeReliable: false, blockLabel: "Area" },
+  "Karachi::Malir": { geocodeReliable: false, blockLabel: "Area" },
+  "Karachi::Shah Faisal Colony": { geocodeReliable: false, blockLabel: "Area" },
+  "Karachi::Bahria Town Karachi": { geocodeReliable: false, blockLabel: "Precinct" },
+  "Karachi::Askari": { geocodeReliable: false, blockLabel: "Area" },
+  "Karachi::Buffer Zone": { geocodeReliable: false, blockLabel: "Sector" },
+  "Karachi::Gulshan-e-Hadeed": { geocodeReliable: false, blockLabel: "Phase" },
+  "Karachi::Garden": { geocodeReliable: false, blockLabel: "Area" },
+  "Karachi::Orangi Town": { geocodeReliable: false, blockLabel: "Sector" },
+  "Karachi::Saddar": { geocodeReliable: false, blockLabel: "Area" },
+  "Karachi::KAECHS": { geocodeReliable: false, blockLabel: "Block" },
+  "Karachi::Gulshan-e-Maymar": { geocodeReliable: false, blockLabel: "Sector" },
+  "Karachi::Scheme 33": { geocodeReliable: false, blockLabel: "Sector" },
+  "Karachi::New Karachi": { geocodeReliable: false, blockLabel: "Sector" },
+  "Karachi::Defence View": { geocodeReliable: false, blockLabel: "Phase" },
+  "Karachi::Gulzar-e-Hijri": { geocodeReliable: false, blockLabel: "Area" },
+  "Karachi::Surjani Town": { geocodeReliable: false, blockLabel: "Sector" },
+  "Karachi::Naya Nazimabad": { geocodeReliable: false, blockLabel: "Block" },
+  "Islamabad::Sector E-7": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector E-8": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector E-9": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector E-10": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector E-11": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector E-12": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector E-16": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector E-17": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector F-5": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector F-6": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector F-7": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector F-8": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector F-9 (Fatima Jinnah Park)": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector F-10": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector F-11": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector F-17": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-5": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-6": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-7": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-8": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-9": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-10": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-11": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-12": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-13": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-14": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-15": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector G-16": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector H-8": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector H-9": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector H-10": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector H-11": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector H-12": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector H-13": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector I-8": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector I-9": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector I-10": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector I-11": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector I-12": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector I-14": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector I-15": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector I-16": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Blue Area": { geocodeReliable: false, blockLabel: "Area" },
+  "Islamabad::Sector D-12": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector D-17": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector C-14": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector C-15": { geocodeReliable: false, blockLabel: "Sub-sector" },
+  "Islamabad::Sector B-17": { geocodeReliable: false, blockLabel: "Block" },
+  "Islamabad::DHA Islamabad": { geocodeReliable: false, blockLabel: "Phase" },
+  "Islamabad::Bahria Town Islamabad": { geocodeReliable: false, blockLabel: "Area" },
+  "Islamabad::PWD Housing Scheme": { geocodeReliable: false, blockLabel: "Block" },
+  "Islamabad::Pakistan Town": { geocodeReliable: false, blockLabel: "Phase" },
+  "Islamabad::CBR Town": { geocodeReliable: false, blockLabel: "Phase" },
+  "Islamabad::Gulberg Greens": { geocodeReliable: false, blockLabel: "Block" },
+  "Islamabad::Gulberg Residencia": { geocodeReliable: false, blockLabel: "Block" },
+  "Islamabad::Top City": { geocodeReliable: false, blockLabel: "Block" },
+  "Islamabad::Capital Smart City": { geocodeReliable: false, blockLabel: "Block" },
+  "Rawalpindi::Satellite Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Rawalpindi::Bahria Town Phase 8": { geocodeReliable: false, blockLabel: "Block" },
+  "Rawalpindi::Chaklala Scheme 3": { geocodeReliable: false, blockLabel: "Block" },
+  "Rawalpindi::Askari": { geocodeReliable: false, blockLabel: "Area" },
+  "Rawalpindi::Westridge": { geocodeReliable: false, blockLabel: "Block" },
+  "Rawalpindi::Adiala Road": { geocodeReliable: false, blockLabel: "Phase" },
+  "Rawalpindi::Saddar": { geocodeReliable: false, blockLabel: "Area" },
+  "Rawalpindi::Rawalpindi Cantt": { geocodeReliable: false, blockLabel: "Area" },
+  "Faisalabad::Peoples Colony": { geocodeReliable: false, blockLabel: "Area" },
+  "Faisalabad::Madina Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Faisalabad::Gulberg": { geocodeReliable: false, blockLabel: "Block" },
+  "Faisalabad::Samanabad": { geocodeReliable: false, blockLabel: "Block" },
+  "Faisalabad::Ghulam Muhammad Abad": { geocodeReliable: false, blockLabel: "Phase" },
+  "Faisalabad::Batala Colony": { geocodeReliable: false, blockLabel: "Area" },
+  "Faisalabad::Jinnah Colony": { geocodeReliable: false, blockLabel: "Block" },
+  "Faisalabad::Eden Valley": { geocodeReliable: false, blockLabel: "Block" },
+  "Faisalabad::Citi Housing": { geocodeReliable: false, blockLabel: "Phase" },
+  "Faisalabad::Wapda City": { geocodeReliable: false, blockLabel: "Block" },
+  "Peshawar::Hayatabad": { geocodeReliable: false, blockLabel: "Area" },
+  "Peshawar::University Town": { geocodeReliable: false, blockLabel: "Area" },
+  "Peshawar::Peshawar Cantt": { geocodeReliable: false, blockLabel: "Area" },
+  "Peshawar::DHA Peshawar": { geocodeReliable: false, blockLabel: "Sector" },
+  "Peshawar::Regi Model Town": { geocodeReliable: false, blockLabel: "Zone" },
+  "Peshawar::Warsak Road": { geocodeReliable: false, blockLabel: "Area" },
+  "Quetta::Satellite Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Quetta::Cantonment": { geocodeReliable: false, blockLabel: "Area" },
+  "Quetta::Samungli": { geocodeReliable: false, blockLabel: "Area" },
+  "Multan::DHA Multan": { geocodeReliable: false, blockLabel: "Sector" },
+  "Multan::Bosan Road": { geocodeReliable: false, blockLabel: "Block" },
+  "Multan::Shah Rukn-e-Alam Colony": { geocodeReliable: false, blockLabel: "Block" },
+  "Multan::Gulgasht Colony": { geocodeReliable: false, blockLabel: "Block" },
+  "Multan::Wapda Town": { geocodeReliable: false, blockLabel: "Phase" },
+  "Multan::Officers Colony": { geocodeReliable: false, blockLabel: "Block" },
+  "Multan::Model Town": { geocodeReliable: false, blockLabel: "Block" },
+  "Multan::Citi Housing Multan": { geocodeReliable: false, blockLabel: "Phase" },
+  "Hyderabad::Latifabad": { geocodeReliable: false, blockLabel: "Unit" },
+  "Hyderabad::Qasimabad": { geocodeReliable: false, blockLabel: "Phase" },
+  "Hyderabad::Cantonment": { geocodeReliable: false, blockLabel: "Area" },
+  "Hyderabad::Gulshan-e-Shahbaz": { geocodeReliable: false, blockLabel: "Phase" },
+};
+
+const DEPRECATED_SUB_AREA_VALUES: Record<string, readonly string[]> = {
+  "Lahore::Gulberg": ["Hussain Chowk", "Liberty Market", "Main Boulevard Gulberg", "MM Alam Road"],
+  "Lahore::Model Town": ["Model Town Link Road"],
+  "Lahore::Lake City": ["Raiwind Road"],
+  "Karachi::PECHS": ["Khalid Bin Walid Road", "Tariq Road"],
+  "Karachi::Gulshan-e-Iqbal": ["University Road"],
+  "Karachi::Gulshan-e-Hadeed": ["Mehran Road"],
+  "Karachi::Orangi Town": ["Bangla Bazaar"],
+  "Hyderabad::Qasimabad": ["Alamdar Chowk"],
+};
+
+// ---------------------------------------------------------------------------
+// Centroids — populated by the P0.1a sweep. Empty until it runs.
+// ---------------------------------------------------------------------------
+// Deliberately empty rather than guessed. Every consumer must handle a missing
+// centroid anyway (the registry will always outrun the survey), so shipping
+// them empty exercises that path from day one instead of hiding it.
+
+/** City name -> [lng, lat], GeoJSON order. */
+export const CITY_CENTROIDS: Record<string, readonly [number, number]> = {};
+
+/** `${city}::${town}` -> [lng, lat], GeoJSON order. */
+export const AREA_CENTROIDS: Record<string, readonly [number, number]> = {};
+
+// ---------------------------------------------------------------------------
+// Province derivation
+// ---------------------------------------------------------------------------
+
+/**
+ * City -> province, inverted from PAKISTAN_LOCATIONS.cities at module load.
+ *
+ * Computed rather than written out: a hand-maintained copy is a second source
+ * of truth that can silently disagree with the first. Every city sits under
+ * exactly one province, so the inversion is lossless (asserted in tests).
+ */
+export const PROVINCE_BY_CITY: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const [province, cities] of Object.entries(PAKISTAN_LOCATIONS.cities)) {
+    for (const city of cities) map[city] = province;
+  }
+  return map;
+})();
+
+/**
+ * The province a city belongs to, or null when the city is not in the registry.
+ *
+ * The null case is not theoretical. City is a closed list today, so a user
+ * whose city is absent has no way through — and if a `cityOther` escape is ever
+ * added, this returns null, `province` goes empty, and `isProfileComplete`
+ * fails. Callers must handle null rather than assuming a string.
+ */
+export function getProvinceForCity(city: string): string | null {
+  return PROVINCE_BY_CITY[(city || "").trim()] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Metadata accessors — every one is total, defaulting safely on unknown keys
+// ---------------------------------------------------------------------------
+
+const DEFAULT_AREA_META: AreaMeta = {
+  geocodeReliable: false,
+  blockLabel: "Area",
+  aliases: [],
+};
+
+/**
+ * Operational tier for a city: whether collections run there, or are planned.
+ *
+ * NOT the same axis as registry depth — use `cityHasTowns` for that. A city can
+ * have full town data and no operations (Gujranwala), or become tier A the
+ * month operations open with no registry change at all. Unlisted cities are C.
+ */
+export function getCoverageTier(city: string): CoverageTier {
+  return CITY_COVERAGE_TIER[(city || "").trim()] ?? "C";
+}
+
+/** Metadata for an area, or safe defaults when it has no sub-area data. */
+export function getAreaMeta(city: string, town: string): AreaMeta {
+  return AREA_META[subAreaKey(city, town)] ?? DEFAULT_AREA_META;
+}
+
+/** What to call the sub-area field for this area. Never city-derived. */
+export function getBlockLabel(city: string, town: string): string {
+  return getAreaMeta(city, town).blockLabel;
+}
+
+/** Centroid for an area, or null. Null is the common case until P0.1a runs. */
+export function getAreaCentroid(
+  city: string,
+  town: string,
+): readonly [number, number] | null {
+  return AREA_CENTROIDS[subAreaKey(city, town)] ?? null;
+}
+
+/** Centroid for a city, or null. */
+export function getCityCentroid(city: string): readonly [number, number] | null {
+  return CITY_CENTROIDS[(city || "").trim()] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Deprecated sub-areas
+// ---------------------------------------------------------------------------
+
+/**
+ * True when a sub-area is hidden from NEW selections.
+ *
+ * These are entries that name a road or a market rather than an addressable
+ * area — "MM Alam Road", "Tariq Road", "Liberty Market". Picking one produces a
+ * value that looks structured and is not, which matters under a hard gate.
+ *
+ * They are hidden, never removed. `getSubAreasForTown` still returns them, so
+ * `isLegacyTownValue` and the sub-area validation in utils/profile.ts continue
+ * to accept them and no existing user is forced to re-pick. The backfill audit
+ * (P3.1) prompts those users specifically instead.
+ */
+export function isDeprecatedSubArea(
+  city: string,
+  town: string,
+  subArea: string,
+): boolean {
+  const values = DEPRECATED_SUB_AREA_VALUES[subAreaKey(city, town)];
+  return values ? values.includes((subArea || "").trim()) : false;
+}
+
+/**
+ * Sub-areas to OFFER in the picker: canonical minus deprecated.
+ *
+ * Distinct from `getSubAreasForTown`, which is the validation view and must
+ * keep returning everything. Use this one for rendering, that one for deciding
+ * whether a stored value is still valid — conflating them either shows users
+ * roads to pick, or invalidates the profiles of users who already picked one.
+ */
+export function getSelectableSubAreasForTown(
+  city: string,
+  town: string,
+): string[] {
+  const all = getSubAreasForTown(city, town);
+  const deprecated = DEPRECATED_SUB_AREA_VALUES[subAreaKey(city, town)];
+  if (!deprecated || deprecated.length === 0) return all;
+  return all.filter((value) => !deprecated.includes(value));
+}
+
+// ---------------------------------------------------------------------------
+// Geocoder name resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves a raw geocoder locality to a canonical town name, or null.
+ *
+ * Order: exact -> folded -> alias -> fail. A failed resolution is a MISS, not a
+ * partial hit: never write a raw geocoder string into `town`, the same
+ * invariant `buildPayload` already enforces for user input. Callers log the
+ * miss (it seeds the alias table) and fall back to asking the user.
+ *
+ * `city` narrows the search when known. Without it a town name that repeats
+ * across cities cannot be resolved, so an ambiguous match returns null rather
+ * than guessing — the composite "City::Town" key exists precisely because
+ * "Cantt", "Model Town" and "Satellite Town" are not unique.
+ */
+export function resolveGeocodedName(
+  raw: string,
+  city?: string,
+): string | null {
+  const value = (raw || "").trim();
+  if (!value) return null;
+
+  const candidateCities = city?.trim()
+    ? [city.trim()]
+    : Object.keys(PAKISTAN_LOCATIONS.towns);
+
+  const needle = foldName(value);
+  // Keyed by "City::Town", not by town name: "Cantt", "Model Town" and
+  // "Satellite Town" each exist in several cities, and deduping on the bare
+  // name would silently collapse four different places into one confident
+  // answer. That is the exact failure the composite key exists to prevent.
+  const matches = new Map<string, string>();
+
+  for (const candidateCity of candidateCities) {
+    for (const town of getTownsForCity(candidateCity)) {
+      const key = subAreaKey(candidateCity, town);
+      if (town === value || foldName(town) === needle) {
+        matches.set(key, town);
+        continue;
+      }
+      const aliases = AREA_META[key]?.aliases;
+      if (aliases?.some((alias) => foldName(alias) === needle)) {
+        matches.set(key, town);
+      }
+    }
+  }
+
+  // Ambiguous across cities is a miss, not a coin flip.
+  return matches.size === 1 ? [...matches.values()][0] : null;
 }
