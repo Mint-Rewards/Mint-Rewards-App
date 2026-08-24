@@ -93,40 +93,56 @@ The optional labels overlay is also Esri, so using it for orientation is safe.
 It runs as a small server rather than a `file://` page because a `file://` page
 can neither write `extents.json` nor fetch its own sibling JSON.
 
-## Several boxes per area
+## Shapes: freehand outlines and boxes
 
-An area can carry more than one box:
+An area is a list of **shapes**. Each is either a traced polygon or a box, and
+one area can mix them:
 
 ```json
 "Karachi::Korangi": [
-  { "minLat": 24.800, "maxLat": 24.840, "minLng": 67.120, "maxLng": 67.160 },
-  { "minLat": 24.840, "maxLat": 24.870, "minLng": 67.130, "maxLng": 67.155 }
+  { "polygon": [[24.800,67.120],[24.800,67.170],[24.820,67.170],[24.820,67.140]] },
+  { "minLat": 24.860, "maxLat": 24.880, "minLng": 67.120, "maxLng": 67.150 }
 ]
 ```
 
-Most of these places are not rectangles. One loose box around an irregular area
-swallows part of its neighbours, and every point landing there is one the
-geocoder answers **correctly** while the scorer counts it as a miss — which
-pushes a good area below the promotion threshold. Several tighter boxes
-approximate the footprint far better. A bare object is still accepted, so older
-files keep working.
+**Freehand is the default**, because most of these places are not rectangles. A
+loose box around Korangi or Orangi swallows part of the neighbouring area, and
+every point landing in the spill is one the geocoder answers **correctly** while
+the scorer counts it as a miss — pushing a good area below the promotion
+threshold. Extent quality is the dominant error source in this whole exercise.
 
-Two things happen automatically, and both matter:
+**Box mode is still there and still right for some areas.** Islamabad's sectors
+and planned blocks genuinely are rectangles, and a box states that more honestly
+than a hand-traced outline pretending to a precision it does not have.
 
-- **Points are split by area, not evenly.** An equal split would give a small
-  sliver the same weight as the main body, over-sampling one corner. Allocation
-  is proportional to cos-corrected area, with every box getting at least one
-  point and the parts summing to exactly the stratum's total.
+A bare object is read as a single box, so older files keep working.
+
+In the tool: pick an area, drag to trace (or drag a box in Box mode), and drag
+again to add another shape. The sidebar shows a count, **Undo shape** removes
+the last, **×** clears the area, **Fit** zooms to the union.
+
+Three things happen automatically, and each matters:
+
+- **Points are split by true area, not evenly.** Polygon area is computed by
+  shoelace on a local projection, so a traced outline and an equivalent box
+  agree. An equal split would give a small sliver the same weight as the main
+  body, over-sampling one corner.
+- **Points land inside the shape, not its bounding box.** The grid is
+  over-provisioned by the bbox-fill ratio before rejection sampling, so an
+  L-shaped or thin polygon still yields its full allocation — without that,
+  rejection sampling would quietly under-deliver for exactly the awkward shapes
+  polygons exist to describe.
 - **Shared edges count as interior.** Boundary means "near the edge of the
-  *area*", not "near the edge of a box". Where two boxes abut, that seam is
-  internal, and judging each box in isolation would flood the boundary sample
-  with points nowhere near the real edge. Since boundary-correct is one of the
-  three promotion conditions, that distortion would feed straight into whether
-  an area is trusted for auto-fill. Measured effect: the same area drawn as two
-  boxes reports 29% boundary where a single box reports 62%.
+  *area*", not "near the edge of a shape". Where two shapes abut, that seam is
+  internal, and judging each alone would flood the boundary sample with points
+  nowhere near the real edge. Since boundary-correct is one of the three
+  promotion conditions, that distortion would feed straight into whether an area
+  is trusted for auto-fill. The band scales with shape size rather than being an
+  absolute distance, which would swallow a compact area whole while barely
+  touching a large one.
 
-In the tool: pick an area, drag, then drag again to add another box. The sidebar
-shows a count, **Undo box** removes the last one, and **×** clears the area.
+Shapes under one hectare are rejected as misclicks, and a freehand trace needs
+at least three points.
 
 ## Why extents are hand-drawn
 

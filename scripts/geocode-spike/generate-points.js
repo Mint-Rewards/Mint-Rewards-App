@@ -22,6 +22,7 @@ const fs = require("fs");
 const path = require("path");
 const { loadRegistry } = require("./loadRegistry");
 const { TOWN_LEVEL_STRATA, CITY_LEVEL_POINTS } = require("./strata");
+const geo = require("./geo");
 
 const arg = (name, fallback) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -52,40 +53,27 @@ function hashSeed(text) {
 }
 
 /**
- * An area may be described by SEVERAL boxes, because most of these places are
- * not rectangles. One box around an irregular area (Korangi, DHA) swallows a
- * large slice of its neighbours, and every point that lands there is one the
- * geocoder answers correctly and the scorer counts as a miss — which pushes a
- * good area below the promotion threshold. Several tighter boxes approximate
- * the real footprint far better.
+ * An area may be described by SEVERAL SHAPES — freehand polygons, boxes, or a
+ * mix. Most of these places are not rectangles: a box around Korangi or Orangi
+ * swallows a slice of the neighbouring area, and every point landing in the
+ * spill is one the geocoder answers CORRECTLY while the scorer counts it as a
+ * miss, pushing a good area below the promotion threshold.
  *
- * A bare object is still accepted so older extents files keep working.
+ * Boxes are still first-class. The regular grids (Islamabad sectors, planned
+ * blocks) genuinely are rectangles, and a box says so more honestly than a
+ * hand-traced outline pretending to precision it does not have.
  */
-function normalizeBoxes(value) {
-  const list = Array.isArray(value) ? value : [value];
-  return list.filter((b) => b && typeof b.minLat === "number");
-}
-
-/** Rough relative area, cos-corrected so boxes at different latitudes compare fairly. */
-function boxArea(b) {
-  const midLat = (b.minLat + b.maxLat) / 2;
-  return (
-    (b.maxLat - b.minLat) *
-    (b.maxLng - b.minLng) *
-    Math.cos((midLat * Math.PI) / 180)
-  );
-}
+const normalizeShapes = geo.normalizeShapes;
 
 /**
- * Splits `total` points across boxes in proportion to their area.
+ * Splits `total` points across shapes in proportion to true area.
  *
  * Proportional rather than equal: an equal split would give a small sliver the
- * same weight as the main body, over-sampling one corner of the area and
- * under-sampling everything else. Largest-remainder so the parts sum to
- * exactly `total`, and every box gets at least one point.
+ * same weight as the main body, over-sampling one corner. Largest-remainder so
+ * the parts sum to exactly `total`, with a floor of one point per shape.
  */
-function allocate(boxes, total) {
-  const areas = boxes.map(boxArea);
+function allocate(shapes, total) {
+  const areas = shapes.map((s) => geo.areaM2(s));
   const sum = areas.reduce((a, b) => a + b, 0) || 1;
   const exact = areas.map((a) => (a / sum) * total);
   const alloc = exact.map((e) => Math.max(1, Math.floor(e)));
@@ -103,64 +91,66 @@ function allocate(boxes, total) {
   return alloc;
 }
 
-function inside(b, lat, lng, pad = 0) {
-  return (
-    lat >= b.minLat - pad && lat <= b.maxLat + pad &&
-    lng >= b.minLng - pad && lng <= b.maxLng + pad
-  );
-}
-
 /**
- * Boundary means "near the edge of the AREA", not "near the edge of a box".
+ * Boundary means "near the edge of the AREA", not "near the edge of a shape".
  *
- * Where two boxes abut, the shared edge is interior to the area. Judging each
- * box in isolation would label those points boundary, inflating the boundary
- * sample with points that are nowhere near the real edge — and boundary-correct
- * is one of the three promotion conditions, so that distortion would feed
- * straight into whether an area is trusted for auto-fill.
+ * Where two shapes abut or overlap, that seam is internal. Judging each shape
+ * alone would flood the boundary sample with points nowhere near the real edge
+ * — and boundary-correct is one of the three promotion conditions, so the
+ * distortion would feed straight into whether an area is trusted for auto-fill.
+ *
+ * The band scales with shape size (a fraction of the equal-area radius) rather
+ * than being an absolute distance, which would swallow a compact area whole
+ * while barely touching a large one.
  */
-function classify(boxes, box, lat, lng) {
-  const latSpan = box.maxLat - box.minLat;
-  const lngSpan = box.maxLng - box.minLng;
-  const latEdge = Math.min(lat - box.minLat, box.maxLat - lat) / latSpan;
-  const lngEdge = Math.min(lng - box.minLng, box.maxLng - lng) / lngSpan;
-  if (Math.min(latEdge, lngEdge) > BOUNDARY_BAND) return "interior";
-
-  // Near this box's edge — but if a sibling box covers the point, that edge is
-  // internal to the area.
-  const pad = Math.min(latSpan, lngSpan) * BOUNDARY_BAND;
-  for (const other of boxes) {
-    if (other === box) continue;
-    if (inside(other, lat, lng, pad)) return "interior";
+function classify(shapes, shape, lat, lng) {
+  const band = BOUNDARY_BAND * geo.effectiveRadiusM(shape);
+  if (geo.distanceToEdgeM(shape, lat, lng) > band) return "interior";
+  for (const other of shapes) {
+    if (other === shape) continue;
+    // Inside a sibling, or comfortably within it, means this edge is internal.
+    if (geo.contains(other, lat, lng) &&
+        geo.distanceToEdgeM(other, lat, lng) > band) return "interior";
   }
   return "boundary";
 }
 
 /**
- * Jittered grid over a bbox. Returns `count` points; each is classified against
- * the whole box set, not this box alone.
+ * Jittered grid over a shape's bounding box, keeping only points that fall
+ * inside the shape itself.
+ *
+ * The grid is over-provisioned by the bbox-fill ratio so a thin or L-shaped
+ * polygon still yields its allocation; without that, rejection sampling would
+ * quietly under-deliver exactly for the awkward shapes polygons exist to
+ * describe.
  */
-function gridPoints(bbox, count, seed, allBoxes) {
-  const { minLat, maxLat, minLng, maxLng } = bbox;
+function gridPoints(shape, count, seed, allShapes) {
+  const bb = geo.bboxOf(shape);
   const rand = mulberry32(seed);
-  const cols = Math.ceil(Math.sqrt(count));
-  const rows = Math.ceil(count / cols);
-  const latSpan = maxLat - minLat;
-  const lngSpan = maxLng - minLng;
+  const bboxArea =
+    geo.areaM2({ minLat: bb.minLat, maxLat: bb.maxLat, minLng: bb.minLng, maxLng: bb.maxLng });
+  const fill = Math.max(0.05, geo.areaM2(shape) / bboxArea);
+  const latSpan = bb.maxLat - bb.minLat;
+  const lngSpan = bb.maxLng - bb.minLng;
 
   const points = [];
-  for (let r = 0; r < rows && points.length < count; r++) {
-    for (let c = 0; c < cols && points.length < count; c++) {
-      const lat = minLat + ((r + 0.5 + (rand() - 0.5) * 0.6) / rows) * latSpan;
-      const lng = minLng + ((c + 0.5 + (rand() - 0.5) * 0.6) / cols) * lngSpan;
-
-      const position = classify(allBoxes ?? [bbox], bbox, lat, lng);
-
-      points.push({
-        lat: Number(lat.toFixed(6)),
-        lng: Number(lng.toFixed(6)),
-        position,
-      });
+  // Densify until the quota is met, capped so a degenerate shape cannot spin.
+  for (let mult = 1.3; mult <= 12 && points.length < count; mult *= 1.7) {
+    points.length = 0;
+    const target = Math.ceil((count / fill) * mult);
+    const cols = Math.max(1, Math.ceil(Math.sqrt(target)));
+    const rows = Math.max(1, Math.ceil(target / cols));
+    for (let r = 0; r < rows && points.length < count; r++) {
+      for (let c = 0; c < cols && points.length < count; c++) {
+        const lat = bb.minLat + ((r + 0.5 + (rand() - 0.5) * 0.6) / rows) * latSpan;
+        const lng = bb.minLng + ((c + 0.5 + (rand() - 0.5) * 0.6) / cols) * lngSpan;
+        if (!geo.contains(shape, lat, lng)) continue;
+        points.push({
+          lat: Number(lat.toFixed(6)),
+          lng: Number(lng.toFixed(6)),
+          position: classify(allShapes ?? [shape], shape, lat, lng),
+        });
+      }
     }
   }
   return points;
@@ -187,16 +177,21 @@ function main() {
   const covered = { town: new Set(), city: new Set() };
 
   for (const [key, raw] of Object.entries(extents)) {
-    const boxes = normalizeBoxes(raw);
+    const boxes = normalizeShapes(raw);
     if (!boxes.length) {
-      problems.push(`${key}: malformed bbox`);
+      problems.push(`${key}: no usable shape (need a bbox or a polygon of >=3 points)`);
       continue;
     }
-    const inverted = boxes.filter(
-      (b) => b.minLat >= b.maxLat || b.minLng >= b.maxLng,
+    const bad = boxes.filter(
+      (b) => !geo.isPolygon(b) && (b.minLat >= b.maxLat || b.minLng >= b.maxLng),
     );
-    if (inverted.length) {
-      problems.push(`${key}: ${inverted.length} inverted bbox(es)`);
+    if (bad.length) {
+      problems.push(`${key}: ${bad.length} inverted bbox(es)`);
+      continue;
+    }
+    const tiny = boxes.filter((b) => geo.areaM2(b) < 10000); // < 1 hectare
+    if (tiny.length) {
+      problems.push(`${key}: ${tiny.length} shape(s) under 1 hectare — likely a misclick`);
       continue;
     }
 
@@ -251,10 +246,10 @@ function main() {
   console.log(`  town-level   : ${points.filter((p) => p.level === "town").length}`);
   console.log(`  city-level   : ${points.filter((p) => p.level === "city").length}`);
   console.log(`  boundary     : ${points.filter((p) => p.position === "boundary").length}`);
-  const multi = Object.entries(extents).filter(([, v]) => normalizeBoxes(v).length > 1);
+  const multi = Object.entries(extents).filter(([, v]) => normalizeShapes(v).length > 1);
   console.log(`towns covered  : ${covered.town.size}`);
   if (multi.length) {
-    console.log(`multi-box areas: ${multi.length} (${multi.map(([k, v]) => `${k.split("::").pop()}×${normalizeBoxes(v).length}`).join(", ")})`);
+    console.log(`multi-shape areas: ${multi.length} (${multi.map(([k, v]) => `${k.split("::").pop()}×${normalizeShapes(v).length}`).join(", ")})`);
   }
   console.log(`cities covered : ${covered.city.size}`);
 

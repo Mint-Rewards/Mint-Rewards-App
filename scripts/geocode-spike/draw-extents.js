@@ -103,16 +103,21 @@ const HTML = `<!doctype html>
       Nominatim is built from OSM, so tracing it would test OSM against itself and
       report a hit rate near 100% regardless of real quality.</div>
     <div class="warn" style="background:#eef6fb;border-color:#bcd9ea;color:#234">
-      <b>Several boxes per area is better.</b> Most of these places are not
-      rectangles. One loose box swallows the neighbouring area, and every point
-      that lands there is one the geocoder gets right and the score counts as a
-      miss. Add boxes until the shape is covered; points are split between them
+      <b>Trace the outline.</b> Most of these places are not rectangles. A loose
+      box swallows the neighbouring area, and every point landing there is one
+      the geocoder gets right and the score counts as a miss. Freehand fits the
+      real footprint; use Box for the genuinely rectangular grids (Islamabad
+      sectors). Add as many shapes as you need — points are split between them
       by area.</div>
     <label class="tog"><input type="checkbox" id="labels"> Show place labels (Esri, not OSM)</label>
+    <div class="tog" style="gap:12px">
+      <label><input type="radio" name="mode" value="free" checked> Freehand</label>
+      <label><input type="radio" name="mode" value="box"> Box</label>
+    </div>
     <input id="search" placeholder="Filter areas…">
     <div id="list"></div>
     <footer>
-      <button id="undo">Undo box</button>
+      <button id="undo">Undo shape</button>
       <button id="fit">Fit</button>
       <button class="primary" id="save">Save</button>
       <span id="count"></span>
@@ -136,18 +141,26 @@ const hint = document.getElementById('hint');
 const setHint = t => { hint.textContent = t; hint.style.display = t ? 'block' : 'none'; };
 
 function boundsOf(b){ return L.latLngBounds([b.minLat,b.minLng],[b.maxLat,b.maxLng]); }
-const boxesOf = key => extents[key] || [];
+const shapesOf = key => extents[key] || [];
+const isPoly = s => Array.isArray(s.polygon);
+const mode = () => document.querySelector('input[name=mode]:checked').value;
+
+function layerFor(shape, activeStyle){
+  const style = { color: activeStyle?'#ffd54f':'#449EB2', weight: activeStyle?3:1.5,
+                  fillOpacity: activeStyle?0.18:0.07 };
+  return isPoly(shape) ? L.polygon(shape.polygon, style) : L.rectangle(boundsOf(shape), style);
+}
 function unionOf(key){
-  const bs=boxesOf(key); if(!bs.length) return null;
-  let u=boundsOf(bs[0]); bs.slice(1).forEach(b=>u.extend(boundsOf(b))); return u;
+  const ss=shapesOf(key); if(!ss.length) return null;
+  let u=null;
+  ss.forEach(sh=>{ const b=layerFor(sh,false).getBounds(); u = u ? u.extend(b) : b; });
+  return u;
 }
 function draw(key){
   (layers[key]||[]).forEach(l=>map.removeLayer(l));
-  layers[key] = boxesOf(key).map((b,i)=>
-    L.rectangle(boundsOf(b),{
-      color: key===active ? '#ffd54f' : '#449EB2', weight: key===active?3:1.5,
-      fillOpacity: key===active?0.18:0.07
-    }).addTo(map).bindTooltip(key+' · box '+(i+1),{sticky:true}));
+  layers[key] = shapesOf(key).map((sh,i)=>
+    layerFor(sh, key===active).addTo(map)
+      .bindTooltip(key+' · '+(isPoly(sh)?'shape ':'box ')+(i+1),{sticky:true}));
 }
 function redraw(){
   Object.keys(layers).forEach(k=>(layers[k]||[]).forEach(l=>map.removeLayer(l)));
@@ -155,36 +168,75 @@ function redraw(){
   Object.keys(extents).forEach(draw);
 }
 
-// Drag-to-draw. Leaflet's own dragging is suspended while drawing so the map
-// does not pan out from under the rectangle.
-let start=null, ghost=null;
+// Drag to draw. Leaflet dragging is suspended so the map does not pan out from
+// under the shape being drawn.
+let start=null, ghost=null, path=null;
+
+function commit(shape){
+  (extents[active] = extents[active] || []).push(shape);
+  redraw(); render(); save(true);
+  const n = shapesOf(active).length;
+  setHint(active+' — '+n+(n===1?' shape':' shapes')+
+    '. Draw again to add another, or pick the next area.');
+}
+
 map.getContainer().addEventListener('mousedown', e=>{
   if(!active || e.button!==0) return;
-  start = map.mouseEventToLatLng(e); map.dragging.disable();
-  ghost = L.rectangle(L.latLngBounds(start,start),{color:'#ffd54f',weight:2,dashArray:'4,3',fillOpacity:.12}).addTo(map);
+  start = map.mouseEventToLatLng(e);
+  map.dragging.disable();
+  if(mode()==='free'){
+    path=[[start.lat,start.lng]];
+    ghost=L.polyline(path,{color:'#ffd54f',weight:2,dashArray:'4,3'}).addTo(map);
+  } else {
+    ghost=L.rectangle(L.latLngBounds(start,start),
+      {color:'#ffd54f',weight:2,dashArray:'4,3',fillOpacity:.12}).addTo(map);
+  }
 });
+
 map.getContainer().addEventListener('mousemove', e=>{
-  if(!start||!ghost) return; ghost.setBounds(L.latLngBounds(start, map.mouseEventToLatLng(e)));
+  if(!start||!ghost) return;
+  const ll = map.mouseEventToLatLng(e);
+  if(mode()==='free'){
+    // Decimate to ~6px: a raw mousemove trace stores hundreds of points that
+    // add no shape information and bloat extents.json.
+    const last = path[path.length-1];
+    const a = map.latLngToContainerPoint(L.latLng(last[0],last[1]));
+    const b = map.latLngToContainerPoint(ll);
+    if(a.distanceTo(b) < 6) return;
+    path.push([ll.lat,ll.lng]);
+    ghost.setLatLngs(path);
+  } else {
+    ghost.setBounds(L.latLngBounds(start, ll));
+  }
 });
+
 window.addEventListener('mouseup', e=>{
   if(!start) return;
   const end = map.mouseEventToLatLng(e);
+  const wasFree = mode()==='free';
+  const drawn = path;
+  const origin = start;              // captured before reset — box mode needs it
   if(ghost){ map.removeLayer(ghost); ghost=null; }
   map.dragging.enable();
-  const b = L.latLngBounds(start,end); start=null;
-  // Ignore a stray click: a box a few pixels across is a misclick, and saving
-  // it would silently produce a degenerate sample area.
-  if(Math.abs(b.getEast()-b.getWest())<0.0008 || Math.abs(b.getNorth()-b.getSouth())<0.0008){
-    setHint('Box too small — drag a larger rectangle'); return;
+  start=null; path=null;
+
+  if(wasFree){
+    // Three points is the minimum for an area at all; below that it is a
+    // stray click or a twitch, and saving it would create a degenerate shape
+    // whose points all land in one spot.
+    if(!drawn || drawn.length < 3){ setHint('Too short — drag to trace the outline'); return; }
+    const round = drawn.map(p=>[+p[0].toFixed(6), +p[1].toFixed(6)]);
+    commit({ polygon: round });
+  } else {
+    const b = L.latLngBounds(origin, end);
+    if(Math.abs(b.getEast()-b.getWest())<0.0008 || Math.abs(b.getNorth()-b.getSouth())<0.0008){
+      setHint('Box too small — drag a larger rectangle'); return;
+    }
+    commit({
+      minLat:+b.getSouth().toFixed(6), maxLat:+b.getNorth().toFixed(6),
+      minLng:+b.getWest().toFixed(6),  maxLng:+b.getEast().toFixed(6)
+    });
   }
-  (extents[active] = extents[active] || []).push({
-    minLat:+b.getSouth().toFixed(6), maxLat:+b.getNorth().toFixed(6),
-    minLng:+b.getWest().toFixed(6),  maxLng:+b.getEast().toFixed(6)
-  });
-  redraw(); render(); save(true);
-  const n = boxesOf(active).length;
-  setHint(active + ' — ' + n + (n===1?' box':' boxes') +
-    '. Draw another to cover an irregular shape, or pick the next area.');
 });
 
 function render(){
@@ -202,19 +254,20 @@ function render(){
       const row=document.createElement('div');
       row.className='row'+(k===active?' active':'')+(extents[k]?' done':'');
       const n=document.createElement('span'); n.className='name';
-      const cnt = boxesOf(k).length;
+      const cnt = shapesOf(k).length;
       n.textContent = (k.includes('::') ? k.split('::')[1] : k) + (cnt>1 ? '  ('+cnt+')' : '');
       row.appendChild(n);
       if(cnt){
         const x=document.createElement('span'); x.className='clr'; x.textContent='×';
-        x.title='Clear all boxes for this area';
+        x.title='Clear all shapes for this area';
         x.onclick=ev=>{ev.stopPropagation(); delete extents[k]; redraw(); render(); save(true);};
         row.appendChild(x);
       }
       row.onclick=()=>{ active=k; redraw(); render();
         const u=unionOf(k); if(u) map.fitBounds(u.pad(0.6));
-        setHint(cnt ? 'Drag to ADD another box to this area'
-                    : 'Drag a box around '+n.textContent); };
+        setHint(cnt ? 'Drag to ADD another shape to this area'
+                    : (mode()==='free' ? 'Trace the outline of '+n.textContent
+                                       : 'Drag a box around '+n.textContent)); };
       list.appendChild(row);
     }
   }
@@ -229,11 +282,11 @@ document.getElementById('save').onclick=()=>save(false);
 document.getElementById('search').oninput=render;
 document.getElementById('fit').onclick=()=>{ const u=active&&unionOf(active); if(u) map.fitBounds(u.pad(0.6)); };
 document.getElementById('undo').onclick=()=>{
-  if(!active||!boxesOf(active).length) return;
+  if(!active||!shapesOf(active).length) return;
   extents[active].pop();
   if(!extents[active].length) delete extents[active];
   redraw(); render(); save(true);
-  setHint('Removed last box from '+active);
+  setHint('Removed last shape from '+active);
 };
 
 fetch('/extents').then(r=>r.json()).then(d=>{ extents=d||{}; redraw(); render(); setHint('Select an area to begin'); });
@@ -255,8 +308,11 @@ const server = http.createServer((req, res) => {
           // An area may carry several boxes; a bare object is the old
           // single-box form and is normalised up so both files keep working.
           const list = Array.isArray(v) ? v : [v];
-          const boxes = list.filter((b) => b && typeof b.minLat === "number");
-          if (boxes.length) body[k] = boxes;
+          const shapes = list.filter(
+            (b) => b && (typeof b.minLat === "number" ||
+                        (Array.isArray(b.polygon) && b.polygon.length >= 3)),
+          );
+          if (shapes.length) body[k] = shapes;
         }
       } catch { body = {}; }
     }
