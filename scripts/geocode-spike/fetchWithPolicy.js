@@ -31,7 +31,15 @@ async function fetchWithPolicy(url, opts = {}) {
     try {
       res = await fetch(url, {
         signal: controller.signal,
-        headers: { "User-Agent": "mint-rewards-geocode-spike/1.0" },
+        headers: {
+          "User-Agent": "mint-rewards-geocode-spike/1.0",
+          // Node's fetch (undici) sends `Accept-Language: *` when it is not
+          // set. LocationIQ reads `*` as "return the NATIVE name", so Karachi
+          // areas came back in Urdu ("\u0636\u0644\u0639 \u0645\u0644\u06cc\u0631") and could never match the
+          // Latin-script registry -- an agreement rate of 0% that said nothing
+          // about the provider. Pin it so the header is never the variable.
+          "Accept-Language": "en",
+        },
       });
     } catch (e) {
       clearTimeout(timer);

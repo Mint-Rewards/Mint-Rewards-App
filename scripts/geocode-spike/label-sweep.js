@@ -35,7 +35,6 @@ const arg = (n, d) => {
   return h ? h.slice(n.length + 3) : d;
 };
 const OUT_DIR = path.join(__dirname, "out");
-const RESULTS = path.join(OUT_DIR, "labelled.jsonl");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function mulberry32(seed) {
@@ -79,6 +78,10 @@ async function main() {
     throw new Error(`"${city}" has no areas in the registry — nothing to resolve against.`);
   }
 
+  // Strata get their own file. Uniform sampling over different bboxes measures
+  // different populations, so appending them to one file would silently pool
+  // incomparable samples into a single meaningless rate.
+  const RESULTS = path.resolve(OUT_DIR, arg("out", "labelled.jsonl"));
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const done = new Set();
   if (fs.existsSync(RESULTS)) {
@@ -106,7 +109,14 @@ async function main() {
   if (!todo.length) return console.log("nothing to do.");
 
   const sink = fs.createWriteStream(RESULTS, { flags: "a" });
-  let labelled = 0, agreed = 0, unplaced = 0;
+  // Three outcomes, kept apart on purpose. `unnamed` is a point Google could
+  // not name at all (sea, scrub, industry) -- a fair drop. `unregistered` is a
+  // point Google DID name, with a real Karachi place the registry has never
+  // heard of. Counting those two together (the original bug) hid the registry
+  // coverage gap behind an innocent-looking "unplaced" tally, and biased every
+  // downstream rate toward the areas the registry already knows.
+  let labelled = 0, agreed = 0, unnamed = 0, unregistered = 0;
+  const unregisteredNames = new Map();
 
   for (let i = 0; i < todo.length; i++) {
     const p = todo[i];
@@ -123,11 +133,17 @@ async function main() {
     // No label means the point is not in a named place — sea, scrub, industry.
     // Drop it without spending a candidate call.
     if (!gResolved) {
-      unplaced++;
+      if (gLabel) {
+        unregistered++;
+        unregisteredNames.set(gLabel, (unregisteredNames.get(gLabel) ?? 0) + 1);
+      } else {
+        unnamed++;
+      }
       sink.write(JSON.stringify({ id, ...p, city, googleRaw: gLabel, googleResolved: null,
         candidateRaw: null, candidateResolved: null, usable: false,
+        drop: gLabel ? "unregistered" : "unnamed",
         googleError: g.error ?? null, at: new Date().toISOString() }) + "\n");
-      if ((i + 1) % 25 === 0) process.stdout.write(`  ${i + 1}/${todo.length}  labelled ${labelled}  agree ${agreed}  unplaced ${unplaced}   \r`);
+      if ((i + 1) % 25 === 0) process.stdout.write(`  ${i + 1}/${todo.length}  labelled ${labelled}  agree ${agreed}  unreg ${unregistered}  unnamed ${unnamed}   \r`);
       await sleep(delay);
       continue;
     }
@@ -150,14 +166,23 @@ async function main() {
       at: new Date().toISOString(),
     }) + "\n");
 
-    if ((i + 1) % 25 === 0) process.stdout.write(`  ${i + 1}/${todo.length}  labelled ${labelled}  agree ${agreed}  unplaced ${unplaced}   \r`);
+    if ((i + 1) % 25 === 0) process.stdout.write(`  ${i + 1}/${todo.length}  labelled ${labelled}  agree ${agreed}  unreg ${unregistered}  unnamed ${unnamed}   \r`);
     await sleep(delay);
   }
 
   sink.end();
   console.log(`\n\nlabelled sweep complete -> ${RESULTS}`);
-  console.log(`usable ${labelled}/${todo.length}, agreement ${labelled ? Math.round((agreed / labelled) * 100) : 0}%`);
-  console.log("Next: node scripts/geocode-spike/label-report.js");
+  console.log(`usable      ${labelled}/${todo.length}`);
+  console.log(`agreement   ${labelled ? Math.round((agreed / labelled) * 100) : 0}% (of usable only)`);
+  console.log(`unregistered ${unregistered}  <- Google named it; the registry has no such area`);
+  console.log(`unnamed     ${unnamed}  <- no name at all; fair drop`);
+  if (unregisteredNames.size) {
+    console.log(`\ntop unregistered names (registry coverage gap):`);
+    for (const [n, c] of [...unregisteredNames].sort((a, b) => b[1] - a[1]).slice(0, 25)) {
+      console.log(`  ${String(c).padStart(4)}  ${n}`);
+    }
+  }
+  console.log("\nNext: node scripts/geocode-spike/label-report.js");
 }
 
 main().catch((e) => { console.error("ERROR:", e.message); process.exit(1); });

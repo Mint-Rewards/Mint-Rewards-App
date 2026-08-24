@@ -1921,7 +1921,13 @@ export const AREA_META: Record<string, AreaMeta> = {
   "Lahore::Sabzazar": { geocodeReliable: false, blockLabel: "Block" },
   "Lahore::Shahdara": { geocodeReliable: false, blockLabel: "Area" },
   "Lahore::Shadman": { geocodeReliable: false, blockLabel: "Area" },
-  "Karachi::DHA": { geocodeReliable: false, blockLabel: "Phase" },
+  // Google returns the expanded form for every DHA point in Karachi (9 of 29
+  // resolvable points in the P0.1 core pilot); no affix rule reaches it.
+  "Karachi::DHA": {
+    geocodeReliable: false,
+    blockLabel: "Phase",
+    aliases: ["Defence Housing Authority", "Defence"],
+  },
   "Karachi::Clifton": { geocodeReliable: false, blockLabel: "Block" },
   "Karachi::PECHS": { geocodeReliable: false, blockLabel: "Block" },
   "Karachi::Gulshan-e-Iqbal": { geocodeReliable: false, blockLabel: "Block" },
@@ -1941,7 +1947,12 @@ export const AREA_META: Record<string, AreaMeta> = {
   "Karachi::Gulshan-e-Hadeed": { geocodeReliable: false, blockLabel: "Phase" },
   "Karachi::Garden": { geocodeReliable: false, blockLabel: "Area" },
   "Karachi::Orangi Town": { geocodeReliable: false, blockLabel: "Sector" },
-  "Karachi::Saddar": { geocodeReliable: false, blockLabel: "Area" },
+  // "Sadder" is Google's spelling; it does not fold to "Saddar".
+  "Karachi::Saddar": {
+    geocodeReliable: false,
+    blockLabel: "Area",
+    aliases: ["Sadder"],
+  },
   "Karachi::KAECHS": { geocodeReliable: false, blockLabel: "Block" },
   "Karachi::Gulshan-e-Maymar": { geocodeReliable: false, blockLabel: "Sector" },
   "Karachi::Scheme 33": { geocodeReliable: false, blockLabel: "Sector" },
@@ -2207,6 +2218,45 @@ export function getSelectableSubAreasForTown(
  * than guessing — the composite "City::Town" key exists precisely because
  * "Cantt", "Model Town" and "Satellite Town" are not unique.
  */
+/**
+ * Folded spellings a name may legitimately arrive under.
+ *
+ * Geocoders and this registry disagree on two suffix/prefix conventions, and
+ * the disagreement is systematic rather than per-place:
+ *
+ *   - Administrative "Town" suffix. Google returns "Landhi Town" and
+ *     "North Nazimabad Town" for areas this registry calls "Landhi" and
+ *     "North Nazimabad". OSM does the same.
+ *   - Islamabad "Sector" prefix. OSM returns "E-7"; the registry says
+ *     "Sector E-7".
+ *
+ * Variants are generated for BOTH sides of the comparison, so the rule works
+ * whichever side carries the affix -- that symmetry is why this is a variant
+ * set and not a one-directional strip of the incoming string.
+ *
+ * Both strips are floored on the remainder: "Town" alone must not fold to the
+ * empty string and then match everything.
+ */
+function nameVariants(value: string): Set<string> {
+  const out = new Set<string>();
+  const folded = foldName(value);
+  if (!folded) return out;
+  out.add(folded);
+
+  const withoutTown = folded.replace(/town$/, "");
+  if (withoutTown.length >= 3) out.add(withoutTown);
+
+  const withoutSector = folded.replace(/^sector/, "");
+  if (withoutSector.length >= 2) out.add(withoutSector);
+
+  return out;
+}
+
+function variantsIntersect(a: Set<string>, b: Set<string>): boolean {
+  for (const v of a) if (b.has(v)) return true;
+  return false;
+}
+
 export function resolveGeocodedName(
   raw: string,
   city?: string,
@@ -2219,6 +2269,7 @@ export function resolveGeocodedName(
     : Object.keys(PAKISTAN_LOCATIONS.towns);
 
   const needle = foldName(value);
+  const needleVariants = nameVariants(value);
   // Keyed by "City::Town", not by town name: "Cantt", "Model Town" and
   // "Satellite Town" each exist in several cities, and deduping on the bare
   // name would silently collapse four different places into one confident
@@ -2234,6 +2285,15 @@ export function resolveGeocodedName(
       }
       const aliases = AREA_META[key]?.aliases;
       if (aliases?.some((alias) => foldName(alias) === needle)) {
+        matches.set(key, town);
+        continue;
+      }
+      // Affix-tolerant pass runs last so an exact or alias hit always wins.
+      if (variantsIntersect(needleVariants, nameVariants(town))) {
+        matches.set(key, town);
+        continue;
+      }
+      if (aliases?.some((alias) => variantsIntersect(needleVariants, nameVariants(alias)))) {
         matches.set(key, town);
       }
     }

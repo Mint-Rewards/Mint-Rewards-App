@@ -14,15 +14,28 @@
 /**
  * Reads a Nominatim-shaped address object.
  *
- * All three of suburb / city_district / neighbourhood are tried before
- * declaring a miss. Nominatim is inconsistent about which key carries the
- * locality, and reading only `suburb` would under-report the hit rate — which
- * could sink the provider decision on a field-name detail rather than on data.
+ * Field order is measured, not guessed. Over 46 Karachi points with a known
+ * area, each candidate field scored:
+ *
+ *   town          40 present   12 correct
+ *   neighbourhood 38 present    6 correct
+ *   suburb        28 present    5 correct
+ *   city_district 46 present    0 correct   <- always "Karachi District"
+ *
+ * `city_district` is excluded outright rather than demoted: it names the
+ * district, a rung above anything in this registry, so it can never be right.
+ * Leaving it in the chain was actively harmful -- present on every single
+ * point, it shadowed every field behind it and capped the whole provider at
+ * 5/46. Ordering town -> suburb -> neighbourhood scores 16/46, close to the
+ * 17/46 any-field ceiling.
+ *
+ * That order was chosen on these same 46 points, so treat 16/46 as fitted.
+ * The full sweep is the out-of-sample measurement.
  */
 function parseNominatimAddress(body) {
   const a = body?.address ?? {};
   return {
-    areaRaw: a.suburb ?? a.city_district ?? a.neighbourhood ?? null,
+    areaRaw: a.town ?? a.suburb ?? a.neighbourhood ?? null,
     cityRaw: a.city ?? a.town ?? a.municipality ?? null,
     blockHint: a.neighbourhood ?? a.residential ?? null,
     road: a.road ?? null,
@@ -35,10 +48,21 @@ function parseGoogle(body) {
   const get = (type) =>
     first?.address_components?.find((c) => c.types.includes(type))?.long_name ??
     null;
+  // Order matters, and the obvious spelling is wrong. `get("sublocality")`
+  // matches the FIRST component carrying the bare `sublocality` type, and
+  // Google returns components most-specific-first -- so sublocality_level_2
+  // (the block: "Block 2", "Phase 6") always beat sublocality_level_1 (the
+  // area: "P.E.C.H.S.", "Defence Housing Authority"). The sweep was reading
+  // the block and then reporting the area as unregistered. Ask for the level
+  // wanted, by name, and keep the bare type only as a last resort.
   return {
-    areaRaw: get("sublocality") ?? get("sublocality_level_1") ?? null,
+    areaRaw:
+      get("sublocality_level_1") ??
+      get("neighborhood") ??
+      get("sublocality") ??
+      null,
     cityRaw: get("locality") ?? null,
-    blockHint: get("sublocality_level_2") ?? null,
+    blockHint: get("sublocality_level_2") ?? get("neighborhood") ?? null,
     road: get("route") ?? null,
     houseNumber: get("street_number") ?? null,
   };
@@ -54,7 +78,7 @@ const PROVIDERS = {
     defaultDelayMs: 120,
     buildUrl: ({ base, lat, lng }) =>
       `${base.replace(/\/$/, "")}/reverse` +
-      `?format=jsonv2&addressdetails=1&zoom=16&lat=${lat}&lon=${lng}`,
+      `?format=jsonv2&addressdetails=1&zoom=16&accept-language=en&lat=${lat}&lon=${lng}`,
     parse: parseNominatimAddress,
   },
 
@@ -72,7 +96,7 @@ const PROVIDERS = {
     buildUrl: ({ base, lat, lng, key }) =>
       `${(base || "https://us1.locationiq.com/v1").replace(/\/$/, "")}/reverse` +
       `?key=${encodeURIComponent(key)}&lat=${lat}&lon=${lng}` +
-      `&format=json&addressdetails=1&zoom=16`,
+      `&format=json&addressdetails=1&zoom=16&accept-language=en`,
     parse: parseNominatimAddress,
   },
 
@@ -87,7 +111,7 @@ const PROVIDERS = {
     defaultBase: "https://maps.googleapis.com/maps/api",
     buildUrl: ({ base, lat, lng, key }) =>
       `${(base || "https://maps.googleapis.com/maps/api").replace(/\/$/, "")}/geocode/json` +
-      `?latlng=${lat},${lng}&key=${encodeURIComponent(key)}`,
+      `?latlng=${lat},${lng}&language=en&key=${encodeURIComponent(key)}`,
     parse: parseGoogle,
   },
 };

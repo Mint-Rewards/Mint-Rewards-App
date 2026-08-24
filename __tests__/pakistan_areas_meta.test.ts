@@ -225,3 +225,46 @@ describe("PAKISTAN_LOCATIONS is frozen", () => {
     expect(PAKISTAN_LOCATIONS).toMatchSnapshot();
   });
 });
+
+describe("resolveGeocodedName — affix tolerance", () => {
+  // Every string below was observed coming back from a live geocoder during
+  // the P0.1 Karachi pilot, not invented. That matters: an affix rule tuned to
+  // hypothetical inputs would widen matching without buying any real hits.
+  it("absorbs the administrative \"Town\" suffix geocoders add", () => {
+    expect(resolveGeocodedName("Landhi Town", "Karachi")).toBe("Landhi");
+    expect(resolveGeocodedName("North Nazimabad Town", "Karachi")).toBe(
+      "North Nazimabad",
+    );
+    expect(resolveGeocodedName("Malir Town", "Karachi")).toBe("Malir");
+  });
+
+  it("absorbs the Islamabad \"Sector\" prefix OSM omits", () => {
+    expect(resolveGeocodedName("E-7", "Islamabad")).toBe("Sector E-7");
+    expect(resolveGeocodedName("F-10", "Islamabad")).toBe("Sector F-10");
+  });
+
+  it("does not strip an affix that is the whole name", () => {
+    // Without the remainder floor these fold to "" and match everything.
+    expect(resolveGeocodedName("Town", "Karachi")).toBeNull();
+    expect(resolveGeocodedName("Sector", "Islamabad")).toBeNull();
+  });
+
+  it("keeps a town whose canonical name genuinely ends in Town", () => {
+    expect(resolveGeocodedName("Orangi Town", "Karachi")).toBe("Orangi Town");
+    expect(resolveGeocodedName("Surjani Town", "Karachi")).toBe("Surjani Town");
+  });
+
+  it("resolves expanded and misspelled forms via aliases", () => {
+    expect(resolveGeocodedName("Defence Housing Authority", "Karachi")).toBe(
+      "DHA",
+    );
+    expect(resolveGeocodedName("Sadder", "Karachi")).toBe("Saddar");
+  });
+
+  it("still refuses to guess when a name spans cities", () => {
+    // Saddar exists in Karachi, Rawalpindi, Peshawar and Hyderabad. Affix
+    // tolerance must not turn an ambiguous name into a confident answer.
+    expect(resolveGeocodedName("Saddar")).toBeNull();
+    expect(resolveGeocodedName("Landhi Town", "Lahore")).toBeNull();
+  });
+});
