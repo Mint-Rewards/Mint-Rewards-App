@@ -93,6 +93,57 @@ The optional labels overlay is also Esri, so using it for orientation is safe.
 It runs as a small server rather than a `file://` page because a `file://` page
 can neither write `extents.json` nor fetch its own sibling JSON.
 
+## Where the API keys go
+
+Put them in **`.env.geocode`** in the repo root:
+
+```bash
+LOCATIONIQ_API_KEY=pk.xxxxxxxx
+GOOGLE_GEOCODING_API_KEY=AIzaxxxxxxxx
+```
+
+then load it only when running a sweep:
+
+```bash
+set -a; source .env.geocode; set +a
+node scripts/geocode-spike/label-sweep.js --bbox=... --city=Karachi
+```
+
+Two properties make this the right file, and both were checked:
+
+- **Gitignored** by `.gitignore:2` (`.env.*`), so it cannot be committed.
+- **Outside the build pipeline.** `app.config.js` loads exactly `.env`,
+  `.env.local`, `.env.${NODE_ENV}` and `.env.${NODE_ENV}.local`. `.env.geocode`
+  is in none of those, so it is never read during a build or an `eas` command.
+
+### Not in `.env`
+
+`.env` is gitignored too, so it is not a leak risk by itself — but it *is* read
+on every config resolution and every build, and it sits beside `EXPO_PUBLIC_*`
+variables. These keys are for a throwaway script the app never calls. Keeping
+them out of the build's environment entirely means there is no path by which
+they reach a bundle, rather than a path that merely is not taken today.
+
+### Never with an `EXPO_PUBLIC_` prefix
+
+Anything so prefixed is inlined into the shipped JS bundle, making the key
+scrapeable and billable by anyone with the app. The scripts refuse to run if a
+geocoding key appears under such a name — that guard is there because this is
+the one mistake that would be expensive and silent.
+
+### Use a separate Google key
+
+`.env` already holds `ANDROID_GOOGLE_MAPS_API_KEY`. Do not reuse it:
+
+- It is almost certainly restricted to the Maps SDK for Android with an app
+  restriction, so the Geocoding **web service** will reject it.
+- Even if it worked, the spike's calls would land on the same key that renders
+  maps in production — shared quota, shared billing, and a key you cannot
+  rotate after the spike without shipping a release.
+
+Create a key with **only the Geocoding API enabled** and an IP restriction, and
+delete it when the spike is done.
+
 ## Two ways to get points
 
 ### A. Label-first (no extents, gives P0.1a *and* P0.1b)
