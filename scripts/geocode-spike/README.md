@@ -93,6 +93,41 @@ The optional labels overlay is also Esri, so using it for orientation is safe.
 It runs as a small server rather than a `file://` page because a `file://` page
 can neither write `extents.json` nor fetch its own sibling JSON.
 
+## Several boxes per area
+
+An area can carry more than one box:
+
+```json
+"Karachi::Korangi": [
+  { "minLat": 24.800, "maxLat": 24.840, "minLng": 67.120, "maxLng": 67.160 },
+  { "minLat": 24.840, "maxLat": 24.870, "minLng": 67.130, "maxLng": 67.155 }
+]
+```
+
+Most of these places are not rectangles. One loose box around an irregular area
+swallows part of its neighbours, and every point landing there is one the
+geocoder answers **correctly** while the scorer counts it as a miss — which
+pushes a good area below the promotion threshold. Several tighter boxes
+approximate the footprint far better. A bare object is still accepted, so older
+files keep working.
+
+Two things happen automatically, and both matter:
+
+- **Points are split by area, not evenly.** An equal split would give a small
+  sliver the same weight as the main body, over-sampling one corner. Allocation
+  is proportional to cos-corrected area, with every box getting at least one
+  point and the parts summing to exactly the stratum's total.
+- **Shared edges count as interior.** Boundary means "near the edge of the
+  *area*", not "near the edge of a box". Where two boxes abut, that seam is
+  internal, and judging each box in isolation would flood the boundary sample
+  with points nowhere near the real edge. Since boundary-correct is one of the
+  three promotion conditions, that distortion would feed straight into whether
+  an area is trusted for auto-fill. Measured effect: the same area drawn as two
+  boxes reports 29% boundary where a single box reports 62%.
+
+In the tool: pick an area, drag, then drag again to add another box. The sidebar
+shows a count, **Undo box** removes the last one, and **×** clears the area.
+
 ## Why extents are hand-drawn
 
 The repo has no boundaries and no centroids, and the plan explicitly forbids

@@ -52,10 +52,95 @@ function hashSeed(text) {
 }
 
 /**
- * Jittered grid over a bbox. Returns `count` points, each tagged interior or
- * boundary by how close it sits to the bbox edge.
+ * An area may be described by SEVERAL boxes, because most of these places are
+ * not rectangles. One box around an irregular area (Korangi, DHA) swallows a
+ * large slice of its neighbours, and every point that lands there is one the
+ * geocoder answers correctly and the scorer counts as a miss — which pushes a
+ * good area below the promotion threshold. Several tighter boxes approximate
+ * the real footprint far better.
+ *
+ * A bare object is still accepted so older extents files keep working.
  */
-function gridPoints(bbox, count, seed) {
+function normalizeBoxes(value) {
+  const list = Array.isArray(value) ? value : [value];
+  return list.filter((b) => b && typeof b.minLat === "number");
+}
+
+/** Rough relative area, cos-corrected so boxes at different latitudes compare fairly. */
+function boxArea(b) {
+  const midLat = (b.minLat + b.maxLat) / 2;
+  return (
+    (b.maxLat - b.minLat) *
+    (b.maxLng - b.minLng) *
+    Math.cos((midLat * Math.PI) / 180)
+  );
+}
+
+/**
+ * Splits `total` points across boxes in proportion to their area.
+ *
+ * Proportional rather than equal: an equal split would give a small sliver the
+ * same weight as the main body, over-sampling one corner of the area and
+ * under-sampling everything else. Largest-remainder so the parts sum to
+ * exactly `total`, and every box gets at least one point.
+ */
+function allocate(boxes, total) {
+  const areas = boxes.map(boxArea);
+  const sum = areas.reduce((a, b) => a + b, 0) || 1;
+  const exact = areas.map((a) => (a / sum) * total);
+  const alloc = exact.map((e) => Math.max(1, Math.floor(e)));
+  let diff = total - alloc.reduce((a, b) => a + b, 0);
+  const order = exact
+    .map((e, i) => ({ i, frac: e - Math.floor(e) }))
+    .sort((a, b) => b.frac - a.frac);
+  let k = 0;
+  while (diff > 0) { alloc[order[k % order.length].i]++; diff--; k++; }
+  while (diff < 0) {
+    const cand = order[k % order.length].i;
+    if (alloc[cand] > 1) { alloc[cand]--; diff++; }
+    k++;
+  }
+  return alloc;
+}
+
+function inside(b, lat, lng, pad = 0) {
+  return (
+    lat >= b.minLat - pad && lat <= b.maxLat + pad &&
+    lng >= b.minLng - pad && lng <= b.maxLng + pad
+  );
+}
+
+/**
+ * Boundary means "near the edge of the AREA", not "near the edge of a box".
+ *
+ * Where two boxes abut, the shared edge is interior to the area. Judging each
+ * box in isolation would label those points boundary, inflating the boundary
+ * sample with points that are nowhere near the real edge — and boundary-correct
+ * is one of the three promotion conditions, so that distortion would feed
+ * straight into whether an area is trusted for auto-fill.
+ */
+function classify(boxes, box, lat, lng) {
+  const latSpan = box.maxLat - box.minLat;
+  const lngSpan = box.maxLng - box.minLng;
+  const latEdge = Math.min(lat - box.minLat, box.maxLat - lat) / latSpan;
+  const lngEdge = Math.min(lng - box.minLng, box.maxLng - lng) / lngSpan;
+  if (Math.min(latEdge, lngEdge) > BOUNDARY_BAND) return "interior";
+
+  // Near this box's edge — but if a sibling box covers the point, that edge is
+  // internal to the area.
+  const pad = Math.min(latSpan, lngSpan) * BOUNDARY_BAND;
+  for (const other of boxes) {
+    if (other === box) continue;
+    if (inside(other, lat, lng, pad)) return "interior";
+  }
+  return "boundary";
+}
+
+/**
+ * Jittered grid over a bbox. Returns `count` points; each is classified against
+ * the whole box set, not this box alone.
+ */
+function gridPoints(bbox, count, seed, allBoxes) {
   const { minLat, maxLat, minLng, maxLng } = bbox;
   const rand = mulberry32(seed);
   const cols = Math.ceil(Math.sqrt(count));
@@ -69,10 +154,7 @@ function gridPoints(bbox, count, seed) {
       const lat = minLat + ((r + 0.5 + (rand() - 0.5) * 0.6) / rows) * latSpan;
       const lng = minLng + ((c + 0.5 + (rand() - 0.5) * 0.6) / cols) * lngSpan;
 
-      const latEdge = Math.min(lat - minLat, maxLat - lat) / latSpan;
-      const lngEdge = Math.min(lng - minLng, maxLng - lng) / lngSpan;
-      const position =
-        Math.min(latEdge, lngEdge) <= BOUNDARY_BAND ? "boundary" : "interior";
+      const position = classify(allBoxes ?? [bbox], bbox, lat, lng);
 
       points.push({
         lat: Number(lat.toFixed(6)),
@@ -104,13 +186,17 @@ function main() {
   const problems = [];
   const covered = { town: new Set(), city: new Set() };
 
-  for (const [key, bbox] of Object.entries(extents)) {
-    if (!bbox || typeof bbox.minLat !== "number") {
+  for (const [key, raw] of Object.entries(extents)) {
+    const boxes = normalizeBoxes(raw);
+    if (!boxes.length) {
       problems.push(`${key}: malformed bbox`);
       continue;
     }
-    if (bbox.minLat >= bbox.maxLat || bbox.minLng >= bbox.maxLng) {
-      problems.push(`${key}: inverted bbox`);
+    const inverted = boxes.filter(
+      (b) => b.minLat >= b.maxLat || b.minLng >= b.maxLng,
+    );
+    if (inverted.length) {
+      problems.push(`${key}: ${inverted.length} inverted bbox(es)`);
       continue;
     }
 
@@ -129,9 +215,12 @@ function main() {
         continue;
       }
       covered.town.add(key);
-      for (const p of gridPoints(bbox, plan.pointsPerTown, hashSeed(key))) {
-        points.push({ ...p, level: "town", stratum: plan.stratum, city, town });
-      }
+      const split = allocate(boxes, plan.pointsPerTown);
+      boxes.forEach((box, bi) => {
+        for (const p of gridPoints(box, split[bi], hashSeed(`${key}#${bi}`), boxes)) {
+          points.push({ ...p, level: "town", stratum: plan.stratum, city, town, box: bi });
+        }
+      });
     } else {
       const city = key;
       if (!PROVINCE_HAS(registry, city)) {
@@ -145,9 +234,12 @@ function main() {
         continue;
       }
       covered.city.add(city);
-      for (const p of gridPoints(bbox, CITY_LEVEL_POINTS, hashSeed(key))) {
-        points.push({ ...p, level: "city", stratum: "city-only", city, town: null });
-      }
+      const splitC = allocate(boxes, CITY_LEVEL_POINTS);
+      boxes.forEach((box, bi) => {
+        for (const p of gridPoints(box, splitC[bi], hashSeed(`${key}#${bi}`), boxes)) {
+          points.push({ ...p, level: "city", stratum: "city-only", city, town: null, box: bi });
+        }
+      });
     }
   }
 
@@ -159,7 +251,11 @@ function main() {
   console.log(`  town-level   : ${points.filter((p) => p.level === "town").length}`);
   console.log(`  city-level   : ${points.filter((p) => p.level === "city").length}`);
   console.log(`  boundary     : ${points.filter((p) => p.position === "boundary").length}`);
+  const multi = Object.entries(extents).filter(([, v]) => normalizeBoxes(v).length > 1);
   console.log(`towns covered  : ${covered.town.size}`);
+  if (multi.length) {
+    console.log(`multi-box areas: ${multi.length} (${multi.map(([k, v]) => `${k.split("::").pop()}×${normalizeBoxes(v).length}`).join(", ")})`);
+  }
   console.log(`cities covered : ${covered.city.size}`);
 
   if (problems.length) {

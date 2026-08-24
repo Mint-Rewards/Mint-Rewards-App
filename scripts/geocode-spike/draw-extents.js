@@ -102,11 +102,18 @@ const HTML = `<!doctype html>
     <div class="warn"><b>Draw from the imagery.</b> Do not trace OSM outlines —
       Nominatim is built from OSM, so tracing it would test OSM against itself and
       report a hit rate near 100% regardless of real quality.</div>
+    <div class="warn" style="background:#eef6fb;border-color:#bcd9ea;color:#234">
+      <b>Several boxes per area is better.</b> Most of these places are not
+      rectangles. One loose box swallows the neighbouring area, and every point
+      that lands there is one the geocoder gets right and the score counts as a
+      miss. Add boxes until the shape is covered; points are split between them
+      by area.</div>
     <label class="tog"><input type="checkbox" id="labels"> Show place labels (Esri, not OSM)</label>
     <input id="search" placeholder="Filter areas…">
     <div id="list"></div>
     <footer>
-      <button id="fit">Fit box</button>
+      <button id="undo">Undo box</button>
+      <button id="fit">Fit</button>
       <button class="primary" id="save">Save</button>
       <span id="count"></span>
     </footer>
@@ -129,15 +136,24 @@ const hint = document.getElementById('hint');
 const setHint = t => { hint.textContent = t; hint.style.display = t ? 'block' : 'none'; };
 
 function boundsOf(b){ return L.latLngBounds([b.minLat,b.minLng],[b.maxLat,b.maxLng]); }
-function draw(key){
-  if(layers[key]){ map.removeLayer(layers[key]); delete layers[key]; }
-  const b = extents[key]; if(!b) return;
-  layers[key] = L.rectangle(boundsOf(b),{
-    color: key===active ? '#ffd54f' : '#449EB2', weight: key===active?3:1.5,
-    fillOpacity: key===active?0.18:0.07
-  }).addTo(map).bindTooltip(key,{sticky:true});
+const boxesOf = key => extents[key] || [];
+function unionOf(key){
+  const bs=boxesOf(key); if(!bs.length) return null;
+  let u=boundsOf(bs[0]); bs.slice(1).forEach(b=>u.extend(boundsOf(b))); return u;
 }
-function redraw(){ Object.keys(layers).forEach(k=>{map.removeLayer(layers[k]);delete layers[k];}); Object.keys(extents).forEach(draw); }
+function draw(key){
+  (layers[key]||[]).forEach(l=>map.removeLayer(l));
+  layers[key] = boxesOf(key).map((b,i)=>
+    L.rectangle(boundsOf(b),{
+      color: key===active ? '#ffd54f' : '#449EB2', weight: key===active?3:1.5,
+      fillOpacity: key===active?0.18:0.07
+    }).addTo(map).bindTooltip(key+' · box '+(i+1),{sticky:true}));
+}
+function redraw(){
+  Object.keys(layers).forEach(k=>(layers[k]||[]).forEach(l=>map.removeLayer(l)));
+  Object.keys(layers).forEach(k=>delete layers[k]);
+  Object.keys(extents).forEach(draw);
+}
 
 // Drag-to-draw. Leaflet's own dragging is suspended while drawing so the map
 // does not pan out from under the rectangle.
@@ -161,12 +177,14 @@ window.addEventListener('mouseup', e=>{
   if(Math.abs(b.getEast()-b.getWest())<0.0008 || Math.abs(b.getNorth()-b.getSouth())<0.0008){
     setHint('Box too small — drag a larger rectangle'); return;
   }
-  extents[active] = {
+  (extents[active] = extents[active] || []).push({
     minLat:+b.getSouth().toFixed(6), maxLat:+b.getNorth().toFixed(6),
     minLng:+b.getWest().toFixed(6),  maxLng:+b.getEast().toFixed(6)
-  };
+  });
   redraw(); render(); save(true);
-  setHint(active + ' saved — pick the next area');
+  const n = boxesOf(active).length;
+  setHint(active + ' — ' + n + (n===1?' box':' boxes') +
+    '. Draw another to cover an irregular shape, or pick the next area.');
 });
 
 function render(){
@@ -184,17 +202,19 @@ function render(){
       const row=document.createElement('div');
       row.className='row'+(k===active?' active':'')+(extents[k]?' done':'');
       const n=document.createElement('span'); n.className='name';
-      n.textContent = k.includes('::') ? k.split('::')[1] : k;
+      const cnt = boxesOf(k).length;
+      n.textContent = (k.includes('::') ? k.split('::')[1] : k) + (cnt>1 ? '  ('+cnt+')' : '');
       row.appendChild(n);
-      if(extents[k]){
+      if(cnt){
         const x=document.createElement('span'); x.className='clr'; x.textContent='×';
-        x.title='Clear this box';
+        x.title='Clear all boxes for this area';
         x.onclick=ev=>{ev.stopPropagation(); delete extents[k]; redraw(); render(); save(true);};
         row.appendChild(x);
       }
       row.onclick=()=>{ active=k; redraw(); render();
-        if(extents[k]) map.fitBounds(boundsOf(extents[k]).pad(0.6));
-        setHint('Drag a box around '+n.textContent); };
+        const u=unionOf(k); if(u) map.fitBounds(u.pad(0.6));
+        setHint(cnt ? 'Drag to ADD another box to this area'
+                    : 'Drag a box around '+n.textContent); };
       list.appendChild(row);
     }
   }
@@ -207,7 +227,14 @@ async function save(quiet){
 }
 document.getElementById('save').onclick=()=>save(false);
 document.getElementById('search').oninput=render;
-document.getElementById('fit').onclick=()=>{ if(active&&extents[active]) map.fitBounds(boundsOf(extents[active]).pad(0.6)); };
+document.getElementById('fit').onclick=()=>{ const u=active&&unionOf(active); if(u) map.fitBounds(u.pad(0.6)); };
+document.getElementById('undo').onclick=()=>{
+  if(!active||!boxesOf(active).length) return;
+  extents[active].pop();
+  if(!extents[active].length) delete extents[active];
+  redraw(); render(); save(true);
+  setHint('Removed last box from '+active);
+};
 
 fetch('/extents').then(r=>r.json()).then(d=>{ extents=d||{}; redraw(); render(); setHint('Select an area to begin'); });
 </script></body></html>`;
@@ -224,7 +251,12 @@ const server = http.createServer((req, res) => {
         const raw = JSON.parse(fs.readFileSync(EXTENTS, "utf8"));
         // Drop the template's _README so it never round-trips into saved data.
         for (const [k, v] of Object.entries(raw)) {
-          if (!k.startsWith("_") && v && typeof v.minLat === "number") body[k] = v;
+          if (k.startsWith("_") || !v) continue;
+          // An area may carry several boxes; a bare object is the old
+          // single-box form and is normalised up so both files keep working.
+          const list = Array.isArray(v) ? v : [v];
+          const boxes = list.filter((b) => b && typeof b.minLat === "number");
+          if (boxes.length) body[k] = boxes;
         }
       } catch { body = {}; }
     }
