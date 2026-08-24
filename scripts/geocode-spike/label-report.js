@@ -71,6 +71,12 @@ function main() {
   L.push("> matches Google, not how often either is right. See the calibration");
   L.push("> section — without it, a high agreement rate could just mean both");
   L.push("> providers share the same error.\n");
+  L.push("> **Read precision before recall.** A single agreement rate hides which");
+  L.push("> kind of failure produced it. Returning nothing is a miss the user");
+  L.push("> simply fills in; returning a different real area writes a wrong value");
+  L.push("> into a profile. One earlier field ordering scored 42% agreement while");
+  L.push("> being actively wrong on 164 of 432 points — the same headline number");
+  L.push("> as a far safer configuration.\n");
 
   // ---- per-area agreement ------------------------------------------------
   const byArea = new Map();
@@ -84,16 +90,29 @@ function main() {
     else a.wrong++;
   }
   L.push("\n## Agreement by area (Google's label as the reference)\n");
-  L.push("| Area | n | agree | candidate returned nothing | candidate said elsewhere | meets 70% |");
-  L.push("|---|---|---|---|---|---|");
+  L.push("| Area | n | agree (recall) | precision | returned nothing | said elsewhere | meets 70% |");
+  L.push("|---|---|---|---|---|---|---|");
   const sorted = [...byArea.entries()].sort((a, b) => b[1].agree / b[1].n - a[1].agree / a[1].n);
   for (const [area, a] of sorted) {
     const meets = a.n >= PROMOTION_MIN_SAMPLES && a.agree / a.n >= PROMOTION.canonicalResolution;
-    L.push(`| ${area} | ${a.n} | ${pct(a.agree, a.n)} | ${pct(a.missed, a.n)} | ${pct(a.wrong, a.n)} | ` +
+    // Precision counts only the points where the candidate committed to an
+    // answer. Recall counts every point. Promotion should need both.
+    const answered = a.agree + a.wrong;
+    L.push(`| ${area} | ${a.n} | ${pct(a.agree, a.n)} | ${pct(a.agree, answered)} | ${pct(a.missed, a.n)} | ${pct(a.wrong, a.n)} | ` +
       `${a.n < PROMOTION_MIN_SAMPLES ? `no (n<${PROMOTION_MIN_SAMPLES})` : meets ? "yes" : "no"} |`);
   }
   const totAgree = usable.filter((r) => r.agree).length;
-  L.push(`\n**Overall agreement: ${pct(totAgree, usable.length)}** (${totAgree}/${usable.length})`);
+  const totWrong = usable.filter((r) => !r.agree && r.candidateResolved).length;
+  const totSilent = usable.length - totAgree - totWrong;
+  L.push(`\n**Precision: ${pct(totAgree, totAgree + totWrong)}** — when the candidate named an area, how often it was the right one (${totAgree}/${totAgree + totWrong}).`);
+  L.push(`**Recall: ${pct(totAgree, usable.length)}** — how often it named the right area at all (${totAgree}/${usable.length}).`);
+  L.push(`Wrong area returned: ${totWrong}. Returned nothing: ${totSilent}.`);
+  L.push("");
+  L.push("> The promotion gate `canonicalResolution` is compared against recall");
+  L.push("> above. That is worth revisiting: recall alone would promote a town");
+  L.push("> where the geocoder answers often and is frequently wrong. A precision");
+  L.push("> floor belongs in the rule; flagged rather than changed here, because");
+  L.push("> the thresholds are a plan decision.");
   L.push(`Areas covered: ${byArea.size}, of which ${[...byArea.values()].filter((a) => a.n >= PROMOTION_MIN_SAMPLES).length} reached n>=${PROMOTION_MIN_SAMPLES}.\n`);
 
   // ---- Google labels that the registry could not absorb ------------------

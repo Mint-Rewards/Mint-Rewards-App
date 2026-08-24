@@ -1929,9 +1929,25 @@ export const AREA_META: Record<string, AreaMeta> = {
     aliases: ["Defence Housing Authority", "Defence"],
   },
   "Karachi::Clifton": { geocodeReliable: false, blockLabel: "Block" },
-  "Karachi::PECHS": { geocodeReliable: false, blockLabel: "Block" },
+  // OSM carries the society's full registered name; PECHS is its acronym.
+  // ("P.E.C.H.S." already folds to a match -- the spelled-out form does not.)
+  "Karachi::PECHS": {
+    geocodeReliable: false,
+    blockLabel: "Block",
+    aliases: [
+      "Pakistan Employee Co-operative Housing Society",
+      "Pakistan Employees Co-operative Housing Society",
+    ],
+  },
   "Karachi::Gulshan-e-Iqbal": { geocodeReliable: false, blockLabel: "Block" },
-  "Karachi::Gulistan-e-Jauhar": { geocodeReliable: false, blockLabel: "Block" },
+  // Google spells it "Johar"; this registry spells it "Jauhar". Neither is
+  // wrong, and no fold or affix rule bridges a vowel swap -- 33 of 1000
+  // sampled Karachi points landed here and were counted as unregistered.
+  "Karachi::Gulistan-e-Jauhar": {
+    geocodeReliable: false,
+    blockLabel: "Block",
+    aliases: ["Gulistan-e-Johar", "Gulistan e Johar"],
+  },
   "Karachi::North Karachi": { geocodeReliable: false, blockLabel: "Sector" },
   "Karachi::North Nazimabad": { geocodeReliable: false, blockLabel: "Block" },
   "Karachi::Nazimabad": { geocodeReliable: false, blockLabel: "Block" },
@@ -1940,7 +1956,15 @@ export const AREA_META: Record<string, AreaMeta> = {
   "Karachi::Korangi": { geocodeReliable: false, blockLabel: "Sector" },
   "Karachi::Landhi": { geocodeReliable: false, blockLabel: "Area" },
   "Karachi::Malir": { geocodeReliable: false, blockLabel: "Area" },
-  "Karachi::Shah Faisal Colony": { geocodeReliable: false, blockLabel: "Area" },
+  // The administrative name is "Shah Faisal Town"; the residential name this
+  // registry uses is "Shah Faisal Colony". Stripping the "Town" suffix gets
+  // to "Shah Faisal", which still does not reach "...Colony" -- 44 of 1000
+  // sampled points turned on this one pairing.
+  "Karachi::Shah Faisal Colony": {
+    geocodeReliable: false,
+    blockLabel: "Area",
+    aliases: ["Shah Faisal Town", "Shah Faisal"],
+  },
   "Karachi::Bahria Town Karachi": { geocodeReliable: false, blockLabel: "Precinct" },
   "Karachi::Askari": { geocodeReliable: false, blockLabel: "Area" },
   "Karachi::Buffer Zone": { geocodeReliable: false, blockLabel: "Sector" },

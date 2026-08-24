@@ -14,28 +14,40 @@
 /**
  * Reads a Nominatim-shaped address object.
  *
- * Field order is measured, not guessed. Over 46 Karachi points with a known
- * area, each candidate field scored:
+ * Field choice is measured, not guessed. Over 413 Karachi points with a known
+ * area, scoring each field on its own:
  *
- *   town          40 present   12 correct
- *   neighbourhood 38 present    6 correct
- *   suburb        28 present    5 correct
- *   city_district 46 present    0 correct   <- always "Karachi District"
+ *   field           present  correct  WRONG
+ *   suburb            187      55       3
+ *   neighbourhood     337      63       7
+ *   town              354     175     161
+ *   city_district     413       0       0
  *
- * `city_district` is excluded outright rather than demoted: it names the
- * district, a rung above anything in this registry, so it can never be right.
- * Leaving it in the chain was actively harmful -- present on every single
- * point, it shadowed every field behind it and capped the whole provider at
- * 5/46. Ordering town -> suburb -> neighbourhood scores 16/46, close to the
- * 17/46 any-field ceiling.
+ * `town` is excluded deliberately, and it is the interesting one. It has by
+ * far the best raw hit count -- and it is wrong almost as often as it is
+ * right, because OSM's `town` is the ADMINISTRATIVE town. DHA, Clifton and
+ * Old Clifton all sit inside "Saddar Town", so reading `town` resolves a DHA
+ * pin to Saddar: a different, real, wrong area. Including `town` anywhere in
+ * the chain, in any position, under either first-present or first-resolving
+ * semantics, pins precision at 58%. Dropping it gives 91%.
  *
- * That order was chosen on these same 46 points, so treat 16/46 as fitted.
- * The full sweep is the out-of-sample measurement.
+ *   suburb -> neighbourhood          91% precision, 20% recall
+ *   suburb -> neighbourhood -> town  58% precision, 54% recall
+ *
+ * Precision is the one that matters. The geocoder is a hint the user confirms,
+ * a miss is an honest miss, and this registry's invariant is that a raw
+ * geocoder string is never written into `town`. A silently wrong area costs
+ * more than a blank one.
+ *
+ * `city_district` is excluded outright: present on all 413 points, correct on
+ * none, because it names the district -- a rung above anything in this
+ * registry. Left in the chain it shadowed every field behind it.
  */
 function parseNominatimAddress(body) {
   const a = body?.address ?? {};
   return {
-    areaRaw: a.town ?? a.suburb ?? a.neighbourhood ?? null,
+    areaRaw: a.suburb ?? a.neighbourhood ?? null,
+    // `town` belongs here, at the city rung, where it is not misleading.
     cityRaw: a.city ?? a.town ?? a.municipality ?? null,
     blockHint: a.neighbourhood ?? a.residential ?? null,
     road: a.road ?? null,
