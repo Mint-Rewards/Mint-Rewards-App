@@ -52,8 +52,9 @@ thousands of requests.
 ## Running it
 
 ```bash
-# 1. Draw extents. Copy the template and REPLACE every box.
-cp extents.example.json extents.json
+# 1. Draw extents on satellite imagery. Saves straight to extents.json.
+node scripts/geocode-spike/draw-extents.js     # -> http://localhost:8081
+#    (or hand-write extents.json from extents.example.json)
 
 # 2. Generate sample points.
 node scripts/geocode-spike/generate-points.js
@@ -71,6 +72,20 @@ node scripts/geocode-spike/report.js
 
 Outputs land in `out/` (gitignored): `report.md`, `unmatched.log`,
 `centroids.json`.
+
+## Drawing the boxes
+
+`draw-extents.js` serves a local page on :8081: pick an area from the sidebar,
+drag a rectangle over it, and it writes `extents.json` immediately. Progress is
+shown as `n / 244 drawn`, boxes can be re-drawn or cleared, and reopening the
+page restores what is already saved.
+
+The basemap is **Esri satellite imagery, deliberately not OSM tiles** — see the
+next section for why that distinction decides whether the spike means anything.
+The optional labels overlay is also Esri, so using it for orientation is safe.
+
+It runs as a small server rather than a `file://` page because a `file://` page
+can neither write `extents.json` nor fetch its own sibling JSON.
 
 ## Why extents are hand-drawn
 
