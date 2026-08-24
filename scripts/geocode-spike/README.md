@@ -11,60 +11,66 @@ why it runs first and may settle the branch on its own: if canonical resolution
 is low everywhere, correctness is academic — the auto-fill path does not exist
 regardless of how accurate the geocoder is.
 
-## Prerequisites
+## Provider
 
-A **local Nominatim**, via `nominatim/docker-compose.yml` in this directory:
+Default is **LocationIQ** — hosted Nominatim, so the response shape and the
+parsing are identical to a self-hosted instance. Free tier is ~2 req/s and
+5,000/day.
+
+The whole national sweep is about **3,544 points** (Karachi 696, Lahore 540,
+Islamabad 1,180, the seven mid cities 648, the 48 city-only entries 480), so it
+fits inside one free day and roughly 30 minutes of wall time. Karachi alone is
+696.
 
 ```bash
-docker compose -f scripts/geocode-spike/nominatim/docker-compose.yml up -d
-docker compose -f scripts/geocode-spike/nominatim/docker-compose.yml logs -f
+export LOCATIONIQ_API_KEY=pk.xxxxx
 ```
 
-Then sweep against `http://localhost:8080`.
+Never put this in `.env`. That file sits beside `EXPO_PUBLIC_*` variables, and
+anything with that prefix is inlined into the shipped app bundle — a geocoding
+key there is scrapeable and billable by anyone with the app. The scripts refuse
+to run if a key appears under an `EXPO_PUBLIC_`-prefixed name.
 
-The sweep is a **batch job, not a service** — it runs once, produces a report,
-and is thrown away. That is why this runs locally rather than on a persistent
-host. P1.1's live reverse-geocode proxy is a separate hosting decision and
-should not inherit anything from this container.
+### Google baseline
 
-The import pulls the 148 MB Geofabrik Pakistan extract and takes roughly
-20-60 minutes. It runs `NOMINATIM_REVERSE_ONLY=true` (the sweep only ever calls
-`/reverse`, so the forward-search index is dead weight) with
-`IMPORT_STYLE=address`, which keeps places, admin boundaries and address
-objects while dropping POIs.
+`--baseline` runs a capped second provider over the same points (default 200) so
+the report can say what Google buys over LocationIQ. It is a *comparison*, not a
+candidate for the whole run.
 
-**The port opens before the data is ready.** A query answering with nothing
-early in the import means the import is still running, not that coverage is
-bad. Wait for the container to report the database as ready before drawing any
-conclusion from a low hit rate.
+**Google is awkward as the production provider**, and the constraints do not
+show up during the spike:
 
-The image tag is pinned to a dated build on purpose. Coverage numbers from two
-different Nominatim versions are not the same measurement, so a re-import months
-from now should use the same tag to stay comparable.
+- Its terms permit caching for performance only, with a 30-day limit — P1.1
+  wants an indefinite cache.
+- Building a persistent lookup from its output is against its terms, which is
+  exactly what the P3.5 gazetteer is. Self-hosted Nominatim is ODbL, which
+  permits that with attribution and share-alike.
+- Its terms require results be used with a Google map. `MapPicker` sets no
+  `provider`, and only an Android Maps key exists, so **iOS renders Apple Maps**.
 
-Tear down with `docker compose ... down -v` — `-v` also drops the database
-volume, which is several GB.
+So use the baseline to size the gap and make the call on evidence — not to
+quietly become the provider.
 
-Do **not** point the sweep at `nominatim.openstreetmap.org`: the public instance
-caps at 1 req/sec and its usage policy prohibits bulk work. A full sweep is
-thousands of requests.
+### Self-hosted Nominatim
+
+Still supported: `--provider=nominatim --base=http://localhost:8080`, with a
+compose file in `nominatim/`. Read the disk warning in it first.
 
 ## Running it
 
 ```bash
 # 1. Draw extents on satellite imagery. Saves straight to extents.json.
 node scripts/geocode-spike/draw-extents.js     # -> http://localhost:8081
-#    (or hand-write extents.json from extents.example.json)
 
 # 2. Generate sample points.
 node scripts/geocode-spike/generate-points.js
 
-# 3. Sweep. Resumable — safe to interrupt and rerun.
-node scripts/geocode-spike/sweep.js --nominatim=http://HOST:8080
+# 3. Sweep. Resumable — safe to interrupt, and it resumes after a quota wall.
+LOCATIONIQ_API_KEY=pk.xxx node scripts/geocode-spike/sweep.js
 
-#    Optional capped Google baseline (the only metered spend in the plan):
-#    GOOGLE_GEOCODING_API_KEY=... node scripts/geocode-spike/sweep.js \
-#      --nominatim=http://HOST:8080 --google --google-cap=200
+#    With the capped Google comparison:
+LOCATIONIQ_API_KEY=pk.xxx GOOGLE_GEOCODING_API_KEY=... \
+  node scripts/geocode-spike/sweep.js --baseline
 
 # 4. Score it.
 node scripts/geocode-spike/report.js
@@ -118,6 +124,19 @@ reliable, because real users live at its edges.
 **The scripts never write `geocodeReliable`.** Promotion is a reviewed decision
 that also depends on P0.1b, and a script that edits the registry would make an
 unreviewed promotion a one-command mistake.
+
+### Errors are not misses
+
+A rate limit, a timeout or a 5xx is **not** the geocoder saying "nothing here".
+The sweep records them in a separate field and the report scores against answers
+actually received, so an area whose points all failed reads as *unmeasured*
+(`resolves: —`, `no (answered 0<20)`) rather than as 0% coverage.
+
+This matters because the alternative is a silent false negative: an outage or a
+quota wall would look like poor coverage and could kill the auto-fill branch on
+an infrastructure artifact. For the same reason a 429 stops the run rather than
+being written as a data point, and 15 consecutive failures trip a circuit
+breaker instead of grinding through the retry ladder for hours.
 
 ### Two numbers that are not what they look like
 

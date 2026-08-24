@@ -41,7 +41,7 @@ function main() {
     const key = `${r.city}::${r.town}`;
     if (!byTown.has(key)) {
       byTown.set(key, { n: 0, gotLocality: 0, resolved: 0, unmatched: 0,
-                        cityOnly: 0, nothing: 0, block: 0, road: 0, house: 0,
+                        cityOnly: 0, nothing: 0, errored: 0, block: 0, road: 0, house: 0,
                         boundaryN: 0, boundaryResolved: 0, lats: [], lngs: [] });
     }
     const t = byTown.get(key);
@@ -50,7 +50,11 @@ function main() {
     if (r.position === "boundary") t.boundaryN++;
 
     const n = r.nominatim;
-    if (!n || (!n.areaRaw && !n.cityRaw)) { t.nothing++; }
+    // A transport/server failure is NOT the geocoder saying "nothing here".
+    // Scoring the two together would let an outage or a rate limit look like
+    // poor coverage and push a good area below the promotion threshold.
+    if (r.nominatimError) { t.errored++; }
+    else if (!n || (!n.areaRaw && !n.cityRaw)) { t.nothing++; }
     else if (!n.areaRaw) { t.cityOnly++; }
     else {
       t.gotLocality++;
@@ -145,21 +149,40 @@ function main() {
 
   // ---- write report ------------------------------------------------------
   const L = [];
+  const providers = [...new Set(rows.map((r) => r.provider ?? "unknown"))];
+  const stamps = rows.map((r) => r.at).filter(Boolean).sort();
+  const errored = rows.filter((r) => r.nominatimError).length;
+
   L.push("# P0.1a Coverage Sweep\n");
-  L.push(`Points: ${rows.length} (town-level ${townRows.length}, city-level ${cityRows.length})\n`);
+  L.push(`Provider: **${providers.join(", ")}**`);
+  if (stamps.length) L.push(`Run: ${stamps[0].slice(0, 16)}Z to ${stamps[stamps.length - 1].slice(0, 16)}Z`);
+  L.push(`Points: ${rows.length} (town-level ${townRows.length}, city-level ${cityRows.length})`);
+  L.push(`Transport/server errors: ${errored} — excluded from scoring, not counted as misses\n`);
+  if (providers.some((p) => p === "locationiq" || p === "google")) {
+    L.push("> **Not reproducible.** This ran against a hosted provider whose data");
+    L.push("> moves independently of us, so a later re-run is a different");
+    L.push("> measurement. The run window above is the only version marker there is.\n");
+  }
 
   L.push("\n## Per-town canonical resolution\n");
-  L.push("| Area | n | resolves to canonical | unmatched | city only | nothing | block | road | house# | boundary ok | meets 1a floor |");
-  L.push("|---|---|---|---|---|---|---|---|---|---|---|");
+  L.push("| Area | n | errors | resolves to canonical | unmatched | city only | nothing | block | road | house# | boundary ok | meets 1a floor |");
+  L.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
   const sorted = [...byTown.entries()].sort((a, b) => ratio(b[1].resolved, b[1].n) - ratio(a[1].resolved, a[1].n));
   for (const [key, t] of sorted) {
+    // Scored against answers actually received. An area whose points mostly
+    // errored has not been measured, however its percentage reads.
+    const answered = t.n - t.errored;
     const meets =
-      t.n >= PROMOTION_MIN_SAMPLES && ratio(t.resolved, t.n) >= PROMOTION.canonicalResolution;
-    const why = t.n < PROMOTION_MIN_SAMPLES ? `no (n<${PROMOTION_MIN_SAMPLES})` : meets ? "yes" : "no";
+      answered >= PROMOTION_MIN_SAMPLES &&
+      ratio(t.resolved, answered) >= PROMOTION.canonicalResolution;
+    const why =
+      answered < PROMOTION_MIN_SAMPLES
+        ? `no (answered ${answered}<${PROMOTION_MIN_SAMPLES})`
+        : meets ? "yes" : "no";
     L.push(
-      `| ${key} | ${t.n} | ${pct(t.resolved, t.n)} | ${pct(t.unmatched, t.n)} | ` +
-      `${pct(t.cityOnly, t.n)} | ${pct(t.nothing, t.n)} | ${pct(t.block, t.n)} | ` +
-      `${pct(t.road, t.n)} | ${pct(t.house, t.n)} | ${pct(t.boundaryResolved, t.boundaryN)} | ${why} |`,
+      `| ${key} | ${t.n} | ${t.errored} | ${pct(t.resolved, answered)} | ${pct(t.unmatched, answered)} | ` +
+      `${pct(t.cityOnly, answered)} | ${pct(t.nothing, answered)} | ${pct(t.block, answered)} | ` +
+      `${pct(t.road, answered)} | ${pct(t.house, answered)} | ${pct(t.boundaryResolved, t.boundaryN)} | ${why} |`,
     );
   }
 
@@ -182,16 +205,16 @@ function main() {
   L.push(`\n**Overall city resolution: ${pct(cityOk, cityTot)}** (${cityOk}/${cityTot})\n`);
 
   if (bothQueried.length) {
-    L.push("\n## Nominatim vs Google (same points)\n");
+    L.push(`\n## ${providers.join("/")} vs Google (same points)\n`);
     L.push(`Compared on ${bothQueried.length} point(s).\n`);
     L.push("| Provider | resolves to canonical |");
     L.push("|---|---|");
-    L.push(`| Nominatim | ${pct(nomHit, bothQueried.length)} |`);
+    L.push(`| ${providers.join("/")} | ${pct(nomHit, bothQueried.length)} |`);
     L.push(`| Google | ${pct(gooHit, bothQueried.length)} |`);
     L.push("\nIf Google substantially outperforms, decide whether a narrow paid");
     L.push("fallback (tier-A areas, cache-miss only) is worth reintroducing.\n");
   } else {
-    L.push("\n## Nominatim vs Google\n\nNot run — pass `--google` to the sweep.\n");
+    L.push("\n## Provider comparison\n\nNot run — pass `--baseline` to the sweep.\n");
   }
 
   const overallResolved = townRows.filter((r) => r.nominatimResolved).length;
