@@ -266,7 +266,7 @@ const EditProfile = () => {
     else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = "Please enter a valid email";
     if (!formData.phone?.trim())     newErrors.phone = "Phone number is required";
     else if (!isPhone(formData.phone))
-      newErrors.phone = "Please enter a valid phone number (10-15 digits)";
+      newErrors.phone = "Please enter a valid phone number in the format 03XXXXXXXXX";
     if (!formData.province?.trim())  newErrors.province = "Province is required";
     if (!formData.city?.trim())      newErrors.city = "City is required";
     // Either a canonical town or free-text "Other" satisfies the requirement.
@@ -379,7 +379,7 @@ const EditProfile = () => {
         autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
         readOnly={field === "email"}
         multiline={multiline}
-        maxLength={field === "phone" ? 16 : undefined}
+        maxLength={field === "phone" ? 11 : undefined}
         textAlignVertical={multiline ? "top" : "center"}
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
