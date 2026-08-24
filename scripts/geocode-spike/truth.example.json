@@ -2,23 +2,44 @@
   {
     "_comment": [
       "Genuinely known points — the only real ground truth in this exercise.",
-      "Copy to truth.json. That file is GITIGNORED and must stay that way: these",
-      "are people's home rooftops, which is personal data and does not belong in",
-      "a repository.",
+      "Copy this file to truth.json and fill it in. truth.json is GITIGNORED and",
+      "must stay that way: these are people's home rooftops, which is personal",
+      "data and does not belong in a repository.",
       "",
-      "Sources, cheapest first:",
+      "FORMAT. One object per point. Four required fields, all flat:",
+      "  lat   number, decimal degrees, north positive. 5+ decimal places.",
+      "  lng   number, decimal degrees, east positive. NOT nested, NOT a string.",
+      "  city  must match a city in PAKISTAN_LOCATIONS exactly, e.g. \"Karachi\".",
+      "  area  the area YOU know the point to be in. It must resolve against the",
+      "        registry — calibrate.js validates every one of these BEFORE",
+      "        spending a single API call and tells you which ones failed.",
+      "        Spelling is forgiving: aliases and the Town/Sector affix rules",
+      "        apply, so \"Landhi Town\" and \"Landhi\" both work.",
+      "",
+      "Anything without a numeric lat is skipped, which is why this comment",
+      "object is harmless. Add \"note\" or any other field freely; it is ignored.",
+      "",
+      "HOW TO PICK POINTS, cheapest first:",
       "  1. Team members' own addresses — a pin on their own roof plus the area",
       "     name. Twenty of these beat two hundred unlabelled records.",
       "  2. Unambiguous landmarks — hospitals, universities, markets whose area",
       "     is not in dispute.",
       "  3. Points deliberately NEAR area boundaries. That is where geocoders",
       "     fail and where the containment threshold gets tuned; sampling only",
-      "     comfortable interiors over-reports accuracy.",
+      "     comfortable interiors over-reports accuracy. Aim for about a third.",
       "",
-      "The coordinates must appear in the sweep for calibration to score them —",
-      "run label-sweep with a bbox that contains them."
+      "These points do NOT need to appear in any sweep. calibrate.js geocodes",
+      "them directly:",
+      "",
+      "  set -a; source .env.geocode; set +a",
+      "  node scripts/geocode-spike/calibrate.js",
+      "",
+      "Cost is one Google and one LocationIQ call per point — 25 points is a few",
+      "cents. Getting the coordinate right matters far more than getting many."
     ]
   },
-  { "lat": 24.8607, "lng": 67.0011, "city": "Karachi", "area": "Saddar" },
-  { "lat": 24.8138, "lng": 67.0300, "city": "Karachi", "area": "Clifton" }
+
+  { "lat": 24.86070, "lng": 67.00110, "city": "Karachi", "area": "Saddar" },
+  { "lat": 24.81380, "lng": 67.03000, "city": "Karachi", "area": "Clifton",
+    "note": "optional; ignored by the scorer. Use it to record boundary points." }
 ]
