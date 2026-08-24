@@ -2,7 +2,7 @@ import { logAuthEvent, logError, logEvent } from "@/utils/logger";
 import { authenticatedFetch } from "@/utils/api";
 import { API_BASE_URL } from "@/utils/constants";
 import { setUnauthorizedHandler } from "@/utils/session";
-import { setSentryUser } from "@/utils/sentry";
+import { addBreadcrumb, captureWarning, setSentryUser } from "@/utils/sentry";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 
@@ -287,6 +287,25 @@ interface ProfileSlice {
     Status: string;
     Message?: string;
     ErrorMessage?: string;
+    /**
+     * Per-address counts from the backend (Mint-Rewards-Backend #144). The
+     * route used to answer a fixed success string, so the UI reported the
+     * SUBMITTED count as the sent count — it claimed delivery to addresses
+     * that were silently skipped or that failed to send.
+     *
+     * `skipped` is deliberately one bucket with no reasons attached: the
+     * endpoint must not answer questions about an address it was handed, so
+     * already-referred, already-registered, and failed-to-send are
+     * indistinguishable here by design. Do not ask the backend to break them
+     * out.
+     *
+     * Optional because a client can be newer than the deployed backend; the
+     * UI falls back to a count-free message rather than rendering
+     * "undefined".
+     */
+    requested?: number;
+    sent?: number;
+    skipped?: number;
   }>;
 }
 
@@ -921,6 +940,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   sendReferral: async (referralEmails) => {
     set({ isLoading: true, error: null });
+    // Only the batch size — never the addresses. Referral emails belong to
+    // people who have not agreed to anything with us, so they must not be
+    // copied into a third-party service by a breadcrumb.
+    addBreadcrumb("referral", "sendReferral started", {
+      referralCount: referralEmails.length,
+    });
     try {
       const token =
         get().token || get().user?.token || (await SecureStore.getItemAsync("userToken"));
@@ -936,11 +961,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       if (response.ok) {
         // ✅ Log referral sent
+        //
+        // referralCount is what was submitted; sent/skipped are what actually
+        // happened. Logging only the first made a batch where every send
+        // failed indistinguishable from one where every send worked.
         await logEvent("REFERRAL_SENT", {
           userId: get().user?.mintId,
           userEmail: get().user?.email,
-          extra: { referralCount: referralEmails.length },
+          extra: {
+            referralCount: referralEmails.length,
+            sent: data?.sent,
+            skipped: data?.skipped,
+          },
         });
+
+        // A 200 where nothing was sent is the failure mode this endpoint is
+        // most likely to hide: the UI shows a polite "nothing to send" and no
+        // error is ever raised. Counting it as a warning is the only way a
+        // backend regression that skips every address becomes visible.
+        if (typeof data?.sent === "number" && data.sent === 0) {
+          captureWarning("referral batch sent nothing", {
+            referralCount: referralEmails.length,
+            skipped: data?.skipped,
+          });
+        }
 
         set({ isLoading: false });
         return {
@@ -951,6 +995,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
       } else {
         const errorMessage =
           data.error || "Failed to send referral. Please try again.";
+        // A rejected referral is a warning, not an exception: 4xx responses
+        // are routine (rate limits, malformed addresses) and would otherwise
+        // drown the issue stream, but a spike in them is exactly what needs
+        // to be noticeable.
+        captureWarning("referral request rejected", {
+          status: response.status,
+          errorMessage,
+          referralCount: referralEmails.length,
+        });
         set({ error: errorMessage, isLoading: false });
         return { Status: "Error", ErrorMessage: errorMessage };
       }

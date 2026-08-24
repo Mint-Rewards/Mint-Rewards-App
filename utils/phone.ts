@@ -15,6 +15,6 @@ export const sanitizePhone = (phone: string): string => {
   return (phone || "").trim().startsWith("+") ? `+${digits}` : digits;
 };
 
-/** True when the number has 10-15 digits once sanitized, matching E.164 limits. */
+/** True when the number matches the local Pakistani format: 03XXXXXXXXX (11 digits, starts with 03). */
 export const isPhone = (phone: string): boolean =>
-  /^\d{10,15}$/.test(sanitizePhone(phone).replace(/^\+/, ""));
+  /^03\d{9}$/.test(sanitizePhone(phone).replace(/^\+/, ""));

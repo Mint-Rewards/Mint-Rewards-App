@@ -15,9 +15,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   FlatList,
+  findNodeHandle,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -26,6 +27,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from "react-native";
 import { useAppStore, UserProfile } from "../store/store";
@@ -69,6 +71,8 @@ const EditProfile = () => {
   });
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const scrollViewRef = useRef<ScrollView>(null);
+  const fieldRefs = useRef<{ [key: string]: View | null }>({});
   const [mapVisible, setMapVisible] = useState(false);
   const [townIsCustom, setTownIsCustom] = useState(false);
   const [subAreaIsOther, setSubAreaIsOther] = useState(false);
@@ -259,6 +263,28 @@ const EditProfile = () => {
   };
 
   // ── Validation ─────────────────────────────────────────────────────────────
+  // Visual top-to-bottom order, used to jump to the first invalid field.
+  const FIELD_ORDER = [
+    "userName", "email", "phone", "province", "city", "town", "subArea", "address",
+  ];
+
+  /** Scrolls the first field with an error into view. */
+  const scrollToField = (field: string) => {
+    const node = fieldRefs.current[field];
+    const scrollView = scrollViewRef.current;
+    const nodeHandle = findNodeHandle(node);
+    const scrollHandle = findNodeHandle(scrollView);
+    if (!nodeHandle || !scrollHandle) return;
+    UIManager.measureLayout(
+      nodeHandle,
+      scrollHandle,
+      () => {},
+      (_x: number, y: number) => {
+        scrollView?.scrollTo({ y: Math.max(y - 20, 0), animated: true });
+      },
+    );
+  };
+
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
     if (!formData.userName?.trim())  newErrors.userName = "Username is required";
@@ -266,7 +292,7 @@ const EditProfile = () => {
     else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = "Please enter a valid email";
     if (!formData.phone?.trim())     newErrors.phone = "Phone number is required";
     else if (!isPhone(formData.phone))
-      newErrors.phone = "Please enter a valid phone number (10-15 digits)";
+      newErrors.phone = "Please enter a valid phone number in the format 03XXXXXXXXX";
     if (!formData.province?.trim())  newErrors.province = "Province is required";
     if (!formData.city?.trim())      newErrors.city = "City is required";
     // Either a canonical town or free-text "Other" satisfies the requirement.
@@ -283,6 +309,10 @@ const EditProfile = () => {
     )
       newErrors.subArea = "Sub-area is required";
     setErrors(newErrors);
+
+    const firstInvalidField = FIELD_ORDER.find((field) => newErrors[field]);
+    if (firstInvalidField) scrollToField(firstInvalidField);
+
     return Object.keys(newErrors).length === 0;
   };
 
@@ -360,7 +390,10 @@ const EditProfile = () => {
     multiline = false,
     required = false,
   ) => (
-    <View style={styles.inputContainer}>
+    <View
+      style={styles.inputContainer}
+      ref={(el) => { fieldRefs.current[field] = el; }}
+    >
       <Text style={styles.label}>
         {label}{required && <Text style={styles.asterisk}> *</Text>}
       </Text>
@@ -379,7 +412,7 @@ const EditProfile = () => {
         autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
         readOnly={field === "email"}
         multiline={multiline}
-        maxLength={field === "phone" ? 16 : undefined}
+        maxLength={field === "phone" ? 11 : undefined}
         textAlignVertical={multiline ? "top" : "center"}
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
@@ -394,7 +427,10 @@ const EditProfile = () => {
     required = false,
     disabled = false,
   ) => (
-    <View style={styles.inputContainer}>
+    <View
+      style={styles.inputContainer}
+      ref={(el) => { fieldRefs.current[field] = el; }}
+    >
       <Text style={styles.label}>
         {label}{required && <Text style={styles.asterisk}> *</Text>}
       </Text>
@@ -447,7 +483,10 @@ const EditProfile = () => {
 
   // Town field: dropdown or text input depending on townIsCustom
   const renderTownField = () => (
-    <View style={styles.inputContainer}>
+    <View
+      style={styles.inputContainer}
+      ref={(el) => { fieldRefs.current.town = el; }}
+    >
       <Text style={styles.label}>
         Town<Text style={styles.asterisk}> *</Text>
       </Text>
@@ -528,7 +567,10 @@ const EditProfile = () => {
       formData.subArea || (subAreaIsOther ? OTHER_OPTION : "Select sub-area");
 
     return (
-      <View style={styles.inputContainer}>
+      <View
+        style={styles.inputContainer}
+        ref={(el) => { fieldRefs.current.subArea = el; }}
+      >
         <Text style={styles.label}>
           Sub-area<Text style={styles.asterisk}> *</Text>
         </Text>
@@ -588,6 +630,7 @@ const EditProfile = () => {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
+          ref={scrollViewRef}
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}

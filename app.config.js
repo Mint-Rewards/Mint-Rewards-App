@@ -197,7 +197,7 @@ module.exports = () => ({
     // Deliberately identical across variants: both builds live under one EAS
     // project.
     slug: "mint-rewards",
-    version: "2.1.8",
+    version: "2.1.9",
     orientation: "portrait",
     icon: isDev
       ? "./assets/images/icon-dev.png"
@@ -236,7 +236,6 @@ module.exports = () => ({
         NSLocationAlwaysAndWhenInUseUsageDescription:
           "Mint Rewards uses your location to let you pin your exact address for waste collection pickups.",
       },
-      buildNumber: "25",
       googleServicesFile: firebaseConfigFile(
         "./firebase/GoogleService-Info.dev.plist",
         "./firebase/GoogleService-Info.plist"

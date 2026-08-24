@@ -25,6 +25,7 @@
       }
     },
     "preview": {
+      "autoIncrement": true,
       "distribution": "internal",
       "environment": "preview",
       "channel": "preview",

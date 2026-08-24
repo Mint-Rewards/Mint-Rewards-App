@@ -17,14 +17,17 @@ describe("sanitizePhone", () => {
 });
 
 describe("isPhone", () => {
-  it("accepts plain and international numbers", () => {
+  it("accepts numbers in the 03XXXXXXXXX format", () => {
     expect(isPhone("03001234567")).toBe(true);
-    expect(isPhone("+923001234567")).toBe(true);
+    expect(isPhone("0300 123 4567")).toBe(true);
   });
 
-  it("rejects too short, too long and non-numeric input", () => {
+  it("rejects numbers not starting with 03, wrong length, or non-numeric input", () => {
+    expect(isPhone("13001234567")).toBe(false);
+    expect(isPhone("3001234567")).toBe(false);
+    expect(isPhone("030012345678")).toBe(false);
+    expect(isPhone("+923001234567")).toBe(false);
     expect(isPhone("123456789")).toBe(false);
-    expect(isPhone("1234567890123456")).toBe(false);
     expect(isPhone("abcdefghijk")).toBe(false);
     expect(isPhone("")).toBe(false);
   });
