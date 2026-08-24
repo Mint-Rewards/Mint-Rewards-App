@@ -1,0 +1,65 @@
+# Local Nominatim for the P0.1a sweep.
+#
+# This is a BATCH tool, not a service. It exists to answer one question about
+# geocoder coverage and is then thrown away — nothing here is intended to run
+# in production, and P1.1's live reverse-geocode proxy is a separate decision.
+#
+#   docker compose up -d        # first run imports (long — see README)
+#   docker compose logs -f      # watch the import
+#   docker compose down -v      # delete everything including the database
+#
+# Import time for the 148 MB Pakistan extract is roughly 20-60 minutes on this
+# hardware. The container reports "database ready" when it is actually usable;
+# the port opens well before that, so a query returning nothing early on means
+# the import is still running, not that coverage is bad.
+
+services:
+  nominatim:
+    # Pinned to a dated tag, not `5.3`, so a re-import months from now produces
+    # a comparable result. Coverage numbers from two different Nominatim
+    # versions are not the same measurement.
+    image: mediagis/nominatim:5.3.2-2026-06-23T09-03
+    container_name: mint-nominatim-spike
+    ports:
+      - "8080:8080"
+    environment:
+      PBF_URL: https://download.geofabrik.de/asia/pakistan-latest.osm.pbf
+
+      # The sweep only ever calls /reverse. Skipping the forward-search index
+      # cuts both import time and disk substantially, and nothing downstream
+      # does a forward lookup.
+      NOMINATIM_REVERSE_ONLY: "true"
+
+      # `address` keeps places, admin boundaries and address objects while
+      # dropping POIs and extratags. The sweep reads suburb / city_district /
+      # neighbourhood / city, all of which this style retains.
+      IMPORT_STYLE: address
+
+      # No replication. A spike measures a fixed snapshot; a database that
+      # updates underneath the run would make two points incomparable.
+      REPLICATION_URL: ""
+
+      # Local-only container on a loopback port. Not a secret, and deliberately
+      # not read from .env — nothing here should look like production config.
+      NOMINATIM_PASSWORD: spike_local_only
+
+    # Import is the memory-hungry phase. Docker Desktop currently allocates
+    # 7.75 GiB to the whole VM, so this stays modest on purpose — osm2pgsql
+    # being OOM-killed midway leaves a half-imported database that looks
+    # importable and answers wrongly.
+    shm_size: 1gb
+
+    volumes:
+      - nominatim-data:/var/lib/postgresql/16/main
+      - nominatim-flatnode:/nominatim/flatnode
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf 'http://localhost:8080/reverse?format=jsonv2&lat=24.86&lon=67.00' > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90m
+
+volumes:
+  nominatim-data:
+  nominatim-flatnode:

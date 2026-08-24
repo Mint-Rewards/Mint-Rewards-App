@@ -13,9 +13,41 @@ regardless of how accurate the geocoder is.
 
 ## Prerequisites
 
-A **self-hosted Nominatim** (PC-3). Do not point this at
-`nominatim.openstreetmap.org`: the public instance caps at 1 req/sec and its
-usage policy prohibits bulk work. A full sweep is thousands of requests.
+A **local Nominatim**, via `nominatim/docker-compose.yml` in this directory:
+
+```bash
+docker compose -f scripts/geocode-spike/nominatim/docker-compose.yml up -d
+docker compose -f scripts/geocode-spike/nominatim/docker-compose.yml logs -f
+```
+
+Then sweep against `http://localhost:8080`.
+
+The sweep is a **batch job, not a service** — it runs once, produces a report,
+and is thrown away. That is why this runs locally rather than on a persistent
+host. P1.1's live reverse-geocode proxy is a separate hosting decision and
+should not inherit anything from this container.
+
+The import pulls the 148 MB Geofabrik Pakistan extract and takes roughly
+20-60 minutes. It runs `NOMINATIM_REVERSE_ONLY=true` (the sweep only ever calls
+`/reverse`, so the forward-search index is dead weight) with
+`IMPORT_STYLE=address`, which keeps places, admin boundaries and address
+objects while dropping POIs.
+
+**The port opens before the data is ready.** A query answering with nothing
+early in the import means the import is still running, not that coverage is
+bad. Wait for the container to report the database as ready before drawing any
+conclusion from a low hit rate.
+
+The image tag is pinned to a dated build on purpose. Coverage numbers from two
+different Nominatim versions are not the same measurement, so a re-import months
+from now should use the same tag to stay comparable.
+
+Tear down with `docker compose ... down -v` — `-v` also drops the database
+volume, which is several GB.
+
+Do **not** point the sweep at `nominatim.openstreetmap.org`: the public instance
+caps at 1 req/sec and its usage policy prohibits bulk work. A full sweep is
+thousands of requests.
 
 ## Running it
 
