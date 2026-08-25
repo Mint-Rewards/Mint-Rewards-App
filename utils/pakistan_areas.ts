@@ -554,6 +554,12 @@ export const DEPRECATED_TOWNS: Record<string, readonly string[]> = {
     "Memon Nagar",          // -> Scheme 33 (Gulzar-e-Hijri)
     "Gulshan-e-Shamim",     // -> Federal B. Area (Gulberg Town)
     "Darussalam Society",   // -> Korangi
+    // Owner-confirmed neighbourhoods of Jamshed Town. None had sub-areas of its
+    // own, so the move is lossless — the registry is two levels deep and a town
+    // with children cannot become a child without dropping them.
+    "Bahadurabad",          // -> Jamshed Town
+    "Garden East",          // -> Jamshed Town
+    "Jamshed Quarters",     // -> Jamshed Town
     // Sikandarabad is in Keamari, across the harbour from Clifton, and the
     // geocoder returned it for Clifton pins ~8 km away. Retired rather than
     // re-parented: Keamari is not a registry town, so there is nowhere to move

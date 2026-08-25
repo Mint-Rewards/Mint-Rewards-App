@@ -1008,6 +1008,11 @@ export const PAKISTAN_LOCATIONS: LocationData = {
       "Barmi Colony",
       "Alflah Housing Society",
     ],
+    "Karachi::Jamshed Town": [
+      "Bahadurabad",
+      "Garden East",
+      "Jamshed Quarters",
+    ],
     "Karachi::Malir": [
       "Malir Town",
       "Malir Cantt",

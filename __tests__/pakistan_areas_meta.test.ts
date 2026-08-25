@@ -265,8 +265,8 @@ describe("PAKISTAN_LOCATIONS is frozen", () => {
       cities: 58,
       citiesWithTowns: 10,
       towns: 263,   // 196 + 56 from the P0.6 Karachi expansion
-      subAreaKeys: 150,
-      subAreas: 1103,   // +5 re-parented: Data Nagar, Shanti Nagar, Memon Nagar, Gulshan-e-Shamim, Darussalam Society
+      subAreaKeys: 151,   // +1: Jamshed Town gains a sub-area list
+      subAreas: 1106,   // +5 re-parented: Data Nagar, Shanti Nagar, Memon Nagar, Gulshan-e-Shamim, Darussalam Society
     });
   });
 
@@ -410,7 +410,6 @@ describe("P0.6 registry expansion", () => {
     for (const town of [
       "Ibrahim Hyderi",
       "Machar Colony",
-      "Bahadurabad",
       "Drigh Colony",
       "Metroville",
       "Bath Island",
@@ -621,12 +620,17 @@ describe("one address, one representation", () => {
 });
 
 describe("Garden is a container that is not a place", () => {
-  it("offers the three real localities instead", () => {
+  it("offers the real localities instead", () => {
     const picker = getSelectableTownsForCity("Karachi");
-    for (const t of ["Garden East", "Garden West", "Soldier Bazaar"]) {
+    for (const t of ["Garden West", "Soldier Bazaar"]) {
       expect([t, picker.includes(t)]).toEqual([t, true]);
     }
     expect(picker).not.toContain("Garden");
+    // Garden East was promoted out of Garden and then re-levelled again, under
+    // Jamshed Town. Still reachable, one rung across rather than up.
+    expect(getSelectableSubAreasForTown("Karachi", "Jamshed Town")).toContain(
+      "Garden East",
+    );
   });
 
   it("keeps the old value valid so no profile is invalidated", () => {
