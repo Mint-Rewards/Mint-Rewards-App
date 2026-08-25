@@ -383,6 +383,13 @@ export const AREA_META: Record<string, AreaMeta> = {
   "Karachi::Shah Latif Town": { geocodePrefill: false, residential: true, blockLabel: "Area" },
   "Karachi::Bin Qasim Town": { geocodePrefill: false, residential: true, blockLabel: "Area" },
   "Karachi::Model Colony": { geocodePrefill: false, residential: true, blockLabel: "Area" },
+  // PECHS is a Jamshed Town neighbourhood and is deliberately NOT listed as one
+  // of its sub-areas. This registry is two levels deep — city -> town ->
+  // subArea — so a town with children cannot become a child without dropping
+  // them, and PECHS offers Block 1 through Block 7. Re-parenting it would turn
+  // "PECHS / Block 5" into "Jamshed Town / PECHS" and delete block precision
+  // across a dense area. Owner decision, 2026-08-25: keep PECHS top-level and
+  // accept the structural inconsistency. Locked by test — do not "tidy" this.
   "Karachi::Jamshed Town": { geocodePrefill: false, residential: true, blockLabel: "Area" },
   "Karachi::S.I.T.E. Town": { geocodePrefill: false, residential: true, blockLabel: "Area" },
   "Karachi::Gulshan-e-Ghazi": { geocodePrefill: false, residential: true, blockLabel: "Area" },

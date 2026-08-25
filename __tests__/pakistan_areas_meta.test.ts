@@ -792,3 +792,42 @@ describe("a town is never a block of another town", () => {
     }
   });
 });
+
+describe("the registry is two levels deep, and that constrains re-parenting", () => {
+  // A town with sub-areas cannot be demoted into a sub-area: there is no third
+  // level to hold its children, and the plan defers adding one. So a correct
+  // hierarchy and a precise address are in tension, and precision wins.
+  //
+  // PECHS is the case that forced the choice. It is genuinely a Jamshed Town
+  // neighbourhood, and moving it there would replace "PECHS / Block 5" with
+  // "Jamshed Town / PECHS" for every future resident of a dense area.
+  it("keeps PECHS top-level with its blocks intact", () => {
+    expect(getSelectableTownsForCity("Karachi")).toContain("PECHS");
+    expect(getSelectableSubAreasForTown("Karachi", "PECHS")).toEqual(
+      expect.arrayContaining(["Block 1", "Block 7"]),
+    );
+    expect(getSelectableSubAreasForTown("Karachi", "Jamshed Town")).not.toContain(
+      "PECHS",
+    );
+  });
+
+  // The general rule the PECHS decision implies. Re-parenting is safe only for
+  // a town that has nothing beneath it — which is why Bahadurabad, Garden East
+  // and Jamshed Quarters could move and PECHS could not.
+  it("never demotes a town that has sub-areas of its own", () => {
+    for (const [key, subs] of Object.entries(PAKISTAN_LOCATIONS.subAreas)) {
+      if (!key.startsWith("Karachi::")) continue;
+      const parent = key.slice("Karachi::".length);
+      for (const sub of subs) {
+        if (isDeprecatedSubArea("Karachi", parent, sub)) continue;
+        // If this sub-area is also a town, that town must have no children of
+        // its own — otherwise they became unreachable when it was demoted.
+        const orphaned = getSubAreasForTown("Karachi", sub).filter(
+          (g) => !isDeprecatedSubArea("Karachi", sub, g),
+        );
+        const label = `${parent} :: ${sub} would orphan ${orphaned.join(", ")}`;
+        expect([label, orphaned.length]).toEqual([label, 0]);
+      }
+    }
+  });
+});
