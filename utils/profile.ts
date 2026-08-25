@@ -17,6 +17,17 @@ import type { User } from "@/store/store";
  * `requiresSubArea`. Demanding it unconditionally would mark free-text-town
  * users, and everyone in a town with no sub-area data, permanently incomplete
  * with no way to fix it.
+ *
+ * The COORDINATE is part of this (owner ruling, 2026-08-25): a user with no
+ * saved pin has an incomplete profile and is in the same category as a new
+ * user. Before that ruling this function checked only the address strings, and
+ * every caller had to remember to AND it with its own hand-rolled coordinate
+ * check — two screens did, with two different definitions of what counted.
+ * Stating it once here is the point.
+ *
+ * `address` counts alongside the pin: a coordinate with no street address
+ * cannot be delivered to either, and both screens already treated the pair as
+ * one condition.
  */
 export function isProfileComplete(user: User | null | undefined): boolean {
   if (!user) return false;
@@ -26,6 +37,18 @@ export function isProfileComplete(user: User | null | undefined): boolean {
   const hasTown = !!town || !!user.townOther?.trim();
 
   if (!user.phone?.trim() || !user.province?.trim() || !city || !hasTown) {
+    return false;
+  }
+
+  // Truthiness, not parseability, and deliberately so: this mirrors exactly what
+  // the two screens tested before the rule moved here, so no existing user's
+  // gate flips as a side effect of the consolidation. `validateForm` in
+  // editProfile is the parseability gate, and it runs before anything is saved.
+  if (
+    !user.latitude?.trim() ||
+    !user.longitude?.trim() ||
+    !user.address?.trim()
+  ) {
     return false;
   }
 

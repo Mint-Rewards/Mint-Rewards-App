@@ -33,13 +33,15 @@ const DealsScreen = () => {
   // scrolls under it. No-op on Android, where the bar takes layout.
   const tabBarOverflow = useBottomTabOverflow();
   const { user, getDeals, deals, isDealsLoading, dealsError } = useAppStore();
+  // `isProfileComplete` now covers the saved coordinate and address too (owner
+  // ruling), so the local `hasLocation` this screen used to keep — and which
+  // defined the same idea differently from home.tsx — is gone.
   const profileComplete = isProfileComplete(user);
-  const hasLocation = !!(user?.latitude && user?.longitude && user?.address);
   const locationUpdateNeeded = needsLocationUpdate(user);
   // Same rule as home: an incomplete profile or an unset/stale location means
   // no deal is actually redeemable, so the list is hidden rather than shown
   // greyed out behind a prompt.
-  const dealsUnlocked = profileComplete && hasLocation && !locationUpdateNeeded;
+  const dealsUnlocked = profileComplete && !locationUpdateNeeded;
 
   const [filter, setFilter] = useState<FilterType>("active");
   const [couponModal, setCouponModal] = useState<{
@@ -178,11 +180,11 @@ const DealsScreen = () => {
             color="#449EB2"
           />
           <Text style={styles.profilePromptText}>
+            {/* Only two states can lock deals now: an incomplete profile (which
+                includes a missing pin), or a retired area. */}
             {!profileComplete
               ? "Complete your profile to unlock deals"
-              : locationUpdateNeeded
-                ? "We're working on bringing collections to your area. Update your location to see available deals."
-                : "Set your location to unlock deals"}
+              : "We're working on bringing collections to your area. Update your location to see available deals."}
           </Text>
           <Ionicons name="chevron-forward" size={16} color="#449EB2" />
         </TouchableOpacity>

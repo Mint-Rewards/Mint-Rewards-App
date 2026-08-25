@@ -298,8 +298,10 @@ export default function HomeScreen() {
   // The brand cards are only ever tappable for a complete profile with a set
   // location — showing them greyed out just repeated the prompt banner behind
   // them, so they are hidden entirely until the user can actually use them.
-  const showBrandCards =
-    profileComplete && !locationUpdateNeeded && hasLocation && hasAddress;
+  // `profileComplete` now implies a saved coordinate and address (owner ruling —
+  // see isProfileComplete), so the location terms that used to be ANDed here
+  // would be restating it.
+  const showBrandCards = profileComplete && !locationUpdateNeeded;
   const canOpenCollections = !!booked || !!(showDemoCollections && nextCollection && nextSlot);
 
   return (
@@ -341,7 +343,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Upcoming Collections</Text>
-            {hasLocation && (
+            {hasLocation && hasAddress && (
               <TouchableOpacity
                 onPress={() =>
                   navigateOnce(() =>
@@ -469,21 +471,11 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Profile can be "complete" while the exact location is still
-              missing; without this the section would be empty. */}
-          {profileComplete && !locationUpdateNeeded && !(hasLocation && hasAddress) && (
-            <TouchableOpacity
-              style={styles.profilePromptCard}
-              onPress={() => router.push("/editProfile")}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="location-outline" size={22} color="#449EB2" />
-              <Text style={styles.profilePromptText}>
-                Set your location to unlock deals
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color="#449EB2" />
-            </TouchableOpacity>
-          )}
+          {/* The "Set your location to unlock deals" prompt that used to sit here
+              is gone: a missing coordinate now makes `isProfileComplete` false,
+              so its condition was unreachable and the generic prompt above
+              covers that population. Restoring the more specific copy means
+              branching the prompt above on the coordinate — see P1-13. */}
 
           {locationUpdateNeeded && (
             <TouchableOpacity

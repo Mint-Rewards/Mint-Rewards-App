@@ -100,6 +100,10 @@ describe("province removal keeps isProfileComplete satisfiable", () => {
         town,
         subArea: "",
         subAreaOther: "",
+        // Required since the coordinate became part of completeness.
+        latitude: "31.5204",
+        longitude: "74.3587",
+        address: "12 Main Street",
       } as any),
     ).toBe(true);
   });
