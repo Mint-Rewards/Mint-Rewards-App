@@ -36,6 +36,7 @@ import {
   COARSE_ADMIN_UNITS,
   DEPRECATED_TOWNS,
   isResidentialArea,
+  requiresSubArea,
   resolveGeocodedName,
 } from "@/utils/pakistan_areas";
 
@@ -873,5 +874,55 @@ describe("never prefill a consumer user into a non-residential area", () => {
     // The residential rule is additional, not a replacement.
     expect(shouldPrefillArea("Karachi", "Clifton")).toBe(false);
     expect(shouldPrefillArea("Nowhere", "Nothing")).toBe(false);
+  });
+});
+
+describe("subAreaRequired — partial coverage no longer traps anyone", () => {
+  // The old rule derived "required" from "has any sub-areas", which is the most
+  // aggressive setting available: adding ONE child to a childless town made the
+  // step required for its entire population, on a one-option dropdown almost
+  // nobody could use. That is why Golimar and Tariq Bin Ziyad Colony had to be
+  // retired rather than re-parented. The default is now false and fails safe.
+  it("does not require the step where coverage is partial", () => {
+    for (const town of ["Orangi Town", "Saddar", "Jamshed Town", "Landhi"]) {
+      expect([town, requiresSubArea("Karachi", town)]).toEqual([town, false]);
+    }
+  });
+
+  it("still requires it where the subdivision is systematic", () => {
+    for (const town of ["DHA", "Gulistan-e-Jauhar", "North Nazimabad"]) {
+      expect([town, requiresSubArea("Karachi", town)]).toEqual([town, true]);
+    }
+    // Islamabad subdivides with bare codes -- "E-7/1" -- which is just as
+    // systematic as "Block 7" and must count the same. The first seeding of
+    // this flag missed it and only a test caught it.
+    expect(requiresSubArea("Islamabad", "Sector E-7")).toBe(true);
+  });
+
+  it("adding one sub-area to a childless town does not make it required", () => {
+    // The property the whole inversion exists for. A town nobody has curated
+    // has not demonstrated coverage, whatever it now contains.
+    expect(getAreaMeta("Karachi", "Model Colony").subAreaRequired).toBe(false);
+    expect(getAreaMeta("Nowhere", "Nothing").subAreaRequired).toBe(false);
+  });
+
+  it("never requires a step with nothing to answer", () => {
+    // Both conditions are ANDed: a curated `true` on a town whose options were
+    // all later deprecated must not render an empty required step.
+    for (const [key, meta] of Object.entries(AREA_META)) {
+      if (!meta.subAreaRequired) continue;
+      const [city, town] = key.split("::");
+      const label = `${key} requires a sub-area`;
+      expect([label, getSelectableSubAreasForTown(city, town).length > 0]).toEqual([
+        label,
+        true,
+      ]);
+    }
+  });
+
+  it("is declared explicitly on every entry, never left undefined", () => {
+    for (const [key, meta] of Object.entries(AREA_META)) {
+      expect([key, typeof meta.subAreaRequired]).toEqual([key, "boolean"]);
+    }
   });
 });
