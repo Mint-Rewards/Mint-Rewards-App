@@ -88,17 +88,34 @@ describe("getBlockLabel", () => {
   });
 });
 
+// Areas promoted to geocodePrefill: true, each on a dated, measured, n>=20
+// >=85% precision figure recorded next to its AREA_META entry and in
+// scripts/geocode-spike/P0.6-REPORT.md. Nothing else may be promoted without
+// the same evidence — see the "defaults to false" test below.
+const PROMOTED_PREFILL_AREAS = ["Karachi::Korangi", "Karachi::DHA"];
+
 describe("geocodePrefill", () => {
-  // Promotion is evidence-only (P0.1c). Shipping any `true` before the spike
-  // would enable auto-fill in an area nobody measured.
-  it("defaults to false for every area until the spike promotes it", () => {
+  // Promotion is evidence-only (P0.1c). Shipping any other `true` before the
+  // spike measured it would enable auto-fill in an area nobody checked.
+  it("defaults to false for every area except the ones promoted on evidence", () => {
     for (const [key, meta] of Object.entries(AREA_META)) {
+      if (PROMOTED_PREFILL_AREAS.includes(key)) continue;
       expect([key, meta.geocodePrefill]).toEqual([key, false]);
     }
   });
 
   it("defaults to false for areas with no metadata at all", () => {
     expect(getAreaMeta("Nowhere", "Nothing").geocodePrefill).toBe(false);
+  });
+
+  // 2026-08-25: n=55, 98% (Korangi) and n=24, 100% (DHA, after correcting
+  // the Darussalam Society truth-label error — see P0.6-REPORT.md). The
+  // only two areas measured over the n>=20 / >=85% gate.
+  it("promotes exactly Korangi and DHA, and only them, on the recorded evidence", () => {
+    const promoted = Object.entries(AREA_META)
+      .filter(([, meta]) => meta.geocodePrefill)
+      .map(([key]) => key);
+    expect(promoted.sort()).toEqual([...PROMOTED_PREFILL_AREAS].sort());
   });
 });
 
@@ -496,9 +513,13 @@ describe("P0.6 registry expansion", () => {
   });
 
   it("never prefills a newly added area", () => {
-    // Nothing here has a measured precision figure, and prefill is gated on
-    // precision alone. They are selectable, not auto-selected.
+    // Nothing added this session has a measured precision figure, and prefill
+    // is gated on precision alone. They are selectable, not auto-selected.
+    // Korangi and DHA are pre-existing towns (part of the original 29, not
+    // this session's additions) promoted separately on their own evidence —
+    // see the "geocodePrefill" describe block above.
     for (const [key, meta] of Object.entries(AREA_META)) {
+      if (PROMOTED_PREFILL_AREAS.includes(key)) continue;
       expect([key, meta.geocodePrefill]).toEqual([key, false]);
     }
   });

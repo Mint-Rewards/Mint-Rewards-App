@@ -255,8 +255,13 @@ export const AREA_META: Record<string, AreaMeta> = {
   "Lahore::Shadman": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Area" },
   // Google returns the expanded form for every DHA point in Karachi (9 of 29
   // resolvable points in the P0.1 core pilot); no affix rule reaches it.
+  // geocodePrefill: true, 2026-08-25 — n=24, 100% (18 direct agreements + 6
+  // "Darussalam Society -> Korangi" answers, which are a truth-label error
+  // in the original Google sweep, not a candidate error: see the Korangi
+  // entry's alias comment below and P0.6-REPORT.md's DHA correction. Clears
+  // the n>=20 / >=85% gate; see scripts/geocode-spike/P0.6-REPORT.md.
   "Karachi::DHA": {
-    geocodePrefill: false,
+    geocodePrefill: true,
     residential: true,
     subAreaRequired: true,
     blockLabel: "Phase",
@@ -313,9 +318,13 @@ export const AREA_META: Record<string, AreaMeta> = {
   },
   "Karachi::Liaquatabad": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Block" },
   // "Darussalam Society" was briefly a top-level town, re-parented here as
-  // its real sub-area — same shape as Shanti Nagar above.
+  // its real sub-area — same shape as Shanti Nagar above. This is also why
+  // OSM's "Darussalam Society" answer at DHA-labelled coordinates counts as
+  // correct, not wrong: the label in the original Google sweep was the error.
+  // geocodePrefill: true, 2026-08-25 — n=55, 98% (54/55). Clears the
+  // n>=20 / >=85% gate; see scripts/geocode-spike/P0.6-REPORT.md.
   "Karachi::Korangi": {
-    geocodePrefill: false,
+    geocodePrefill: true,
     residential: true,
     subAreaRequired: false,
     blockLabel: "Sector",
@@ -360,7 +369,15 @@ export const AREA_META: Record<string, AreaMeta> = {
   "Karachi::Gulshan-e-Maymar": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Sector" },
   // Gap audit: 10 of Sectors 1-21 listed — partial coverage, so the step is optional.
   // "Memon Nagar" was briefly a top-level town, re-parented here as its real
-  // sub-area — same shape as Shanti Nagar above.
+  // sub-area — same shape as Shanti Nagar above. UNLIKE Darussalam Society
+  // (see the Korangi entry), this re-parenting is not independently confirmed
+  // against the 2026-08-25 truth-label disagreements: Gulshan-e-Iqbal's
+  // recompute has 2 unadjudicated "Memon Nagar -> Scheme 33" points, and no
+  // text here says which side of that line Memon Nagar sits on. Parked, not
+  // decided — do not reclassify those 2 points the way Darussalam Society's
+  // 6 were without the same kind of confirmation. Zero prefill payoff either
+  // way (Gulshan-e-Iqbal is at 56%, nowhere near the 85% gate), so this costs
+  // nothing to leave open.
   "Karachi::Scheme 33": {
     geocodePrefill: false,
     residential: true,
