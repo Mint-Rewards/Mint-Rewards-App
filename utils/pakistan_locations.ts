@@ -1010,8 +1010,11 @@ export const PAKISTAN_LOCATIONS: LocationData = {
     ],
     "Karachi::Jamshed Town": [
       "Bahadurabad",
+      "Baloch Colony",
       "Garden East",
+      "Garden West",
       "Jamshed Quarters",
+      "Soldier Bazaar",
     ],
     "Karachi::Malir": [
       "Malir Town",

@@ -567,6 +567,15 @@ export const DEPRECATED_TOWNS: Record<string, readonly string[]> = {
     "Bahadurabad",          // -> Jamshed Town
     "Garden East",          // -> Jamshed Town
     "Jamshed Quarters",     // -> Jamshed Town
+    "Baloch Colony",        // -> Jamshed Town
+    "Garden West",          // -> Jamshed Town
+    "Soldier Bazaar",       // -> Jamshed Town
+    // Retired outright, not re-parented — the same call as Sikandarabad. Their
+    // parents (S.I.T.E. Town, Model Colony) exist now, but moving one child in
+    // alone would make the sub-area step required with a single answer most
+    // residents cannot use. Owner decision: retire instead.
+    "Golimar",
+    "Tariq Bin Ziyad Colony",
     // Sikandarabad is in Keamari, across the harbour from Clifton, and the
     // geocoder returned it for Clifton pins ~8 km away. Retired rather than
     // re-parented: Keamari is not a registry town, so there is nowhere to move

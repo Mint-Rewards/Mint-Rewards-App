@@ -266,7 +266,7 @@ describe("PAKISTAN_LOCATIONS is frozen", () => {
       citiesWithTowns: 10,
       towns: 263,   // 196 + 56 from the P0.6 Karachi expansion
       subAreaKeys: 151,   // +1: Jamshed Town gains a sub-area list
-      subAreas: 1106,   // +5 re-parented: Data Nagar, Shanti Nagar, Memon Nagar, Gulshan-e-Shamim, Darussalam Society
+      subAreas: 1109,   // +5 re-parented: Data Nagar, Shanti Nagar, Memon Nagar, Gulshan-e-Shamim, Darussalam Society
     });
   });
 
@@ -442,9 +442,12 @@ describe("P0.6 registry expansion", () => {
     expect(resolveGeocodedName("Central Jacob Lines", "Karachi")).toBe("Jacob Lines");
   });
 
+  // Golimar has since been retired, so only Old Golimar still resolves. The
+  // point the test was written for survives: the two were never one place, and
+  // the surviving one must not answer to the other's name.
   it("treats Old Golimar as its own place, not a spelling of Golimar", () => {
     expect(resolveGeocodedName("Old Golimar", "Karachi")).toBe("Old Golimar");
-    expect(resolveGeocodedName("Golimar", "Karachi")).toBe("Golimar");
+    expect(resolveGeocodedName("Golimar", "Karachi")).toBeNull();
   });
 
   it("asks an industrial site for a unit, not a flat number", () => {
@@ -620,17 +623,16 @@ describe("one address, one representation", () => {
 });
 
 describe("Garden is a container that is not a place", () => {
-  it("offers the real localities instead", () => {
-    const picker = getSelectableTownsForCity("Karachi");
-    for (const t of ["Garden West", "Soldier Bazaar"]) {
-      expect([t, picker.includes(t)]).toEqual([t, true]);
+  // All three of Garden's former sub-areas ended up under Jamshed Town, which
+  // is where they actually sit. Garden itself never existed, so nothing was
+  // lost by retiring it — every one of its children is still reachable, one
+  // rung across rather than up.
+  it("keeps every former Garden locality reachable", () => {
+    expect(getSelectableTownsForCity("Karachi")).not.toContain("Garden");
+    const jamshed = getSelectableSubAreasForTown("Karachi", "Jamshed Town");
+    for (const t of ["Garden East", "Garden West", "Soldier Bazaar"]) {
+      expect([t, jamshed.includes(t)]).toEqual([t, true]);
     }
-    expect(picker).not.toContain("Garden");
-    // Garden East was promoted out of Garden and then re-levelled again, under
-    // Jamshed Town. Still reachable, one rung across rather than up.
-    expect(getSelectableSubAreasForTown("Karachi", "Jamshed Town")).toContain(
-      "Garden East",
-    );
   });
 
   it("keeps the old value valid so no profile is invalidated", () => {
