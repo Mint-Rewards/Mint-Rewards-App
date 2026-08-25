@@ -424,7 +424,6 @@ describe("P0.6 registry expansion", () => {
     expect(resolveGeocodedName("Eissa Nagri", "Karachi")).toBe("Essa Nagri");
     expect(resolveGeocodedName("Central Jacob Lines", "Karachi")).toBe("Jacob Lines");
     expect(resolveGeocodedName("Shershah Colony", "Karachi")).toBe("Sher Shah Colony");
-    expect(resolveGeocodedName("Gulshan e Sikandarabad", "Karachi")).toBe("Sikandarabad");
     expect(resolveGeocodedName("SITE", "Karachi")).toBe("Sindh Industrial Trading Estate");
   });
 
@@ -443,7 +442,6 @@ describe("P0.6 registry expansion", () => {
     // same points; likewise "Gulshan e Sikandarabad" and "Sikandarabad". Those
     // are two names for one place, which is what an alias is for.
     expect(resolveGeocodedName("Central Jacob Lines", "Karachi")).toBe("Jacob Lines");
-    expect(resolveGeocodedName("Gulshan e Sikandarabad", "Karachi")).toBe("Sikandarabad");
   });
 
   it("treats Old Golimar as its own place, not a spelling of Golimar", () => {
@@ -725,7 +723,18 @@ describe("a deprecated town is never prefilled", () => {
   // pre-select a value the user can neither see nor re-pick. Storage and
   // validation are deliberately unaffected.
   it("refuses to resolve a hidden town, by name or alias", () => {
-    for (const name of ["Mahmudabad", "Mehmoodabad", "Muslimabad", "Askari", "Garden"]) {
+    for (const name of [
+      "Mahmudabad",
+      "Mehmoodabad",
+      "Muslimabad",
+      "Askari",
+      "Garden",
+      "Shanti Nagar",
+      // Both alias forms must be refused too, not just the canonical name.
+      "Sikandarabad",
+      "Gulshan e Sikandarabad",
+      "Gulshan-e-Sikandarabad",
+    ]) {
       expect([name, resolveGeocodedName(name, "Karachi")]).toEqual([name, null]);
     }
   });

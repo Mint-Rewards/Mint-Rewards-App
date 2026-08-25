@@ -532,7 +532,19 @@ export const DEPRECATED_TOWNS: Record<string, readonly string[]> = {
   // "Muslimabad" recurs in several parts of Karachi and collapsed to one entry,
   // which would have made area-based scheduling route two different populations
   // together. Owner-confirmed as not needed rather than disambiguated.
-  Karachi: ["Askari", "Garden", "Muslimabad", "Mahmudabad", "Shanti Nagar"],
+  Karachi: [
+    "Askari",
+    "Garden",
+    "Muslimabad",
+    "Mahmudabad",
+    "Shanti Nagar",
+    // Sikandarabad is in Keamari, across the harbour from Clifton, and the
+    // geocoder returned it for Clifton pins ~8 km away. Retired rather than
+    // re-parented: Keamari is not a registry town, so there is nowhere to move
+    // it to. Deprecating makes those points resolve to null — silent instead of
+    // confidently wrong, which under prefill is strictly better.
+    "Sikandarabad",
+  ],
 };
 
 /**
