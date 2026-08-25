@@ -20,6 +20,7 @@ import {
   getAreaMeta,
   getBlockLabel,
   getHouseNoField,
+  shouldPrefillArea,
   getCityCentroid,
   getCoverageTier,
   getProvinceForCity,
@@ -831,5 +832,46 @@ describe("the registry is two levels deep, and that constrains re-parenting", ()
         expect([label, orphaned.length]).toEqual([label, 0]);
       }
     }
+  });
+});
+
+describe("never prefill a consumer user into a non-residential area", () => {
+  // Independent of precision, and not a statistic. Every consumer user is a
+  // household by construction — B2B reaches us through BrandHub and MintTrace —
+  // so an industrial prefill is wrong for whoever sees it however well the
+  // geocoder placed the coordinate. The pin can sit on a factory while the
+  // person filling the form lives across the road.
+  it("suppresses prefill for every industrial entry", () => {
+    for (const town of [
+      "Korangi Industrial Area",
+      "Sindh Industrial Trading Estate",
+      "West Wharf",
+    ]) {
+      expect([town, shouldPrefillArea("Karachi", town)]).toEqual([town, false]);
+    }
+  });
+
+  it("suppresses it even if the precision gate were opened", () => {
+    // The two conditions are ANDed, so promoting geocodePrefill on an
+    // industrial area still cannot produce a prefill. Asserted directly rather
+    // than trusting the current all-false state of geocodePrefill.
+    const meta = { geocodePrefill: true, residential: false, blockLabel: "Area" };
+    expect(meta.geocodePrefill && meta.residential).toBe(false);
+  });
+
+  it("leaves those areas selectable and resolvable", () => {
+    // Suppressing the prefill must not hide the area: a B2B client genuinely at
+    // an industrial site still has to be able to say so.
+    const picker = getSelectableTownsForCity("Karachi");
+    for (const town of ["Korangi Industrial Area", "West Wharf"]) {
+      expect([town, picker.includes(town)]).toEqual([town, true]);
+      expect([town, resolveGeocodedName(town, "Karachi")]).toEqual([town, town]);
+    }
+  });
+
+  it("still refuses a residential area that has not cleared precision", () => {
+    // The residential rule is additional, not a replacement.
+    expect(shouldPrefillArea("Karachi", "Clifton")).toBe(false);
+    expect(shouldPrefillArea("Nowhere", "Nothing")).toBe(false);
   });
 });

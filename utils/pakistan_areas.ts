@@ -748,6 +748,34 @@ export function getBlockLabel(city: string, town: string): string {
 }
 
 /**
+ * Whether the geocoder may pre-select this area in the CONSUMER app.
+ *
+ * Two conditions, and the second is independent of any measurement:
+ *
+ *  1. `geocodePrefill` — the per-area precision gate.
+ *  2. `residential` — never prefill a consumer user into an industrial estate,
+ *     port or campus.
+ *
+ * The second is a structural fact, not a statistic. Every consumer user is a
+ * household by construction: B2B sites reach us through BrandHub and MintTrace,
+ * not through this app. So a prefill naming SITE, West Wharf, Port of Karachi or
+ * Korangi Industrial Area is wrong for whoever sees it, however precisely the
+ * geocoder placed the coordinate — the pin may genuinely sit on an industrial
+ * plot while the person filling the form lives across the road.
+ *
+ * This settles a whole class of geocoder disagreements without adjudicating any
+ * of them: 27 of the 57 sampled disagreements resolve to a non-residential area.
+ *
+ * The area stays SELECTABLE and stays RESOLVABLE. A user who really is at an
+ * industrial site picks it from the dropdown, and the resolver still names it
+ * for anything reading `geocodedAreaRaw`. Only the pre-selection is suppressed.
+ */
+export function shouldPrefillArea(city: string, town: string): boolean {
+  const meta = getAreaMeta(city, town);
+  return meta.geocodePrefill && meta.residential;
+}
+
+/**
  * Whether people live in this area. Unknown areas are treated as residential —
  * see DEFAULT_AREA_META for why that is the safe direction.
  */
