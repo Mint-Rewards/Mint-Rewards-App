@@ -1,7 +1,9 @@
 import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
+import type { PinPlacement } from "@/utils/pinState";
 import {
   PAKISTAN_LOCATIONS,
+  getSelectableTownsForCity,
   getSubAreasForTown,
   isCanonicalTown,
   matchCanonicalNames,
@@ -74,6 +76,11 @@ const EditProfile = () => {
   const scrollViewRef = useRef<ScrollView>(null);
   const fieldRefs = useRef<{ [key: string]: View | null }>({});
   const [mapVisible, setMapVisible] = useState(false);
+  // How the current pin was set (device GPS never places it — see
+  // components/ui/MapPicker.tsx / utils/pinState.ts). Captured here so a
+  // future save can persist `location.source`; not sent to the server yet,
+  // so it doesn't need to drive a re-render — a ref is enough.
+  const pinPlacementRef = useRef<PinPlacement | null>(null);
   const [townIsCustom, setTownIsCustom] = useState(false);
   const [subAreaIsOther, setSubAreaIsOther] = useState(false);
   const [pickerModal, setPickerModal] = useState<{
@@ -147,8 +154,12 @@ const EditProfile = () => {
     ? (PAKISTAN_LOCATIONS.cities[formData.province] || [])
     : [];
 
+  // The PICKER view, not the validation view: `getTownsForCity` still returns
+  // deprecated towns so existing profiles stay valid, while this hides them
+  // from new selections. Without this the deprecation is inert and users keep
+  // creating the very values it exists to retire.
   const baseTownOptions = formData.city
-    ? (PAKISTAN_LOCATIONS.towns[formData.city] || [])
+    ? getSelectableTownsForCity(formData.city)
     : [];
   const townOptions = [...baseTownOptions, OTHER_OPTION];
 
@@ -299,6 +310,15 @@ const EditProfile = () => {
     if (!formData.town?.trim() && !formData.townOther?.trim())
       newErrors.town = "Town is required";
     if (!formData.address?.trim())   newErrors.address = "Address is required";
+    // The map pin is required (see "Exact Location (Pin) *" label below) — a
+    // saved coordinate must be a parseable number, not just a non-empty string.
+    if (
+      !formData.latitude?.trim() ||
+      !formData.longitude?.trim() ||
+      isNaN(parseFloat(formData.latitude)) ||
+      isNaN(parseFloat(formData.longitude))
+    )
+      newErrors.location = "Please pin your exact location on the map";
     // Required only where there is canonical data to choose from. Free-text
     // towns and towns without sub-areas never render the field, so it must not
     // gate their save.
@@ -697,7 +717,10 @@ const EditProfile = () => {
                 </Text>
                 {formData.latitude ? (
                   <TouchableOpacity
-                    onPress={() => setFormData((p) => ({ ...p, latitude: "", longitude: "" }))}
+                    onPress={() => {
+                      setFormData((p) => ({ ...p, latitude: "", longitude: "" }));
+                      pinPlacementRef.current = null;
+                    }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <Ionicons name="close-circle" size={18} color="#a0aec0" />
@@ -706,6 +729,9 @@ const EditProfile = () => {
                   <Ionicons name="chevron-forward" size={18} color="#a0aec0" />
                 )}
               </TouchableOpacity>
+              {errors.location && (
+                <Text style={styles.errorText}>{errors.location}</Text>
+              )}
             </View>
           </View>
 
@@ -713,7 +739,11 @@ const EditProfile = () => {
             visible={mapVisible}
             initialLatitude={formData.latitude}
             initialLongitude={formData.longitude}
-            onConfirm={(lat, lng) => setFormData((p) => ({ ...p, latitude: lat, longitude: lng }))}
+            onConfirm={(lat, lng, placement) => {
+              setFormData((p) => ({ ...p, latitude: lat, longitude: lng }));
+              pinPlacementRef.current = placement ?? null;
+              clearError("location");
+            }}
             onClose={() => setMapVisible(false)}
           />
 
