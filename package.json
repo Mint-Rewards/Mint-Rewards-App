@@ -10,6 +10,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest",
+    "export:registry": "npx tsx scripts/export_location_registry.ts",
     "postinstall": "patch-package"
   },
   "dependencies": {
