@@ -921,6 +921,7 @@ export const PAKISTAN_LOCATIONS: LocationData = {
       "Block 5",
     ],
     "Karachi::Federal B. Area": [
+      "Gulshan-e-Shamim",
       "Block 1 (Sharifabad)",
       "Block 2 (Sharifabad)",
       "Block 3 (Hussainabad)",
@@ -960,6 +961,7 @@ export const PAKISTAN_LOCATIONS: LocationData = {
       "Block 10",
     ],
     "Karachi::Korangi": [
+      "Darussalam Society",
       "Sector 31-B",
       "Sector 31-D",
       "Sector 32-B",
@@ -1131,6 +1133,7 @@ export const PAKISTAN_LOCATIONS: LocationData = {
       "Sector Z",
     ],
     "Karachi::Scheme 33": [
+      "Memon Nagar",
       "Sector 14-A",
       "Sector 15-A",
       "Sector 17-A",

@@ -359,7 +359,12 @@ export const AREA_META: Record<string, AreaMeta> = {
     blockLabel: "Area",
     aliases: ["Eissa Nagri"],
   },
-  "Karachi::Golimar": { geocodePrefill: false, residential: true, blockLabel: "Area" },
+  "Karachi::Golimar": {
+    geocodePrefill: false,
+    residential: true,
+    blockLabel: "Area",
+    aliases: ["Gulbahar"],
+  },
   // OSM names "Golimar" and "Old Golimar" at DIFFERENT coordinates, so they are
   // two places, not two spellings. Added rather than aliased.
   "Karachi::Old Golimar": { geocodePrefill: false, residential: true, blockLabel: "Area" },
@@ -538,6 +543,11 @@ export const DEPRECATED_TOWNS: Record<string, readonly string[]> = {
     "Muslimabad",
     "Mahmudabad",
     "Shanti Nagar",
+    // Owner-confirmed mis-levelled, each now a sub-area of its real parent.
+    // Lossless: residents pick the parent, then the entry, exactly as before.
+    "Memon Nagar",          // -> Scheme 33 (Gulzar-e-Hijri)
+    "Gulshan-e-Shamim",     // -> Federal B. Area (Gulberg Town)
+    "Darussalam Society",   // -> Korangi
     // Sikandarabad is in Keamari, across the harbour from Clifton, and the
     // geocoder returned it for Clifton pins ~8 km away. Retired rather than
     // re-parented: Keamari is not a registry town, so there is nowhere to move

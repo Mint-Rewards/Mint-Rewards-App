@@ -266,7 +266,7 @@ describe("PAKISTAN_LOCATIONS is frozen", () => {
       citiesWithTowns: 10,
       towns: 260,   // 196 + 56 from the P0.6 Karachi expansion
       subAreaKeys: 150,
-      subAreas: 1100,   // +2: Data Nagar -> Orangi Town, Shanti Nagar -> Gulshan-e-Iqbal
+      subAreas: 1103,   // +5 re-parented: Data Nagar, Shanti Nagar, Memon Nagar, Gulshan-e-Shamim, Darussalam Society
     });
   });
 
