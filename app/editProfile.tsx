@@ -238,14 +238,25 @@ const EditProfile = () => {
   /**
    * City is the top of the cascade. Changing it clears town and sub-area: both
    * answers are only meaningful under the city they were chosen for.
+   *
+   * It clears the PIN for the same reason. A coordinate placed in Karachi says
+   * nothing true about a Lahore address, and `validateForm` only checks that a
+   * pin parses — not that it is anywhere near the city named beside it — so a
+   * kept pin would sail through and be stored as this address's location. The
+   * user is sent back through the map, which is the only place a coordinate for
+   * the new city can come from.
    */
   const handleCitySelect = (value: string) => {
     if (value === formData.city) return;
     setFormData((p) => ({
       ...p, city: value, town: "", townOther: "", subArea: "", subAreaOther: "",
+      latitude: "", longitude: "",
     }));
     setTownIsCustom(false);
     resetSubAreaState();
+    // The placement goes with the pin: a stale `user_placed` would otherwise
+    // let the NEXT pin inherit precision it never earned.
+    pinPlacementRef.current = null;
     setErrors((p) => ({ ...p, city: "", town: "" }));
   };
 

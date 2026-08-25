@@ -185,7 +185,16 @@ export default function MapPicker({
   })();
 
   return (
-    <Modal visible={visible} animationType="slide" statusBarTranslucent>
+    // `onRequestClose` is what the Android hardware back button fires. Without
+    // it, back closes the picker without ever reaching `handleClose`, so
+    // `flow_abandoned` never fires for that path and the funnel under-reports on
+    // one platform only.
+    <Modal
+      visible={visible}
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={handleClose}
+    >
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>

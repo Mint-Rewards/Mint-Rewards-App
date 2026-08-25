@@ -83,6 +83,8 @@ export type LocationPatchResult =
  * it is tagged `legacy_string`/`unknown` rather than flattered. Precision drives
  * routing (anything below "building" is excluded), so over-claiming here sends
  * a collector to the wrong door.
+ *
+ * `null` is NOT in this table on purpose — see `buildLocationPatchPayload`.
  */
 const PLACEMENT_TRUST: Record<
   PinPlacement,
@@ -108,6 +110,16 @@ const PLACEMENT_TRUST: Record<
  *
  * `cityId` is only ever sent non-empty — city is a required field, and an empty
  * one here would clear a good value rather than express anything.
+ *
+ * `placement` is the session's verdict on the pin, and `null` means the map was
+ * never opened. That case omits `location` ENTIRELY rather than describing a
+ * coordinate nobody looked at: the form rehydrates saved coordinates, so a user
+ * editing their phone number would otherwise re-send their existing pin tagged
+ * `legacy_string`/`unknown` — overwriting a `building`-precision pin they had
+ * deliberately placed, and resetting `capturedAt`, on every unrelated profile
+ * edit. An absent key means "don't touch", which is exactly the right message
+ * for a coordinate this session did not produce. Bringing a legacy coordinate
+ * into the structured record is the backfill's job, not this form's.
  */
 export function buildLocationPatchPayload(
   profile: Partial<UserProfile>,
@@ -132,6 +144,10 @@ export function buildLocationPatchPayload(
 
   const payload: LocationPatchPayload = { structuredAddress };
 
+  // The map was never opened this session, so there is no coordinate of ours to
+  // report. Say nothing rather than re-describing what is already stored.
+  if (placement === null) return payload;
+
   const latitude = parseFloat((profile.latitude || "").trim());
   const longitude = parseFloat((profile.longitude || "").trim());
 
@@ -139,7 +155,7 @@ export function buildLocationPatchPayload(
   // absent key means "don't touch"; a present one would overwrite a coordinate
   // some other flow captured.
   if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-    const trust = PLACEMENT_TRUST[placement ?? "derived"];
+    const trust = PLACEMENT_TRUST[placement];
     payload.location = {
       coordinates: [longitude, latitude],
       source: trust.source,
@@ -151,17 +167,35 @@ export function buildLocationPatchPayload(
 }
 
 /**
+ * How long the caller may be made to wait for this request.
+ *
+ * The save it follows has ALREADY succeeded server-side by the time this runs,
+ * so an unbounded wait here means a user staring at a spinner over work that is
+ * already done. `authenticatedFetch` is a bare `fetch` with no timeout of its
+ * own, and a stalled mobile connection does not fail fast on its own.
+ */
+const PATCH_TIMEOUT_MS = 8000;
+
+/**
  * Sends the structured location. The RAW token is the Authorization header —
  * no "Bearer" prefix (mint-rewards-backend-api-contract).
  *
  * Never throws: every failure comes back as `{ Status: "Error" }` so the caller
  * can log it and carry on. This call is additive to a save that has already
- * succeeded, so it must not be able to turn a completed save into a failed one.
+ * succeeded, so it must not be able to turn a completed save into a failed one
+ * — and, because it is awaited before the success message, it must not be able
+ * to hold that message indefinitely either. A timeout is what makes the second
+ * guarantee true; without it the call is non-blocking on errors but not on time.
  */
 export async function patchUserLocation(
   payload: LocationPatchPayload,
   token: string | undefined | null,
 ): Promise<LocationPatchResult> {
+  // Built by hand rather than with AbortSignal.timeout(), which is not reliably
+  // present on this runtime.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PATCH_TIMEOUT_MS);
+
   try {
     const response = await authenticatedFetch(apiUrl("/api/users/location"), {
       method: "PATCH",
@@ -170,6 +204,7 @@ export async function patchUserLocation(
         ...(token ? { Authorization: token } : {}),
       },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
 
     const data = await response.json().catch(() => ({}));
@@ -187,9 +222,20 @@ export async function patchUserLocation(
         data?.error || data?.message || `Request failed (${response.status})`,
     };
   } catch (error) {
+    // An abort is this timeout firing, not an arbitrary network fault — name it
+    // so the log says which one happened.
+    const aborted =
+      controller.signal.aborted ||
+      (error instanceof Error && error.name === "AbortError");
     return {
       Status: "Error",
-      ErrorMessage: error instanceof Error ? error.message : "Network error",
+      ErrorMessage: aborted
+        ? `Timed out after ${PATCH_TIMEOUT_MS}ms`
+        : error instanceof Error
+          ? error.message
+          : "Network error",
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
