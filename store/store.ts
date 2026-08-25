@@ -89,6 +89,14 @@ export interface User {
   subArea?: string;
   subAreaOther?: string;
   mintId?: string;
+  /**
+   * Structured address subdocument, as returned whole by `GET
+   * /api/users/my-profile`. Only the leaf the app reads is declared — the
+   * others exist on the document but nothing here consumes them yet.
+   */
+  structuredAddress?: {
+    houseNo?: string;
+  };
   latitude?: string;
   longitude?: string;
   deviceToken?: string;
@@ -109,6 +117,13 @@ export interface UserProfile {
   phone: string;
   province: string;
   city: string;
+  /**
+   * House / flat number — or unit / building name in a non-residential area;
+   * `getHouseNoField` picks the wording. Flat here for the form's convenience;
+   * it is sent nested, as `structuredAddress.houseNo`, which is where it lives
+   * on the server.
+   */
+  houseNo?: string;
   /**
    * Canonical town. Only ever holds a value from `getTownsForCity(city)`, or
    * "". Mutually exclusive with `townOther`.

@@ -117,9 +117,24 @@ describe("buildLocationPatchPayload — structured address", () => {
     });
   });
 
-  it("never sends houseNo or streetOrBlock — no field collects them yet", () => {
+  it("sends houseNo now that the form collects it", () => {
+    const sa = buildLocationPatchPayload(
+      { ...base, houseNo: "14-B" },
+      "user_placed",
+    ).structuredAddress!;
+    expect(sa.houseNo).toBe("14-B");
+  });
+
+  it("omits houseNo rather than clearing a stored one when absent", () => {
     const sa = buildLocationPatchPayload(base, "user_placed").structuredAddress!;
     expect(sa).not.toHaveProperty("houseNo");
+  });
+
+  it("never sends streetOrBlock — nothing collects it", () => {
+    const sa = buildLocationPatchPayload(
+      { ...base, houseNo: "14-B" },
+      "user_placed",
+    ).structuredAddress!;
     expect(sa).not.toHaveProperty("streetOrBlock");
   });
 });

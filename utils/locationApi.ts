@@ -36,9 +36,9 @@ export type LocationPrecision =
 /**
  * The structured-address leaves this app can fill today.
  *
- * `houseNo` and `streetOrBlock` are accepted by the endpoint but deliberately
- * NOT sent: no field collects them yet (they ship with the gate-flow plan), and
- * sending "" would clear whatever a future screen wrote.
+ * `streetOrBlock` is accepted by the endpoint but not sent — nothing collects
+ * it, and "" would clear whatever a future screen writes. `houseNo` IS sent now
+ * that the form collects it and requires it.
  */
 export interface StructuredAddressPatch {
   cityId?: string;
@@ -46,6 +46,7 @@ export interface StructuredAddressPatch {
   areaOther?: string;
   blockId?: string;
   blockOther?: string;
+  houseNo?: string;
 }
 
 export interface LocationPatch {
@@ -144,6 +145,13 @@ export function buildLocationPatchPayload(
   if (town) structuredAddress.areaId = town;
   else if (townOther) structuredAddress.areaOther = townOther;
   else structuredAddress.areaId = "";
+
+  // Mandatory on the form, so in practice always present here. Omitted rather
+  // than sent empty on the defensive path: "" would clear a stored value, and
+  // losing a house number to a partially-filled payload is worse than leaving
+  // the old one until the next save.
+  const houseNo = (profile.houseNo || "").trim();
+  if (houseNo) structuredAddress.houseNo = houseNo;
 
   const subArea = (profile.subArea || "").trim();
   const subAreaOther = (profile.subAreaOther || "").trim();

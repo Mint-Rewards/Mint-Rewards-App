@@ -18,6 +18,7 @@ import {
 } from "@/utils/locationForm";
 import {
   getBlockLabel,
+  getHouseNoField,
   getSelectableTownsForCity,
   getSubAreasForTown,
   isCanonicalTown,
@@ -75,6 +76,7 @@ const EditProfile = () => {
     email: "",
     phone: "",
     city: "",
+    houseNo: "",
     town: "",
     townOther: "",
     subArea: "",
@@ -141,6 +143,10 @@ const EditProfile = () => {
         userName: user.userName || "",
         email: user.email || "",
         phone: user.phone || "",
+        // Lives nested on the server; flat in the form. `my-profile` returns the
+        // whole document, so a previously-saved value comes back and the user is
+        // not made to retype it on every edit.
+        houseNo: user.structuredAddress?.houseNo || "",
         city: existingCity,
         town: existingTown,
         townOther: existingTownOther,
@@ -222,10 +228,50 @@ const EditProfile = () => {
     setSubAreaIsOther(false);
   };
 
+  /**
+   * The pin fields, blanked. Spread into every setFormData that changes the
+   * selected PLACE — city or town.
+   *
+   * A pin placed in the old town says nothing true about the new one, and
+   * `validateForm` only checks that a pin parses, not that it is anywhere near
+   * the place named above it. Within Karachi that is a ~30km error that saves
+   * cleanly.
+   *
+   * The pin is cleared rather than moved to the new town's centroid, which is
+   * the other way to read "the pin should move": a centroid is where an area
+   * is, not where a person lives, and a pin the app placed is tagged
+   * `legacy_string`/`unknown` — excluded from routing. It would look set and
+   * route nowhere. Clearing forces a real one, and the map now opens on the new
+   * town (see `getSelectionRegion`), so re-pinning starts in the right place.
+   */
+  const CLEARED_PIN = { latitude: "", longitude: "" };
+
+  /** Drops the placement alongside the pin, so the next one starts from scratch. */
+  const forgetPinPlacement = () => {
+    pinPlacementRef.current = null;
+  };
+
   /** Commit a canonical town — from the dropdown or from a suggestion tap. */
+  /**
+   * NOTE on the placement ref and town changes: the town handlers clear the PIN
+   * but deliberately do not clear `pinPlacementRef`. They cannot — they are
+   * reached from `renderTownField`, which runs during render, and a ref write
+   * there is a render-time ref access.
+   *
+   * It is also unnecessary. Placement and coordinate are only ever written
+   * together, by `onConfirm`. Clearing the coordinate leaves a placement that
+   * nothing can consume: `validateForm` blocks a save without a pin, and the
+   * only way to get a pin back is through the map, which rewrites the placement
+   * as it does so. A stale placement can never be paired with a coordinate it
+   * did not describe.
+   *
+   * `handleCitySelect` and the pin's clear button still drop it, because they
+   * can and it costs nothing.
+   */
   const selectCanonicalTown = (value: string) => {
     setFormData((p) => ({
       ...p, town: value, townOther: "", subArea: "", subAreaOther: "",
+      ...CLEARED_PIN,
     }));
     setTownIsCustom(false);
     resetSubAreaState();
@@ -254,13 +300,13 @@ const EditProfile = () => {
     if (value === formData.city) return;
     setFormData((p) => ({
       ...p, city: value, town: "", townOther: "", subArea: "", subAreaOther: "",
-      latitude: "", longitude: "",
+      ...CLEARED_PIN,
     }));
     setTownIsCustom(false);
     resetSubAreaState();
     // The placement goes with the pin: a stale `user_placed` would otherwise
     // let the NEXT pin inherit precision it never earned.
-    pinPlacementRef.current = null;
+    forgetPinPlacement();
     setErrors((p) => ({ ...p, city: "", town: "" }));
   };
 
@@ -273,6 +319,7 @@ const EditProfile = () => {
     if (value === OTHER_OPTION) {
       setFormData((p) => ({
         ...p, town: "", townOther: "", subArea: "", subAreaOther: "",
+        ...CLEARED_PIN,
       }));
       setTownIsCustom(true);
       resetSubAreaState();
@@ -280,6 +327,20 @@ const EditProfile = () => {
       return;
     }
     selectCanonicalTown(value);
+  };
+
+  /**
+   * Abandons a free-text town and returns to the list. Defined here rather than
+   * inline in `renderTownField` because that helper runs during render, and a
+   * ref write inside it reads as a render-time ref access.
+   */
+  const handleTownBackToList = () => {
+    setTownIsCustom(false);
+    setFormData((p) => ({
+      ...p, town: "", townOther: "", subArea: "", subAreaOther: "",
+      ...CLEARED_PIN,
+    }));
+    resetSubAreaState();
   };
 
   const handlePickerSelect = (value: string) => {
@@ -310,6 +371,8 @@ const EditProfile = () => {
     // Either a canonical town or free-text "Other" satisfies the requirement.
     if (!formData.town?.trim() && !formData.townOther?.trim())
       newErrors.town = "Town is required";
+    if (!formData.houseNo?.trim())
+      newErrors.houseNo = `${getHouseNoField(formData.city || "", formData.town || "").label} is required`;
     if (!formData.address?.trim())   newErrors.address = "Address is required";
     // The map pin is required (see "Exact Location (Pin) *" label below) — a
     // saved coordinate must be a parseable number, not just a non-empty string.
@@ -359,6 +422,13 @@ const EditProfile = () => {
     // profile as incomplete, which is the honest answer.
     const province = resolveProvinceForPayload(city);
 
+    // `houseNo` is flat in form state but nested on the server. It rides the
+    // primary update-profile call as well as the structured PATCH: the PATCH is
+    // allowed to fail, and a REQUIRED field that only travels on the failable
+    // request would be silently lost by a timeout. update-profile writes it as
+    // a dotted path, so it cannot wipe the siblings the PATCH writes.
+    const houseNo = (formData.houseNo || "").trim();
+
     // Town: a non-canonical value is never allowed through as `town`; it
     // degrades to `townOther` rather than being dropped, so nothing is lost.
     const townIsCanonical = isCanonicalTown(city, formData.town || "");
@@ -374,6 +444,8 @@ const EditProfile = () => {
     if (canonicalSubAreas.length === 0) {
       return {
         ...formData, province, town, townOther, subArea: "", subAreaOther: "",
+        houseNo,
+        ...(houseNo ? { structuredAddress: { houseNo } } : {}),
       };
     }
 
@@ -383,7 +455,11 @@ const EditProfile = () => {
         : "";
     const subAreaOther = subArea ? "" : trimCapped(formData.subAreaOther);
 
-    return { ...formData, province, town, townOther, subArea, subAreaOther };
+    return {
+      ...formData, province, town, townOther, subArea, subAreaOther,
+      houseNo,
+      ...(houseNo ? { structuredAddress: { houseNo } } : {}),
+    };
   };
 
   /**
@@ -562,13 +638,7 @@ const EditProfile = () => {
             />
             <TouchableOpacity
               style={styles.townBackBtn}
-              onPress={() => {
-                setTownIsCustom(false);
-                setFormData((p) => ({
-                  ...p, town: "", townOther: "", subArea: "", subAreaOther: "",
-                }));
-                resetSubAreaState();
-              }}
+              onPress={handleTownBackToList}
             >
               <Ionicons name="list" size={20} color="#00528A" />
             </TouchableOpacity>
@@ -716,6 +786,21 @@ const EditProfile = () => {
             {renderTownField()}
 
             {renderSubAreaField()}
+
+            {/* Wording is registry-driven: a household is asked for a house or
+                flat number, an industrial plot for a unit or building name —
+                most households cannot answer the latter, and vice versa. */}
+            {(() => {
+              const house = getHouseNoField(formData.city || "", formData.town || "");
+              return renderInput(
+                "houseNo",
+                house.label,
+                `e.g. ${house.placeholder}`,
+                "default",
+                false,
+                true,
+              );
+            })()}
 
             {renderInput("address", "Street Address", "e.g. 12 Main Street, Suburb", "default", true, true)}
 
