@@ -3,6 +3,10 @@ import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
 import type { PinPlacement } from "@/utils/pinState";
 import {
+  buildLocationPatchPayload,
+  patchUserLocation,
+} from "@/utils/locationApi";
+import {
   OTHER_OPTION,
   buildTownOptions,
   getAllCities,
@@ -19,6 +23,7 @@ import {
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { alertOnce } from "@/utils/alert";
+import { logError } from "@/utils/logger";
 import { needsLocationUpdate } from "@/utils/profile";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -53,6 +58,7 @@ const OTHER_TEXT_MAX = 100;
 const EditProfile = () => {
   const {
     user,
+    token,
     updateProfile,
     isProfileLoading,
     profileError,
@@ -76,9 +82,10 @@ const EditProfile = () => {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [mapVisible, setMapVisible] = useState(false);
   // How the current pin was set (device GPS never places it — see
-  // components/ui/MapPicker.tsx / utils/pinState.ts). Captured here so a
-  // future save can persist `location.source`; not sent to the server yet,
-  // so it doesn't need to drive a re-render — a ref is enough.
+  // components/ui/MapPicker.tsx / utils/pinState.ts). Read at save time to
+  // derive `location.source` / `location.precision` for the structured PATCH.
+  // Nothing renders from it, so a ref is enough — it must not cause a
+  // re-render, and it must survive between the map closing and the save.
   const pinPlacementRef = useRef<PinPlacement | null>(null);
   const [townIsCustom, setTownIsCustom] = useState(false);
   const [subAreaIsOther, setSubAreaIsOther] = useState(false);
@@ -363,11 +370,43 @@ const EditProfile = () => {
     return { ...formData, province, town, townOther, subArea, subAreaOther };
   };
 
+  /**
+   * Sends the STRUCTURED location after the legacy save has already landed.
+   *
+   * Non-blocking by design: `update-profile` has persisted the strings by the
+   * time this runs, so a failure here costs routing precision, not the user's
+   * save. It is logged and swallowed — never surfaced as an alert, and never
+   * allowed to turn a successful save into an error the user sees.
+   */
+  const persistStructuredLocation = async (payload: Partial<UserProfile>) => {
+    try {
+      const result = await patchUserLocation(
+        buildLocationPatchPayload(payload, pinPlacementRef.current),
+        token || user?.token,
+      );
+      if (result.Status === "Error") {
+        await logError("patchUserLocation failed", {
+          userId: user?.mintId,
+          route: "editProfile",
+          error: result.ErrorMessage,
+        });
+      }
+    } catch (error) {
+      await logError("patchUserLocation exception", {
+        userId: user?.mintId,
+        route: "editProfile",
+        error,
+      });
+    }
+  };
+
   const submitProfile = async () => {
     if (!validateForm()) return;
     try {
-      const result = await updateProfile(buildPayload());
+      const payload = buildPayload();
+      const result = await updateProfile(payload);
       if (result.Status === "Success") {
+        await persistStructuredLocation(payload);
         alertOnce("Success", "Profile updated successfully!", [
           { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
         ]);
