@@ -15,10 +15,16 @@
  * suggest edits of, any registry string.
  *
  * Deliberately excludes: `AreaMeta` fields other than `aliases` (geocodePrefill,
- * residential, subAreaRequired, blockLabel), sub-areas, centroids and coarse
- * admin units. None of those are asked for by the backend's Task 1 scope; the
- * artifact only needs to answer "what city/tier/town/alias does this belong
- * to", not reproduce the full app-side form logic.
+ * residential, subAreaRequired, blockLabel), sub-areas and centroids. None of
+ * those are asked for by the backend's Task 1 scope; the artifact only needs
+ * to answer "what city/tier/town/alias/coarse-unit does this belong to", not
+ * reproduce the full app-side form logic.
+ *
+ * `coarseAdminUnits` IS included (added in the Task 1 fix round): the
+ * resolver guard that refuses to resolve an administrative parent (e.g.
+ * "Gulberg Town" in Karachi, which spans many registered areas) needs it to
+ * avoid a confident wrong answer, and the geocoding consumer in a later task
+ * depends on that refusal.
  *
  * No timestamp or other non-deterministic field is written: the artifact must
  * be byte-stable, so running this script twice with no registry change
@@ -33,6 +39,7 @@ import * as fs from "fs";
 
 import {
   AREA_META,
+  COARSE_ADMIN_UNITS,
   DEPRECATED_TOWNS,
   PAKISTAN_LOCATIONS,
   cityHasTowns,
@@ -53,6 +60,14 @@ interface CityExport {
   deprecatedTowns: string[];
   /** Alias string -> canonical town, inverted from `AREA_META[...].aliases`. */
   aliases: Record<string, string>;
+  /**
+   * Already-folded strings (via the app's `foldName`) naming administrative
+   * parents in this city — sourced directly from `COARSE_ADMIN_UNITS[city]`,
+   * which the app itself stores pre-folded. A raw geocoder string whose
+   * `foldName(...)` is a member must never be resolved to a single area: see
+   * `isCoarseAdminUnit` in `utils/pakistan_areas.ts` for why.
+   */
+  coarseAdminUnits: string[];
 }
 
 interface RegistryExport {
@@ -106,6 +121,7 @@ function buildRegistry(): RegistryExport {
       selectableTowns: getSelectableTownsForCity(city),
       deprecatedTowns: [...(DEPRECATED_TOWNS[city] ?? [])],
       aliases: buildAliasesForCity(city),
+      coarseAdminUnits: [...(COARSE_ADMIN_UNITS[city] ?? [])].sort(),
     };
   }
 
