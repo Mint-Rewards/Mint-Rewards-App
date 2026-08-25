@@ -678,6 +678,20 @@ const DEPRECATED_SUB_AREA_VALUES: Record<string, readonly string[]> = {
     "Aram Bagh",
     "Napier Quarter",
   ],
+  // Owner-confirmed: DHA Karachi has NO Phase 9. The phases run 1 to 8 plus the
+  // Extensions. Creek Vista is a development inside Phase 8, so the entry names
+  // a phase that does not exist and files a Phase 8 resident under it.
+  //
+  // Retired rather than replaced. An earlier pass added a bare "Phase 9"
+  // alongside it, which was wrong — it would have put a non-existent phase in
+  // the picker permanently, and this registry cannot take an entry back once
+  // released. No project-level "Creek Vista" is added either: that would put a
+  // third granularity into a two-level registry, the defect DHA Lahore has.
+  //
+  // Creek Vista residents select Phase 8, which is where Creek Vista is. Anyone
+  // already holding the compound almost certainly means Phase 8 too, but P3.1
+  // should prompt rather than reassign silently.
+  "Karachi::DHA": ["Phase 9 (Creek Vista)"],
   "Karachi::Korangi": ["Korangi Industrial Area"],
   // Same self-referential defect as Orangi: "Federal B. Area -> B Area".
   // Model Colony is now a town in its own right, so the Malir sub-area of the

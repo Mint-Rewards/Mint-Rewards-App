@@ -926,3 +926,33 @@ describe("subAreaRequired — partial coverage no longer traps anyone", () => {
     }
   });
 });
+
+describe("DHA Karachi — Phase 9 does not exist", () => {
+  // The phases run 1 to 8 plus Extensions. "Phase 9 (Creek Vista)" names a
+  // phase that is not there and files a Phase 8 resident under it, Creek Vista
+  // being a development inside Phase 8.
+  it("hides the entry naming a phase that does not exist", () => {
+    const offered = getSelectableSubAreasForTown("Karachi", "DHA");
+    expect(offered).not.toContain("Phase 9 (Creek Vista)");
+    // And no bare "Phase 9" was invented to replace it. An earlier pass did
+    // exactly that, which would have put a non-existent phase in the picker
+    // permanently — this registry cannot take an entry back once released.
+    expect(offered).not.toContain("Phase 9");
+  });
+
+  it("keeps the entry valid for anyone already holding it", () => {
+    expect(getSubAreasForTown("Karachi", "DHA")).toContain("Phase 9 (Creek Vista)");
+    expect(isDeprecatedSubArea("Karachi", "DHA", "Phase 9 (Creek Vista)")).toBe(true);
+  });
+
+  it("offers Phases 1 to 8 and the Extensions, and no project-level entry", () => {
+    const offered = getSelectableSubAreasForTown("Karachi", "DHA");
+    for (let i = 1; i <= 8; i++) {
+      expect([`Phase ${i}`, offered.includes(`Phase ${i}`)]).toEqual([`Phase ${i}`, true]);
+    }
+    expect(offered).toEqual(expect.arrayContaining(["Phase 8 Extension"]));
+    // Creek Vista residents pick Phase 8. Adding "Creek Vista" itself would put
+    // a third granularity into a two-level registry — the DHA Lahore defect.
+    expect(offered.some((s) => /creek vista/i.test(s))).toBe(false);
+  });
+});
