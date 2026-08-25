@@ -2,6 +2,7 @@ import { LocationPicker } from "@/components/ui/LocationPicker";
 import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
 import type { PinPlacement } from "@/utils/pinState";
+import { trackLocationSaved } from "@/utils/locationAnalytics";
 import {
   buildLocationPatchPayload,
   patchUserLocation,
@@ -380,10 +381,18 @@ const EditProfile = () => {
    */
   const persistStructuredLocation = async (payload: Partial<UserProfile>) => {
     try {
-      const result = await patchUserLocation(
-        buildLocationPatchPayload(payload, pinPlacementRef.current),
-        token || user?.token,
-      );
+      const patch = buildLocationPatchPayload(payload, pinPlacementRef.current);
+
+      // Reported on the SAVE, not on this request's outcome. By the time we get
+      // here update-profile has already persisted the coordinate, so the user
+      // has saved a location whatever the PATCH below does; gating the event on
+      // it would under-count the funnel for a failure nobody experienced. The
+      // failure itself is logged separately.
+      if (patch.location) {
+        trackLocationSaved(patch.location.source, patch.location.precision);
+      }
+
+      const result = await patchUserLocation(patch, token || user?.token);
       if (result.Status === "Error") {
         await logError("patchUserLocation failed", {
           userId: user?.mintId,
