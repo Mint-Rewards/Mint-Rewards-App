@@ -30,6 +30,27 @@
  * be byte-stable, so running this script twice with no registry change
  * produces a no-op diff.
  *
+ * SYNC DISCIPLINE (IMPORTANT-3): any change to `utils/pakistan_areas.ts` (or
+ * `pakistan_locations.ts`) that touches a city, tier, town, alias, or
+ * `COARSE_ADMIN_UNITS` entry requires regenerating BOTH committed copies of
+ * this export, not just one:
+ *
+ *   1. THIS repo's own regression fixture,
+ *      `utils/__generated__/locationRegistry.json` — run
+ *      `npm run export:registry -- --out utils/__generated__/locationRegistry.json`
+ *      and commit the diff. `__tests__/exportLocationRegistry.test.ts`
+ *      fails if the in-process export and this fixture drift apart, but it
+ *      cannot catch a `pakistan_areas.ts` edit that never got exported at
+ *      all — only a stale fixture that was regenerated incorrectly.
+ *   2. The BACKEND repo's `lib/data/locationRegistry.json` — run this same
+ *      command against that repo's checkout (or copy the freshly generated
+ *      file over) and commit it there. Nothing in either repo's test suite
+ *      can catch a forgotten backend regeneration automatically: the
+ *      backend has no live view of this repo, by design (see
+ *      `lib/locationRegistry.ts`'s own header in the backend repo). Staying
+ *      in sync is a discipline this comment documents, not a check either
+ *      CI enforces across the repo boundary.
+ *
  * Usage:
  *   npx tsx scripts/export_location_registry.ts            # writes to stdout
  *   npx tsx scripts/export_location_registry.ts --out FILE  # writes to FILE
@@ -83,7 +104,7 @@ interface RegistryExport {
  * independent of `Object.keys` enumeration order, which is what byte-stability
  * across regenerations depends on.
  */
-function buildAliasesForCity(city: string): Record<string, string> {
+export function buildAliasesForCity(city: string): Record<string, string> {
   const prefix = `${city}::`;
   const keys = Object.keys(AREA_META)
     .filter((key) => key.startsWith(prefix))
@@ -93,13 +114,26 @@ function buildAliasesForCity(city: string): Record<string, string> {
   for (const key of keys) {
     const town = key.slice(prefix.length);
     for (const alias of AREA_META[key].aliases ?? []) {
+      // MINOR-2: two different towns in the same city both claiming the same
+      // alias string would otherwise collapse silently — the second `for`
+      // iteration overwrites the first with no signal, and the export ships
+      // whichever town happened to sort last. That is exactly the kind of
+      // silent divergence this whole export exists to make loud instead: fail
+      // the export so the collision gets fixed in AREA_META, not baked into
+      // the artifact both repos then trust.
+      if (aliases[alias] !== undefined && aliases[alias] !== town) {
+        throw new Error(
+          `Duplicate alias "${alias}" in city "${city}": claimed by both ` +
+            `"${aliases[alias]}" and "${town}". Aliases must be unique per city.`,
+        );
+      }
       aliases[alias] = town;
     }
   }
   return aliases;
 }
 
-function buildRegistry(): RegistryExport {
+export function buildRegistry(): RegistryExport {
   const allCities = Object.values(PAKISTAN_LOCATIONS.cities).flat().sort();
 
   const cities: Record<string, CityExport> = {};
@@ -149,4 +183,10 @@ function main() {
   }
 }
 
-main();
+// Guarded so the regression test (IMPORTANT-3,
+// __tests__/exportLocationRegistry.test.ts) can `import { buildRegistry }`
+// from this module without also re-running the CLI's stdout/file-write path
+// as a side effect of the import.
+if (require.main === module) {
+  main();
+}
