@@ -260,7 +260,11 @@ export const AREA_META: Record<string, AreaMeta> = {
     residential: true,
     subAreaRequired: true,
     blockLabel: "Phase",
-    aliases: ["Defence Housing Authority", "Defence"],
+    // "Zamzama" is mis-parented as a Clifton sub-area (see DEPRECATED_SUB_AREA_VALUES
+    // below) but actually sits inside DHA Phase 5. Resolves to the town, not
+    // a phase: DHA's sub-area list is phases only, and a project-level entry
+    // would put a third granularity into a two-level registry.
+    aliases: ["Defence Housing Authority", "Defence", "Zamzama"],
   },
   "Karachi::Clifton": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Block" },
   // OSM carries the society's full registered name; PECHS is its acronym.
@@ -275,7 +279,16 @@ export const AREA_META: Record<string, AreaMeta> = {
       "Pakistan Employees Co-operative Housing Society",
     ],
   },
-  "Karachi::Gulshan-e-Iqbal": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Block" },
+  // "Shanti Nagar" was briefly a top-level town (DEPRECATED_TOWNS) before
+  // being re-parented here as its real sub-area. The alias lets the resolver
+  // name the town instead of going silent for it.
+  "Karachi::Gulshan-e-Iqbal": {
+    geocodePrefill: false,
+    residential: true,
+    subAreaRequired: true,
+    blockLabel: "Block",
+    aliases: ["Shanti Nagar"],
+  },
   // Google spells it "Johar"; this registry spells it "Jauhar". Neither is
   // wrong, and no fold or affix rule bridges a vowel swap -- 33 of 1000
   // sampled Karachi points landed here and were counted as unregistered.
@@ -289,9 +302,25 @@ export const AREA_META: Record<string, AreaMeta> = {
   "Karachi::North Karachi": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Sector" },
   "Karachi::North Nazimabad": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Block" },
   "Karachi::Nazimabad": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Block" },
-  "Karachi::Federal B. Area": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Block" },
+  // "Gulshan-e-Shamim" was briefly a top-level town, re-parented here as its
+  // real sub-area — same shape as Shanti Nagar above.
+  "Karachi::Federal B. Area": {
+    geocodePrefill: false,
+    residential: true,
+    subAreaRequired: true,
+    blockLabel: "Block",
+    aliases: ["Gulshan-e-Shamim"],
+  },
   "Karachi::Liaquatabad": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Block" },
-  "Karachi::Korangi": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Sector" },
+  // "Darussalam Society" was briefly a top-level town, re-parented here as
+  // its real sub-area — same shape as Shanti Nagar above.
+  "Karachi::Korangi": {
+    geocodePrefill: false,
+    residential: true,
+    subAreaRequired: false,
+    blockLabel: "Sector",
+    aliases: ["Darussalam Society"],
+  },
   "Karachi::Landhi": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Area" },
   "Karachi::Malir": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Area" },
   // The administrative name is "Shah Faisal Town"; the residential name this
@@ -330,7 +359,15 @@ export const AREA_META: Record<string, AreaMeta> = {
   "Karachi::KAECHS": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Block" },
   "Karachi::Gulshan-e-Maymar": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Sector" },
   // Gap audit: 10 of Sectors 1-21 listed — partial coverage, so the step is optional.
-  "Karachi::Scheme 33": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Sector" },
+  // "Memon Nagar" was briefly a top-level town, re-parented here as its real
+  // sub-area — same shape as Shanti Nagar above.
+  "Karachi::Scheme 33": {
+    geocodePrefill: false,
+    residential: true,
+    subAreaRequired: false,
+    blockLabel: "Sector",
+    aliases: ["Memon Nagar"],
+  },
   "Karachi::New Karachi": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Sector" },
   "Karachi::Defence View": {
     geocodePrefill: false,
@@ -432,7 +469,23 @@ export const AREA_META: Record<string, AreaMeta> = {
   // "PECHS / Block 5" into "Jamshed Town / PECHS" and delete block precision
   // across a dense area. Owner decision, 2026-08-25: keep PECHS top-level and
   // accept the structural inconsistency. Locked by test — do not "tidy" this.
-  "Karachi::Jamshed Town": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Area" },
+  // Bahadurabad, Baloch Colony, Garden East, Garden West, Jamshed Quarters and
+  // Soldier Bazaar were all briefly top-level towns, re-parented here as
+  // their real sub-areas — same shape as Shanti Nagar above.
+  "Karachi::Jamshed Town": {
+    geocodePrefill: false,
+    residential: true,
+    subAreaRequired: false,
+    blockLabel: "Area",
+    aliases: [
+      "Bahadurabad",
+      "Baloch Colony",
+      "Garden East",
+      "Garden West",
+      "Jamshed Quarters",
+      "Soldier Bazaar",
+    ],
+  },
   "Karachi::S.I.T.E. Town": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Area" },
   "Karachi::Gulshan-e-Ghazi": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Area" },
   "Karachi::Mahmudabad": {
@@ -653,6 +706,10 @@ const DEPRECATED_SUB_AREA_VALUES: Record<string, readonly string[]> = {
   "Lahore::Model Town": ["Model Town Link Road"],
   "Lahore::Lake City": ["Raiwind Road"],
   "Karachi::PECHS": ["Khalid Bin Walid Road", "Tariq Road"],
+  // Zamzama sits inside DHA Phase 5, not Clifton. It cannot be edited or
+  // removed — Clifton residents may already hold it — so it is retired here
+  // and resolves as an alias on DHA instead (see AREA_META above).
+  "Karachi::Clifton": ["Zamzama"],
   // Owner-adjudicated: of Saddar's 17 entries only four are wanted as explicit
   // sub-areas. The rest are markets, bazaars and neighbouring localities that
   // do not need listing — including "Saddar" itself, which was listed as a
@@ -1122,9 +1179,23 @@ export function resolveGeocodedName(
     }
   }
 
+  // A deprecated town's own name can tie with a live parent's alias for it --
+  // "Shanti Nagar" is both a hidden town and the alias its real neighbour
+  // (Gulshan-e-Iqbal) carries for the same geocoder string, because it was
+  // re-parented rather than retired. That is not a genuine ambiguity: the
+  // deprecated candidate can never be the answer, so it is dropped before
+  // judging ambiguity. A tie between two LIVE towns is left untouched.
+  let candidates = [...matches.entries()];
+  if (candidates.length > 1) {
+    const live = candidates.filter(
+      ([key, town]) => !isDeprecatedTown(key.split("::")[0], town),
+    );
+    if (live.length > 0) candidates = live;
+  }
+
   // Ambiguous across cities is a miss, not a coin flip.
-  if (matches.size !== 1) return null;
-  const [resolvedCity, resolved] = [...matches.entries()][0];
+  if (candidates.length !== 1) return null;
+  const [resolvedCity, resolved] = candidates[0];
 
   // A deprecated town is hidden from the picker, so prefilling one would seat a
   // value the user can neither see nor re-pick. Tested on the RESOLVED name,

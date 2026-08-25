@@ -511,15 +511,24 @@ describe("alias sanity", () => {
   // prefill it would silently select the wrong one of several dispersed places.
   // Askari 1-5 and Garden East/West are both sub-areas that were briefly, and
   // wrongly, aliased onto their towns.
-  it("never aliases a town to one of its own sub-areas", () => {
+  it("never aliases a town to one of its own sub-areas, unless it is a re-parented former town", () => {
+    // The Askari 4 / Garden East failure mode: aliasing a sub-area onto its
+    // own parent claims a genuinely different place is the whole town. But a
+    // re-parented name -- "Shanti Nagar" is both a DEPRECATED_TOWNS entry and
+    // a live sub-area of Gulshan-e-Iqbal -- is the sanctioned exception: the
+    // alias and the sub-area are the SAME string by design, because the town
+    // was demoted rather than retired. That is distinguishable from the bad
+    // case mechanically: the alias string is itself a hidden former town for
+    // this city.
     for (const [key, meta] of Object.entries(AREA_META)) {
       const [city, town] = key.split("::");
       const subAreas = new Set(getSubAreasForTown(city, town).map(foldName));
       for (const alias of meta.aliases ?? []) {
-        expect([key, alias, subAreas.has(foldName(alias))]).toEqual([
+        if (!subAreas.has(foldName(alias))) continue;
+        expect([key, alias, isDeprecatedTown(city, alias)]).toEqual([
           key,
           alias,
-          false,
+          true,
         ]);
       }
     }
@@ -742,6 +751,11 @@ describe("a deprecated town is never prefilled", () => {
   // Hiding a town from the picker while the resolver still returns it would
   // pre-select a value the user can neither see nor re-pick. Storage and
   // validation are deliberately unaffected.
+  // "Shanti Nagar" is NOT in this list, despite being a hidden town: it was
+  // re-parented rather than retired, and now resolves to Gulshan-e-Iqbal via
+  // the alias mechanism -- see "re-parented names resolve to their new
+  // parent, not null" below. This list is for towns retired with nowhere to
+  // go.
   it("refuses to resolve a hidden town, by name or alias", () => {
     for (const name of [
       "Mahmudabad",
@@ -749,7 +763,6 @@ describe("a deprecated town is never prefilled", () => {
       "Muslimabad",
       "Askari",
       "Garden",
-      "Shanti Nagar",
       // Both alias forms must be refused too, not just the canonical name.
       "Sikandarabad",
       "Gulshan e Sikandarabad",
@@ -763,6 +776,86 @@ describe("a deprecated town is never prefilled", () => {
     for (const town of ["Mahmudabad", "Muslimabad", "Askari", "Garden"]) {
       expect([town, isCanonicalTown("Karachi", town)]).toEqual([town, true]);
       expect([town, isLegacyTownValue("Karachi", town)]).toEqual([town, false]);
+    }
+  });
+});
+
+describe("re-parented names resolve to their new parent, not null", () => {
+  // These were briefly top-level towns and are now DEPRECATED_TOWNS entries
+  // whose names survive as sub-areas of a real parent -- unlike
+  // Askari/Garden/Mahmudabad/Sikandarabad, which were retired outright
+  // because there was nowhere for them to go. A re-parented name has
+  // somewhere to go, so the geocoder should not go silent: it names the
+  // town, and the user picks the sub-area, via the same alias mechanism used
+  // everywhere else in this file.
+  const REPARENTED: readonly (readonly [string, string])[] = [
+    ["Shanti Nagar", "Gulshan-e-Iqbal"],
+    ["Memon Nagar", "Scheme 33"],
+    ["Gulshan-e-Shamim", "Federal B. Area"],
+    ["Darussalam Society", "Korangi"],
+    ["Bahadurabad", "Jamshed Town"],
+    ["Baloch Colony", "Jamshed Town"],
+    ["Garden East", "Jamshed Town"],
+    ["Garden West", "Jamshed Town"],
+    ["Jamshed Quarters", "Jamshed Town"],
+    ["Soldier Bazaar", "Jamshed Town"],
+  ];
+
+  it("resolves each re-parented name to its parent town", () => {
+    for (const [raw, parent] of REPARENTED) {
+      expect([raw, resolveGeocodedName(raw, "Karachi")]).toEqual([raw, parent]);
+    }
+  });
+
+  it("still hides the demoted town itself from the picker", () => {
+    for (const [raw] of REPARENTED) {
+      expect([raw, isDeprecatedTown("Karachi", raw)]).toEqual([raw, true]);
+    }
+  });
+
+  it("offers the parent's sub-area picker with the re-parented name still in it", () => {
+    for (const [raw, parent] of REPARENTED) {
+      const offered = getSelectableSubAreasForTown("Karachi", parent);
+      expect([parent, raw, offered.includes(raw)]).toEqual([parent, raw, true]);
+    }
+  });
+});
+
+describe("Zamzama is mis-parented under Clifton", () => {
+  // Zamzama sits inside DHA Phase 5, not Clifton, but was registered as a
+  // Clifton sub-area before that was checked (P0.1's Clifton sample put a
+  // "Clifton" geocoder answer on a Zamzama-area pin, ~2 km from Clifton's own
+  // cluster). The string cannot be removed -- Clifton residents may already
+  // hold it -- so it is deprecated there rather than deleted, and resolves as
+  // an alias on DHA instead. It names the TOWN, not "Phase 5": DHA's sub-area
+  // list is phases only, and adding a project-level entry would put a third
+  // granularity into a two-level registry, the defect DHA Lahore already has.
+  it("resolves to DHA, not Clifton", () => {
+    expect(resolveGeocodedName("Zamzama", "Karachi")).toBe("DHA");
+  });
+
+  it("is hidden from Clifton's picker but still valid as stored data", () => {
+    expect(getSubAreasForTown("Karachi", "Clifton")).toContain("Zamzama");
+    expect(getSelectableSubAreasForTown("Karachi", "Clifton")).not.toContain(
+      "Zamzama",
+    );
+    expect(isDeprecatedSubArea("Karachi", "Clifton", "Zamzama")).toBe(true);
+  });
+
+  // Clifton's other named sub-areas were checked against the same failure
+  // mode and are genuinely Clifton places: Kehkashan and Sea View are
+  // Clifton's own named blocks, and Delhi Colony / Punjab Colony / Shah
+  // Rasool Colony sit inside it. Only Zamzama was mis-parented.
+  it("leaves Clifton's other named sub-areas untouched", () => {
+    const offered = getSelectableSubAreasForTown("Karachi", "Clifton");
+    for (const sub of [
+      "Kehkashan",
+      "Sea View",
+      "Delhi Colony",
+      "Punjab Colony",
+      "Shah Rasool Colony",
+    ]) {
+      expect([sub, offered.includes(sub)]).toEqual([sub, true]);
     }
   });
 });
