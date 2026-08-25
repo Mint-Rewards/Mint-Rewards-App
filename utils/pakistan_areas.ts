@@ -316,11 +316,14 @@ export const AREA_META: Record<string, AreaMeta> = {
     blockLabel: "Area",
     aliases: ["Korangi Industrial Estate"],
   },
+  // The short forms were dropped as aliases when "S.I.T.E. Town" was added:
+  // "SITE" now names either the industrial estate or the administrative town,
+  // and an alias that names two places is exactly the mis-resolution the alias
+  // rules exist to prevent. Only the full name resolves here.
   "Karachi::Sindh Industrial Trading Estate": {
     geocodePrefill: false,
     residential: false,
     blockLabel: "Area",
-    aliases: ["SITE", "SITE Karachi", "SITE Area"],
   },
   "Karachi::West Wharf": { geocodePrefill: false, residential: false, blockLabel: "Area" },
   "Karachi::Manora": { geocodePrefill: false, residential: true, blockLabel: "Area" },
@@ -379,6 +382,9 @@ export const AREA_META: Record<string, AreaMeta> = {
   "Karachi::Steel Town": { geocodePrefill: false, residential: true, blockLabel: "Area" },
   "Karachi::Shah Latif Town": { geocodePrefill: false, residential: true, blockLabel: "Area" },
   "Karachi::Bin Qasim Town": { geocodePrefill: false, residential: true, blockLabel: "Area" },
+  "Karachi::Model Colony": { geocodePrefill: false, residential: true, blockLabel: "Area" },
+  "Karachi::Jamshed Town": { geocodePrefill: false, residential: true, blockLabel: "Area" },
+  "Karachi::S.I.T.E. Town": { geocodePrefill: false, residential: true, blockLabel: "Area" },
   "Karachi::Gulshan-e-Ghazi": { geocodePrefill: false, residential: true, blockLabel: "Area" },
   "Karachi::Mahmudabad": {
     geocodePrefill: false,
@@ -607,6 +613,10 @@ const DEPRECATED_SUB_AREA_VALUES: Record<string, readonly string[]> = {
   ],
   "Karachi::Korangi": ["Korangi Industrial Area"],
   // Same self-referential defect as Orangi: "Federal B. Area -> B Area".
+  // Model Colony is now a town in its own right, so the Malir sub-area of the
+  // same name is a second way to write one address. Retired, leaving Malir with
+  // five options.
+  "Karachi::Malir": ["Model Colony"],
   "Karachi::Federal B. Area": ["B Area"],
   "Karachi::Gulshan-e-Iqbal": ["University Road"],
   // Owner-adjudicated 2026-08-25. Steel Town is its own area (now a town);
@@ -846,6 +856,15 @@ export const COARSE_ADMIN_UNITS: Record<string, ReadonlySet<string>> = {
       // exists to express.
       "Bin Qasim Town",
       "Bin Qasim",
+      // Administrative parents, evidenced not assumed: OSM returned these only
+      // in the `town` field (SITE Town 50x, Jamshed Town 32x) and never as a
+      // suburb or neighbourhood. Selectable so residents who identify with them
+      // can pick them; never resolvable, or every PECHS and Bahadurabad pin
+      // would prefill to Jamshed Town.
+      "Jamshed Town",
+      "S.I.T.E. Town",
+      "SITE Town",
+      "SITE",
       // Districts and divisions, the rungs above a town. LocationIQ returns
       // these in `city_district`, which the live parser already excludes — they
       // are listed anyway so the guard holds if a future parser reads it.

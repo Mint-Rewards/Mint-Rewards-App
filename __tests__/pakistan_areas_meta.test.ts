@@ -264,7 +264,7 @@ describe("PAKISTAN_LOCATIONS is frozen", () => {
       provinces: 7,
       cities: 58,
       citiesWithTowns: 10,
-      towns: 260,   // 196 + 56 from the P0.6 Karachi expansion
+      towns: 263,   // 196 + 56 from the P0.6 Karachi expansion
       subAreaKeys: 150,
       subAreas: 1103,   // +5 re-parented: Data Nagar, Shanti Nagar, Memon Nagar, Gulshan-e-Shamim, Darussalam Society
     });
@@ -424,7 +424,6 @@ describe("P0.6 registry expansion", () => {
     expect(resolveGeocodedName("Eissa Nagri", "Karachi")).toBe("Essa Nagri");
     expect(resolveGeocodedName("Central Jacob Lines", "Karachi")).toBe("Jacob Lines");
     expect(resolveGeocodedName("Shershah Colony", "Karachi")).toBe("Sher Shah Colony");
-    expect(resolveGeocodedName("SITE", "Karachi")).toBe("Sindh Industrial Trading Estate");
   });
 
   // Askari 1-5 are separate places in different parts of Karachi. The sweep
@@ -534,13 +533,20 @@ describe("alias sanity", () => {
     }
   });
 
-  it("never aliases a name that is already a canonical town in that city", () => {
+  // Checked through the RESOLVER, not by comparing folded strings. "SITE" and
+  // "S.I.T.E. Town" do not fold alike -- "site" vs "sitetown" -- yet the
+  // affix-tolerant pass strips the trailing "Town" and makes them collide. A
+  // string-equality check declares that pair clean while resolution is
+  // ambiguous, which is the worst of both.
+  it("never leaves an alias unable to name exactly one place", () => {
     for (const [key, meta] of Object.entries(AREA_META)) {
       const [city, town] = key.split("::");
-      const towns = new Set(getTownsForCity(city).map(foldName));
+      // A deprecated town's aliases resolve to null on purpose — the resolver
+      // refuses hidden towns so nothing prefills a value the picker won't show.
+      if (isDeprecatedTown(city, town)) continue;
       for (const alias of meta.aliases ?? []) {
-        if (foldName(alias) === foldName(town)) continue;
-        expect([key, alias, towns.has(foldName(alias))]).toEqual([key, alias, false]);
+        const label = `${key} alias "${alias}"`;
+        expect([label, resolveGeocodedName(alias, city)]).toEqual([label, town]);
       }
     }
   });
@@ -681,7 +687,13 @@ describe("selectability and resolvability are separate axes", () => {
     // territory-without-a-child justification written down.
     const both = getSelectableTownsForCity("Karachi")
       .filter((t) => COARSE_ADMIN_UNITS["Karachi"].has(foldName(t)));
-    expect(both).toEqual(["Bin Qasim Town"]);
+    // Each of these is an administrative parent a resident may legitimately
+    // pick, and that the geocoder must never pre-select on their behalf.
+    expect(both.sort()).toEqual([
+      "Bin Qasim Town",
+      "Jamshed Town",
+      "S.I.T.E. Town",
+    ]);
   });
 });
 

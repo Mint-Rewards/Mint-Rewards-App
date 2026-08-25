@@ -246,6 +246,12 @@ export const PAKISTAN_LOCATIONS: LocationData = {
       "Steel Town",   // owner-confirmed: a separate residential area
       "Shah Latif Town",   // owner-confirmed: its own town, NOT a sub-area
       "Bin Qasim Town",    // owner-confirmed: selectable in its own right
+      // Owner-confirmed real Karachi towns the registry lacked. Adding them
+      // also gives Baloch Colony, Tariq Bin Ziyad Colony and Golimar a parent
+      // to be re-levelled under later, should that be wanted.
+      "Model Colony",
+      "Jamshed Town",
+      "S.I.T.E. Town",
       "Gulshan-e-Ghazi",   // OSM 5
       "Mahmudabad",   // OSM 5
       "Darussalam Society",   // OSM 5
