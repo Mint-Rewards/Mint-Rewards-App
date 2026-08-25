@@ -2,6 +2,7 @@ import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
 import {
   PAKISTAN_LOCATIONS,
+  getSelectableTownsForCity,
   getSubAreasForTown,
   isCanonicalTown,
   matchCanonicalNames,
@@ -143,8 +144,12 @@ const EditProfile = () => {
     ? (PAKISTAN_LOCATIONS.cities[formData.province] || [])
     : [];
 
+  // The PICKER view, not the validation view: `getTownsForCity` still returns
+  // deprecated towns so existing profiles stay valid, while this hides them
+  // from new selections. Without this the deprecation is inert and users keep
+  // creating the very values it exists to retire.
   const baseTownOptions = formData.city
-    ? (PAKISTAN_LOCATIONS.towns[formData.city] || [])
+    ? getSelectableTownsForCity(formData.city)
     : [];
   const townOptions = [...baseTownOptions, OTHER_OPTION];
 
