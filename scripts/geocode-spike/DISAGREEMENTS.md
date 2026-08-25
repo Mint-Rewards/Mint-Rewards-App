@@ -1,5 +1,30 @@
 # Karachi geocoder disagreements — adjudication sheet
 
+> **Read this first: adjudicating these rows cannot change any prefill outcome.**
+>
+> The gate is per-area at n>=20. Per-area sample sizes were computed after the
+> industrial-suppression rule, and **only one area clears it**:
+>
+> | area | prefill-eligible n | correct | wrong | precision |
+> | --- | ---: | ---: | ---: | ---: |
+> | **Korangi** | **55** | 54 | 1 | **98%** |
+> | Landhi | 16 | 11 | 5 | 69% |
+> | PECHS | 15 | 13 | 2 | 87% |
+> | Shah Faisal Colony | 10 | 4 | 6 | 40% |
+> | Gulshan-e-Iqbal | 8 | 0 | 8 | 0% |
+> | Gulistan-e-Jauhar | 6 | 3 | 3 | 50% |
+> | DHA | 3 | 3 | 0 | 100% |
+> | Clifton | 1 | 0 | 1 | 0% |
+>
+> Korangi already clears 85% at 98%, and holds exactly **one** of the 27 open
+> points — so its verdict cannot move it. Every other area is under-sampled and
+> cannot be promoted however its points adjudicate.
+>
+> **The blocker is sample size, not labelling.** Promoting a second area needs a
+> denser sweep in that area, not desk work on these rows. Adjudicate them to
+> improve the gazetteer's training labels and to sanity-check the 77% figure —
+> not to unlock prefill.
+
 | | points |
 |---|---:|
 | OSM name resolved to the SAME town as the truth label | **88** |

@@ -329,7 +329,8 @@ export const AREA_META: Record<string, AreaMeta> = {
   },
   "Karachi::KAECHS": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Block" },
   "Karachi::Gulshan-e-Maymar": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Sector" },
-  "Karachi::Scheme 33": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Sector" },
+  // Gap audit: 10 of Sectors 1-21 listed — partial coverage, so the step is optional.
+  "Karachi::Scheme 33": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Sector" },
   "Karachi::New Karachi": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Sector" },
   "Karachi::Defence View": {
     geocodePrefill: false,
@@ -340,7 +341,8 @@ export const AREA_META: Record<string, AreaMeta> = {
   },
   "Karachi::Gulzar-e-Hijri": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Area" },
   "Karachi::Surjani Town": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Sector" },
-  "Karachi::Naya Nazimabad": { geocodePrefill: false, residential: true, subAreaRequired: true, blockLabel: "Block" },
+  // Gap audit: 5 of Blocks 1-13 listed — partial coverage, so the step is optional.
+  "Karachi::Naya Nazimabad": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Block" },
   // --- P0.6 registry expansion (2026-08-25) --------------------------
   // Every new area gets blockLabel "Area": none has a sub-area list, and
   // naming a level the dropdown cannot offer reads as a broken form.
