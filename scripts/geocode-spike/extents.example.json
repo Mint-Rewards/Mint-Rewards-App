@@ -1,0 +1,32 @@
+{
+  "_README": [
+    "TEMPLATE ONLY. Copy to extents.json and REPLACE every box.",
+    "The boxes below are rough, eyeballed approximations included to show the",
+    "shape of the file and to let the pipeline be exercised end to end. They",
+    "are NOT survey data and must not be used for a real sweep: a sloppy box",
+    "that spills into the neighbouring town produces points the geocoder",
+    "answers correctly and the scorer counts as misses, which would push a",
+    "good area below the promotion threshold.",
+    "",
+    "Draw each box off satellite imagery, tight to the built-up extent.",
+    "Keys are 'City::Town' for cities WITH town data, or a bare 'City' for the",
+    "48 cities without it (those are sampled to answer city resolution only).",
+    "Coordinates are decimal degrees, WGS84."
+  ],
+
+  "Karachi::Gulshan-e-Iqbal": { "minLat": 24.905, "maxLat": 24.945, "minLng": 67.070, "maxLng": 67.135 },
+  "Karachi::DHA":             { "minLat": 24.780, "maxLat": 24.830, "minLng": 67.030, "maxLng": 67.090 },
+  "Karachi::Clifton":         { "minLat": 24.795, "maxLat": 24.830, "minLng": 67.010, "maxLng": 67.045 },
+  "Karachi::North Nazimabad": { "minLat": 24.930, "maxLat": 24.965, "minLng": 67.020, "maxLng": 67.060 },
+
+  "Lahore::Gulberg":          { "minLat": 31.495, "maxLat": 31.535, "minLng": 74.330, "maxLng": 74.370 },
+  "Lahore::Model Town":       { "minLat": 31.470, "maxLat": 31.500, "minLng": 74.310, "maxLng": 74.345 },
+
+  "Islamabad::Sector F-7":    { "minLat": 33.710, "maxLat": 33.735, "minLng": 73.040, "maxLng": 73.070 },
+  "Islamabad::Sector G-9":    { "minLat": 33.680, "maxLat": 33.705, "minLng": 73.020, "maxLng": 73.050 },
+
+  "Hyderabad::Latifabad":     { "minLat": 25.350, "maxLat": 25.395, "minLng": 68.320, "maxLng": 68.375 },
+
+  "Sahiwal":                  { "minLat": 30.645, "maxLat": 30.685, "minLng": 73.085, "maxLng": 73.125 },
+  "Sukkur":                   { "minLat": 27.680, "maxLat": 27.725, "minLng": 68.820, "maxLng": 68.875 }
+}
