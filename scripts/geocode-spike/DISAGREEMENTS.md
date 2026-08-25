@@ -24,6 +24,20 @@
 > denser sweep in that area, not desk work on these rows. Adjudicate them to
 > improve the gazetteer's training labels and to sanity-check the 77% figure —
 > not to unlock prefill.
+>
+> **Update, 2026-08-25, after the alias commit (`ebae946`):** recomputed
+> against the current registry (10 aliases + Zamzama→DHA). Gulshan-e-Iqbal and
+> DHA both crossed n≥20 — no longer sample-blocked. Gulshan-e-Iqbal fails on
+> precision (56%, 25 pts). **DHA's raw score was 75% (24 pts) but its 6
+> "wrong" answers are all `Darussalam Society → Korangi` — the same fact
+> already used to re-parent that name under Korangi, not a new disagreement.
+> Counted correctly (per this sheet's own `truth-wrong` convention below),
+> DHA is 100% (24/24) and clears the gate alongside Korangi.** See "Recompute
+> after the alias commit" in `P0.6-REPORT.md` for the full table. These 27
+> points still cannot move either verdict; Gulshan-e-Iqbal's `Memon Nagar →
+> Scheme 33` pair (2 pts) is structurally similar to the DHA case but is
+> *not* reclassified here for lack of the same independent confirmation —
+> flagged, not decided.
 
 | | points |
 |---|---:|
