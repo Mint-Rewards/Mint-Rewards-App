@@ -2,7 +2,10 @@ import { LocationPicker } from "@/components/ui/LocationPicker";
 import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
 import type { PinPlacement } from "@/utils/pinState";
-import { trackLocationSaved } from "@/utils/locationAnalytics";
+import {
+  trackLocationPatchFailed,
+  trackLocationSaved,
+} from "@/utils/locationAnalytics";
 import {
   buildLocationPatchPayload,
   patchUserLocation,
@@ -61,6 +64,7 @@ const EditProfile = () => {
     user,
     token,
     updateProfile,
+    setLocationEvaluation,
     isProfileLoading,
     profileError,
     setProfileError,
@@ -390,7 +394,10 @@ const EditProfile = () => {
    * save. It is logged and swallowed — never surfaced as an alert, and never
    * allowed to turn a successful save into an error the user sees.
    */
-  const persistStructuredLocation = async (payload: Partial<UserProfile>) => {
+  /** Returns true when the session died mid-save (see the 401 note below). */
+  const persistStructuredLocation = async (
+    payload: Partial<UserProfile>,
+  ): Promise<boolean> => {
     try {
       const patch = buildLocationPatchPayload(payload, pinPlacementRef.current);
 
@@ -404,20 +411,35 @@ const EditProfile = () => {
       }
 
       const result = await patchUserLocation(patch, token || user?.token);
-      if (result.Status === "Error") {
-        await logError("patchUserLocation failed", {
-          userId: user?.mintId,
-          route: "editProfile",
-          error: result.ErrorMessage,
-        });
+
+      if (result.Status === "Success") {
+        // The server's verdict on whether this location is finished — the only
+        // authority on that, since it knows about fields this form does not yet
+        // collect.
+        setLocationEvaluation(result.evaluation ?? null);
+        return false;
       }
+
+      await logError("patchUserLocation failed", {
+        userId: user?.mintId,
+        route: "editProfile",
+        error: result.ErrorMessage,
+      });
+      // The user never sees this failure, so this event is the only place it
+      // becomes a number worth putting next to `location_saved`.
+      trackLocationPatchFailed(result.ErrorMessage);
+      return result.unauthorized === true;
     } catch (error) {
       await logError("patchUserLocation exception", {
         userId: user?.mintId,
         route: "editProfile",
         error,
       });
+      trackLocationPatchFailed(
+        error instanceof Error ? error.message : "unknown",
+      );
     }
+    return false;
   };
 
   const submitProfile = async () => {
@@ -426,7 +448,12 @@ const EditProfile = () => {
       const payload = buildPayload();
       const result = await updateProfile(payload);
       if (result.Status === "Success") {
-        await persistStructuredLocation(payload);
+        const signedOut = await persistStructuredLocation(payload);
+        // A 401 on that request means `authenticatedFetch` has already signed
+        // the user out and sent them to the login screen. Congratulating them
+        // on a save while they are being bounced is worse than saying nothing —
+        // the save itself did land, and their profile will show it next login.
+        if (signedOut) return;
         alertOnce("Success", "Profile updated successfully!", [
           { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
         ]);
@@ -736,6 +763,8 @@ const EditProfile = () => {
             visible={mapVisible}
             initialLatitude={formData.latitude}
             initialLongitude={formData.longitude}
+            city={formData.city}
+            town={formData.town}
             onConfirm={(lat, lng, placement) => {
               setFormData((p) => ({ ...p, latitude: lat, longitude: lng }));
               pinPlacementRef.current = placement ?? null;

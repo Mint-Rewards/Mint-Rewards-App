@@ -1,5 +1,6 @@
 import { logAuthEvent, logError, logEvent } from "@/utils/logger";
 import { authenticatedFetch } from "@/utils/api";
+import type { LocationEvaluation } from "@/utils/locationApi";
 import { API_BASE_URL } from "@/utils/constants";
 import { setUnauthorizedHandler } from "@/utils/session";
 import { addBreadcrumb, captureWarning, setSentryUser } from "@/utils/sentry";
@@ -234,6 +235,18 @@ interface UserSlice {
    */
   locationPromptShown: boolean;
   dismissLocationPrompt: () => void;
+  /**
+   * The server's own verdict on this user's location, from the last successful
+   * `PATCH /api/users/location` — `complete`, what is `missing`, and which
+   * `bucket` they fall in.
+   *
+   * Kept rather than discarded because it is the only authoritative answer to
+   * "is this location finished": the client's `isProfileComplete` answers a
+   * different, looser question (it cannot know about `houseNo`, which the app
+   * does not yet collect). Null until a save happens in this session.
+   */
+  locationEvaluation: LocationEvaluation | null;
+  setLocationEvaluation: (evaluation: LocationEvaluation | null) => void;
   setUserData: (userData: Partial<User>) => void;
   getProfile: () => Promise<void>;
   signIn: (
@@ -426,8 +439,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   isLoading: false,
   error: null,
   locationPromptShown: false,
+  locationEvaluation: null,
 
   dismissLocationPrompt: () => set({ locationPromptShown: true }),
+
+  setLocationEvaluation: (evaluation) => set({ locationEvaluation: evaluation }),
 
   setUserData: (userData) =>
     set((state) => ({

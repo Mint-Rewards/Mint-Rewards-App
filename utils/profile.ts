@@ -6,8 +6,6 @@ import {
 import type { User } from "@/store/store";
 
 /**
- * True when the profile has every field the app needs to place a user.
- *
  * Each location level is satisfied by either half of its canonical/free-text
  * pair, since the two are mutually exclusive by construction: a user with a
  * `townOther` has answered the town question just as completely as one with a
@@ -17,19 +15,17 @@ import type { User } from "@/store/store";
  * `requiresSubArea`. Demanding it unconditionally would mark free-text-town
  * users, and everyone in a town with no sub-area data, permanently incomplete
  * with no way to fix it.
- *
- * The COORDINATE is part of this (owner ruling, 2026-08-25): a user with no
- * saved pin has an incomplete profile and is in the same category as a new
- * user. Before that ruling this function checked only the address strings, and
- * every caller had to remember to AND it with its own hand-rolled coordinate
- * check — two screens did, with two different definitions of what counted.
- * Stating it once here is the point.
- *
- * `address` counts alongside the pin: a coordinate with no street address
- * cannot be delivered to either, and both screens already treated the pair as
- * one condition.
  */
-export function isProfileComplete(user: User | null | undefined): boolean {
+/**
+ * True when the address STRINGS are answered — phone, province, city, town and
+ * (where it can be answered) sub-area.
+ *
+ * Split out of `isProfileComplete` so callers can tell the two halves of
+ * incompleteness apart *for messaging only*. "You haven't told us your area" and
+ * "you haven't pinned your door" need different words; they must not need
+ * different gates, which is why the gate keeps using `isProfileComplete`.
+ */
+export function isAreaAnswered(user: User | null | undefined): boolean {
   if (!user) return false;
 
   const city = user.city?.trim() || "";
@@ -37,18 +33,6 @@ export function isProfileComplete(user: User | null | undefined): boolean {
   const hasTown = !!town || !!user.townOther?.trim();
 
   if (!user.phone?.trim() || !user.province?.trim() || !city || !hasTown) {
-    return false;
-  }
-
-  // Truthiness, not parseability, and deliberately so: this mirrors exactly what
-  // the two screens tested before the rule moved here, so no existing user's
-  // gate flips as a side effect of the consolidation. `validateForm` in
-  // editProfile is the parseability gate, and it runs before anything is saved.
-  if (
-    !user.latitude?.trim() ||
-    !user.longitude?.trim() ||
-    !user.address?.trim()
-  ) {
     return false;
   }
 
@@ -70,6 +54,47 @@ export function isProfileComplete(user: User | null | undefined): boolean {
   }
 
   return true;
+}
+
+/**
+ * True when we know where to actually deliver to: a saved coordinate AND a
+ * street address.
+ *
+ * The two travel together because neither is usable alone — a pin with no
+ * address cannot be written on a collection sheet, and an address with no pin
+ * cannot be routed to. Both screens already treated them as one condition
+ * before this was a function.
+ */
+export function isDeliveryPointSet(user: User | null | undefined): boolean {
+  if (!user) return false;
+  // Truthiness, not parseability, and deliberately so: this mirrors exactly what
+  // the two screens tested before the rule moved here, so no existing user's
+  // gate flips as a side effect. `validateForm` in editProfile is the
+  // parseability gate, and it runs before anything is saved.
+  return (
+    !!user.latitude?.trim() &&
+    !!user.longitude?.trim() &&
+    !!user.address?.trim()
+  );
+}
+
+/**
+ * True when the profile has every field the app needs to place a user.
+ *
+ * The COORDINATE is part of this (owner ruling, 2026-08-25): a user with no
+ * saved pin has an incomplete profile and is in the same category as a new
+ * user. Before that ruling this checked only the address strings, and every
+ * caller had to remember to AND it with its own hand-rolled coordinate check —
+ * two screens did, with two different definitions of what counted. Stating it
+ * once here is the point.
+ *
+ * THIS is what gates. `isAreaAnswered` and `isDeliveryPointSet` exist so a
+ * caller can say WHICH half is missing when it writes a prompt; they are not
+ * alternative gates, and using one alone to decide access would reintroduce
+ * exactly the split this function exists to close.
+ */
+export function isProfileComplete(user: User | null | undefined): boolean {
+  return isAreaAnswered(user) && isDeliveryPointSet(user);
 }
 
 /**

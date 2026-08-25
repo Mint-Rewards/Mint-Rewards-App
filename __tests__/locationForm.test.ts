@@ -4,12 +4,13 @@
  * province-independent), which towns are offered (selectable only), and what
  * `province` value leaves the client now that nobody picks it.
  */
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it, jest } from "@jest/globals";
 import {
   ALL_CITIES,
   OTHER_OPTION,
   buildTownOptions,
   getAllCities,
+  getSelectionRegion,
   resolveProvinceForPayload,
 } from "@/utils/locationForm";
 import {
@@ -119,5 +120,70 @@ describe("province removal keeps isProfileComplete satisfiable", () => {
         townOther: "Somewhere",
       } as any),
     ).toBe(false);
+  });
+});
+
+describe("getSelectionRegion", () => {
+  it("returns null when no city is chosen", () => {
+    expect(getSelectionRegion("", "")).toBeNull();
+    expect(getSelectionRegion(undefined, undefined)).toBeNull();
+    expect(getSelectionRegion("   ", "DHA")).toBeNull();
+  });
+
+  it("returns null while the registry has no centroids", () => {
+    // Today CITY_CENTROIDS and AREA_CENTROIDS are both empty, so every lookup
+    // misses and the caller falls back. This test is the tripwire: when the
+    // centroid dataset lands, it fails and the fallback assumptions get
+    // revisited on purpose rather than by accident.
+    expect(getSelectionRegion("Karachi", "DHA")).toBeNull();
+  });
+
+  it("puts latitude and longitude the right way round", () => {
+    // The registry stores [lng, lat]; a region reads latitude first. Proven
+    // through the real accessor by stubbing the registry's centroid table.
+    jest.isolateModules(() => {
+      jest.doMock("@/utils/pakistan_areas", () => {
+        const actual = jest.requireActual<typeof import("@/utils/pakistan_areas")>(
+          "@/utils/pakistan_areas",
+        );
+        return {
+          ...actual,
+          // Karachi: 67.0 East, 24.86 North.
+          getCityCentroid: () => [67.0011, 24.8607] as const,
+          getAreaCentroid: () => null,
+        };
+      });
+      const { getSelectionRegion: subject } =
+        require("@/utils/locationForm") as typeof import("@/utils/locationForm");
+
+      const region = subject("Karachi", "");
+      expect(region).not.toBeNull();
+      // Latitude is the ~24 value, not the ~67 one. Swapped, this lands in
+      // Somalia and nothing else in the app would notice.
+      expect(region!.latitude).toBeCloseTo(24.8607, 4);
+      expect(region!.longitude).toBeCloseTo(67.0011, 4);
+    });
+  });
+
+  it("zooms tighter for an area centroid than for a city one", () => {
+    jest.isolateModules(() => {
+      jest.doMock("@/utils/pakistan_areas", () => {
+        const actual = jest.requireActual<typeof import("@/utils/pakistan_areas")>(
+          "@/utils/pakistan_areas",
+        );
+        return {
+          ...actual,
+          getAreaCentroid: () => [67.03, 24.8] as const,
+          getCityCentroid: () => [67.0011, 24.8607] as const,
+        };
+      });
+      const { getSelectionRegion: subject } =
+        require("@/utils/locationForm") as typeof import("@/utils/locationForm");
+
+      const area = subject("Karachi", "DHA")!;
+      expect(area.latitudeDelta).toBeLessThan(0.2);
+      // An area centroid wins over the city one — it is the better guess.
+      expect(area.longitude).toBeCloseTo(67.03, 4);
+    });
   });
 });

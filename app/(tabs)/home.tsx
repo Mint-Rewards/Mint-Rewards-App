@@ -17,7 +17,12 @@ import { brandSurface } from "@/utils/brandTheme";
 import { mergeBrandsWithDeals } from "@/utils/deals";
 import { logEvent } from "@/utils/logger";
 import LocationUpdateModal from "@/components/LocationUpdateModal";
-import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
+import {
+  isAreaAnswered,
+  isDeliveryPointSet,
+  isProfileComplete,
+  needsLocationUpdate,
+} from "@/utils/profile";
 import { Constants } from "../../utils/constants";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -196,8 +201,10 @@ export default function HomeScreen() {
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
   // absolutely positioned, so the scroll has to clear it by its full height.
   const tabBarOverflow = useBottomTabOverflow();
-  const hasLocation = !!(user?.latitude && user?.longitude);
-  const hasAddress = !!user?.address;
+  // One rule, asked two ways. `profileComplete` GATES; the two halves below only
+  // ever choose words — see utils/profile.ts.
+  const hasDeliveryPoint = isDeliveryPointSet(user);
+  const areaAnswered = isAreaAnswered(user);
   const profileComplete = isProfileComplete(user);
 
   // Location-specific prompt takes precedence over the generic incomplete
@@ -343,7 +350,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Upcoming Collections</Text>
-            {hasLocation && hasAddress && (
+            {hasDeliveryPoint && (
               <TouchableOpacity
                 onPress={() =>
                   navigateOnce(() =>
@@ -360,7 +367,7 @@ export default function HomeScreen() {
             )}
           </View>
 
-          {(hasLocation && hasAddress) ? (
+          {hasDeliveryPoint ? (
             <Pressable
               style={({ pressed }) => [
                 styles.collectionCard,
@@ -457,25 +464,28 @@ export default function HomeScreen() {
             </Text>
           </View>
 
+          {/* One prompt, two wordings. Which half is missing decides the words;
+              `profileComplete` alone decides whether the prompt shows at all, so
+              the gate stays single-sourced. */}
           {!profileComplete && !locationUpdateNeeded && (
             <TouchableOpacity
               style={styles.profilePromptCard}
               onPress={() => navigateOnce(() => router.push("/editProfile"))}
               activeOpacity={0.8}
             >
-              <Ionicons name="person-circle-outline" size={22} color="#449EB2" />
+              <Ionicons
+                name={areaAnswered ? "location-outline" : "person-circle-outline"}
+                size={22}
+                color="#449EB2"
+              />
               <Text style={styles.profilePromptText}>
-                Complete your profile to unlock deals
+                {areaAnswered
+                  ? "Set your location to unlock deals"
+                  : "Complete your profile to unlock deals"}
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#449EB2" />
             </TouchableOpacity>
           )}
-
-          {/* The "Set your location to unlock deals" prompt that used to sit here
-              is gone: a missing coordinate now makes `isProfileComplete` false,
-              so its condition was unreachable and the generic prompt above
-              covers that population. Restoring the more specific copy means
-              branching the prompt above on the coordinate — see P1-13. */}
 
           {locationUpdateNeeded && (
             <TouchableOpacity
@@ -519,6 +529,10 @@ export default function HomeScreen() {
 
       <LocationUpdateModal
         visible={locationUpdateNeeded && !locationPromptShown}
+        // The modal's own copy names only the area. Users who ALSO lack a
+        // delivery point will be stopped by the pin requirement on save, so say
+        // so up front rather than letting the form spring it on them.
+        alsoNeedsPin={!hasDeliveryPoint}
         onLater={dismissLocationPrompt}
         onUpdate={() => {
           dismissLocationPrompt();

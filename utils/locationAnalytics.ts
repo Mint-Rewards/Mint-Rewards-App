@@ -87,6 +87,19 @@ export function trackAreaOverridden(params: {
   });
 }
 
+/**
+ * The structured-location write failed after a successful save.
+ *
+ * NOT in the master plan's event list — added because `location_saved` fires on
+ * the save rather than on this request, so without a counter here the dashboard
+ * would always show more structured saves than the database holds and the gap
+ * would be unmeasurable. The user never sees this failure; this is the only
+ * place it becomes a number.
+ */
+export function trackLocationPatchFailed(reason: string): void {
+  capture("location_patch_failed", { reason });
+}
+
 /** The picker was closed without confirming a pin. */
 export function trackFlowAbandoned(lastStep: FlowStep): void {
   capture("flow_abandoned", { lastStep });

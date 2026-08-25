@@ -6,9 +6,23 @@ type Props = {
   visible: boolean;
   onLater: () => void;
   onUpdate: () => void;
+  /**
+   * Whether this user will ALSO be asked for a map pin when they save.
+   *
+   * The prompt exists because their area was retired, so its copy talks about
+   * areas. A user who has never saved a coordinate is additionally stopped by
+   * the pin requirement — telling them here is cheaper than letting the form
+   * surprise them after they have already started.
+   */
+  alsoNeedsPin?: boolean;
 };
 
-const LocationUpdateModal = ({ visible, onLater, onUpdate }: Props) => (
+const LocationUpdateModal = ({
+  visible,
+  onLater,
+  onUpdate,
+  alsoNeedsPin = false,
+}: Props) => (
   <Modal
     visible={visible}
     transparent
@@ -25,6 +39,9 @@ const LocationUpdateModal = ({ visible, onLater, onUpdate }: Props) => (
         <Text style={styles.message}>
           We&apos;ve updated our area list to be more accurate. Please re-select
           your town and area.
+          {alsoNeedsPin
+            ? " You'll also need to pin your exact location on the map."
+            : ""}
         </Text>
 
         <View style={styles.buttons}>

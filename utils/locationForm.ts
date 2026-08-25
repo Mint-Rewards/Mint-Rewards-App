@@ -12,6 +12,8 @@
 
 import {
   PAKISTAN_LOCATIONS,
+  getAreaCentroid,
+  getCityCentroid,
   getProvinceForCity,
   getSelectableTownsForCity,
 } from "@/utils/pakistan_areas";
@@ -63,4 +65,70 @@ export function buildTownOptions(city: string): string[] {
  */
 export function resolveProvinceForPayload(city: string): string {
   return getProvinceForCity(city) ?? "";
+}
+
+/** A map camera position, in the shape react-native-maps expects. */
+export interface MapRegion {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+}
+
+/** Zoom for a town-level centroid — close enough to recognise streets. */
+const AREA_DELTA = 0.05;
+/** Zoom for a city-level centroid — the whole city, not the whole country. */
+const CITY_DELTA = 0.2;
+
+/**
+ * Where to point the map camera for a user who has no saved pin.
+ *
+ * The form already knows their city and town by the time they open the map, so
+ * opening on a country-wide view — which is what happens when GPS is denied or
+ * fails — asks them to pinch down from national scale to a rooftop for no
+ * reason. The registry's centroid is a better guess than the middle of Pakistan.
+ *
+ * This positions the CAMERA only. It deliberately does not place a pin: a
+ * centroid is where an area is, not where a person lives, and a marker they did
+ * not put there is one they might confirm by accident. `pinReducer`'s `centroid`
+ * event exists for the prefill flow, which is a different question and ships
+ * with the gate-flow plan.
+ *
+ * Returns null when the registry has no centroid for this selection — which is
+ * every selection today, since `CITY_CENTROIDS` and `AREA_CENTROIDS` are still
+ * empty. The caller must fall back.
+ */
+export function getSelectionRegion(
+  city: string | undefined,
+  town: string | undefined,
+): MapRegion | null {
+  const trimmedCity = (city || "").trim();
+  if (!trimmedCity) return null;
+
+  const area = getAreaCentroid(trimmedCity, (town || "").trim());
+  if (area) return toRegion(area, AREA_DELTA);
+
+  const cityCentroid = getCityCentroid(trimmedCity);
+  if (cityCentroid) return toRegion(cityCentroid, CITY_DELTA);
+
+  return null;
+}
+
+/**
+ * Registry centroids are stored `[lng, lat]` (GeoJSON), and a map region reads
+ * `latitude` first. Converting in one place, once, is the whole reason this is
+ * a function — the two orders are indistinguishable to the type system and a
+ * swap puts Karachi in Somalia.
+ */
+function toRegion(
+  centroid: readonly [number, number],
+  delta: number,
+): MapRegion {
+  const [longitude, latitude] = centroid;
+  return {
+    latitude,
+    longitude,
+    latitudeDelta: delta,
+    longitudeDelta: delta,
+  };
 }

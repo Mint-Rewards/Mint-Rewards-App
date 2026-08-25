@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
+import { getSelectionRegion } from "@/utils/locationForm";
 import {
   FlowStep,
   trackFlowAbandoned,
@@ -30,6 +31,12 @@ interface MapPickerProps {
   visible: boolean;
   initialLatitude?: string;
   initialLongitude?: string;
+  /**
+   * The city and town already chosen on the form. Used ONLY to pick a sensible
+   * opening camera position when there is no saved pin — never to place one.
+   */
+  city?: string;
+  town?: string;
   onConfirm: (
     latitude: string,
     longitude: string,
@@ -49,6 +56,8 @@ export default function MapPicker({
   visible,
   initialLatitude,
   initialLongitude,
+  city,
+  town,
   onConfirm,
   onClose,
 }: MapPickerProps) {
@@ -181,7 +190,11 @@ export default function MapPicker({
     if (!isNaN(lat) && !isNaN(lng)) {
       return { latitude: lat, longitude: lng, latitudeDelta: 0.01, longitudeDelta: 0.01 };
     }
-    return PAKISTAN_CENTER;
+    // No saved pin. The form already knows their city and town, so open on that
+    // rather than on the whole country — the view a user gets when GPS is
+    // denied or fails. Null until the registry ships centroids, hence the
+    // fallback below.
+    return getSelectionRegion(city, town) ?? PAKISTAN_CENTER;
   })();
 
   return (

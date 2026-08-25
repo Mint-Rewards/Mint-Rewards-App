@@ -72,7 +72,16 @@ export interface LocationEvaluation {
 
 export type LocationPatchResult =
   | { Status: "Success"; evaluation: LocationEvaluation }
-  | { Status: "Error"; ErrorMessage: string };
+  | {
+      Status: "Error";
+      ErrorMessage: string;
+      /**
+       * The request 401'd, so `authenticatedFetch` has already signed the user
+       * out and redirected them to the login screen. The caller needs this to
+       * avoid congratulating them on a save while they are being bounced.
+       */
+      unauthorized?: boolean;
+    };
 
 /**
  * Placement -> how much the coordinate can be trusted.
@@ -220,6 +229,7 @@ export async function patchUserLocation(
       Status: "Error",
       ErrorMessage:
         data?.error || data?.message || `Request failed (${response.status})`,
+      unauthorized: response.status === 401,
     };
   } catch (error) {
     // An abort is this timeout firing, not an arbitrary network fault — name it

@@ -2,7 +2,11 @@ import { Deal, useAppStore } from "@/store/store";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
-import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
+import {
+  isAreaAnswered,
+  isProfileComplete,
+  needsLocationUpdate,
+} from "@/utils/profile";
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +41,8 @@ const DealsScreen = () => {
   // ruling), so the local `hasLocation` this screen used to keep — and which
   // defined the same idea differently from home.tsx — is gone.
   const profileComplete = isProfileComplete(user);
+  // Chooses words only; `profileComplete` is what gates.
+  const areaAnswered = isAreaAnswered(user);
   const locationUpdateNeeded = needsLocationUpdate(user);
   // Same rule as home: an incomplete profile or an unset/stale location means
   // no deal is actually redeemable, so the list is hidden rather than shown
@@ -175,16 +181,16 @@ const DealsScreen = () => {
           activeOpacity={0.8}
         >
           <Ionicons
-            name={profileComplete ? "location-outline" : "person-circle-outline"}
+            name={areaAnswered ? "location-outline" : "person-circle-outline"}
             size={22}
             color="#449EB2"
           />
           <Text style={styles.profilePromptText}>
-            {/* Only two states can lock deals now: an incomplete profile (which
-                includes a missing pin), or a retired area. */}
-            {!profileComplete
-              ? "Complete your profile to unlock deals"
-              : "We're working on bringing collections to your area. Update your location to see available deals."}
+            {locationUpdateNeeded
+              ? "We're working on bringing collections to your area. Update your location to see available deals."
+              : areaAnswered
+                ? "Set your location to unlock deals"
+                : "Complete your profile to unlock deals"}
           </Text>
           <Ionicons name="chevron-forward" size={16} color="#449EB2" />
         </TouchableOpacity>
@@ -197,7 +203,7 @@ const DealsScreen = () => {
           </View>
           <Text style={styles.emptyTitle}>Deals Locked</Text>
           <Text style={styles.emptySubtitle}>
-            {profileComplete
+            {locationUpdateNeeded || areaAnswered
               ? "Update your location to see the deals available to you."
               : "Complete your profile to see the deals available to you."}
           </Text>
@@ -207,7 +213,9 @@ const DealsScreen = () => {
             activeOpacity={0.8}
           >
             <Text style={styles.showAllButtonText}>
-              {profileComplete ? "Update Location" : "Complete Profile"}
+              {locationUpdateNeeded || areaAnswered
+                ? "Update Location"
+                : "Complete Profile"}
             </Text>
           </TouchableOpacity>
         </View>
