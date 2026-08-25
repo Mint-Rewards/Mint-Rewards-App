@@ -305,9 +305,9 @@ export default function HomeScreen() {
   // The brand cards are only ever tappable for a complete profile with a set
   // location — showing them greyed out just repeated the prompt banner behind
   // them, so they are hidden entirely until the user can actually use them.
-  // `profileComplete` now implies a saved coordinate and address (owner ruling —
-  // see isProfileComplete), so the location terms that used to be ANDed here
-  // would be restating it.
+  // `profileComplete` now implies a saved coordinate and a house number (owner
+  // ruling — see isProfileComplete; street address is no longer part of it),
+  // so the location terms that used to be ANDed here would be restating it.
   const showBrandCards = profileComplete && !locationUpdateNeeded;
   const canOpenCollections = !!booked || !!(showDemoCollections && nextCollection && nextSlot);
 

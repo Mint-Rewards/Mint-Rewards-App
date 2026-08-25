@@ -97,6 +97,15 @@ export interface User {
   structuredAddress?: {
     houseNo?: string;
   };
+  /**
+   * Which version of the location requirements this user has satisfied.
+   *
+   * Stamped server-side by `PATCH /api/users/location` the first time a
+   * location evaluates as complete. The gate reads it to decide whether to ask
+   * again: bumping LOCATION_COMPLETION_VERSION on the server re-prompts
+   * everyone exactly once. Absent on users who have never completed.
+   */
+  locationVersion?: number;
   latitude?: string;
   longitude?: string;
   deviceToken?: string;
@@ -257,8 +266,9 @@ interface UserSlice {
    *
    * Kept rather than discarded because it is the only authoritative answer to
    * "is this location finished": the client's `isProfileComplete` answers a
-   * different, looser question (it cannot know about `houseNo`, which the app
-   * does not yet collect). Null until a save happens in this session.
+   * different, looser question: it is computed from what this client happens to
+   * hold, while this is the server's own verdict over the whole document. Null
+   * until a save happens in this session.
    */
   locationEvaluation: LocationEvaluation | null;
   setLocationEvaluation: (evaluation: LocationEvaluation | null) => void;

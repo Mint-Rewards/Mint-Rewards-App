@@ -1,7 +1,9 @@
-import { LocationPicker } from "@/components/ui/LocationPicker";
+import { LocationFields } from "@/components/location/LocationFields";
 import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
-import type { PinPlacement } from "@/utils/pinState";
+import { useLocationForm } from "@/hooks/useLocationForm";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
+import { alertOnce } from "@/utils/alert";
 import {
   trackLocationPatchFailed,
   trackLocationSaved,
@@ -11,34 +13,19 @@ import {
   patchUserLocation,
 } from "@/utils/locationApi";
 import {
-  OTHER_OPTION,
-  buildTownOptions,
-  getAllCities,
-  resolveProvinceForPayload,
-} from "@/utils/locationForm";
-import {
-  getBlockLabel,
-  getHouseNoField,
-  getSelectableTownsForCity,
-  getSubAreasForTown,
-  isCanonicalTown,
-  matchCanonicalNames,
-  requiresSubArea,
-} from "@/utils/pakistan_areas";
-import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { useSingleFlight } from "@/hooks/useSingleFlight";
-import { alertOnce } from "@/utils/alert";
+  buildLocationPayload,
+  validateLocationValues,
+} from "@/utils/locationSave";
 import { logError } from "@/utils/logger";
+import { getSubAreasForTown, isCanonicalTown } from "@/utils/pakistan_areas";
 import { needsLocationUpdate } from "@/utils/profile";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  FlatList,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -50,15 +37,13 @@ import {
 import { useAppStore, UserProfile } from "../store/store";
 import { isPhone, sanitizePhone } from "../utils/phone";
 
-/**
- * Fields still served by the hand-rolled modal picker. City and town moved to
- * the searchable `LocationPicker`; province was removed entirely (it is derived
- * from the city at payload time — see `resolveProvinceForPayload`).
- */
-type PickerField = "subArea";
-
-/** Matches the server-side cap on `townOther` / `subAreaOther`. */
-const OTHER_TEXT_MAX = 100;
+/** The fields this screen still owns. Everything below the phone number belongs
+ *  to `useLocationForm` / `LocationFields`. */
+interface IdentityFields {
+  userName: string;
+  email: string;
+  phone: string;
+}
 
 const EditProfile = () => {
   const {
@@ -71,37 +56,15 @@ const EditProfile = () => {
     setProfileError,
   } = useAppStore();
 
-  const [formData, setFormData] = useState<Partial<UserProfile>>({
+  const [identity, setIdentity] = useState<IdentityFields>({
     userName: "",
     email: "",
     phone: "",
-    city: "",
-    houseNo: "",
-    town: "",
-    townOther: "",
-    subArea: "",
-    subAreaOther: "",
-    address: "",
-    latitude: "",
-    longitude: "",
   });
-
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [mapVisible, setMapVisible] = useState(false);
-  // How the current pin was set (device GPS never places it — see
-  // components/ui/MapPicker.tsx / utils/pinState.ts). Read at save time to
-  // derive `location.source` / `location.precision` for the structured PATCH.
-  // Nothing renders from it, so a ref is enough — it must not cause a
-  // re-render, and it must survive between the map closing and the save.
-  const pinPlacementRef = useRef<PinPlacement | null>(null);
-  const [townIsCustom, setTownIsCustom] = useState(false);
-  const [subAreaIsOther, setSubAreaIsOther] = useState(false);
-  const [pickerModal, setPickerModal] = useState<{
-    visible: boolean;
-    field: PickerField | null;
-    options: string[];
-    label: string;
-  }>({ visible: false, field: null, options: [], label: "" });
+
+  const form = useLocationForm();
 
   useEffect(() => {
     if (user) {
@@ -128,7 +91,6 @@ const EditProfile = () => {
         mustReselect || townIsCanonical
           ? ""
           : user.townOther || savedTown || "";
-      const isCustom = existingTownOther !== "";
 
       // Only rehydrate `subArea` if it is still canonical for this city/town.
       // A value can go stale if the data file drops or renames an entry, and we
@@ -139,25 +101,26 @@ const EditProfile = () => {
       const existingSubAreaOther =
         mustReselect || existingSubArea ? "" : user.subAreaOther || "";
 
-      setFormData({
+      setIdentity({
         userName: user.userName || "",
         email: user.email || "",
         phone: user.phone || "",
-        // Lives nested on the server; flat in the form. `my-profile` returns the
-        // whole document, so a previously-saved value comes back and the user is
-        // not made to retype it on every edit.
-        houseNo: user.structuredAddress?.houseNo || "",
+      });
+
+      form.reset({
         city: existingCity,
         town: existingTown,
         townOther: existingTownOther,
         subArea: existingSubArea,
         subAreaOther: existingSubAreaOther,
+        // Lives nested on the server; flat in the form. `my-profile` returns the
+        // whole document, so a previously-saved value comes back and the user is
+        // not made to retype it on every edit.
+        houseNo: user.structuredAddress?.houseNo || "",
         address: user.address || "",
         latitude: user.latitude || "",
         longitude: user.longitude || "",
       });
-      setTownIsCustom(isCustom);
-      setSubAreaIsOther(existingSubAreaOther !== "");
     }
   }, []);
 
@@ -165,302 +128,48 @@ const EditProfile = () => {
     return () => { setProfileError(null); };
   }, []);
 
-  // ── Derived options ────────────────────────────────────────────────────────
-  // City is the top of the cascade now that the province dropdown is gone, so
-  // every registry city is offered at once — 100+ entries, which is exactly why
-  // this field moved to the searchable picker.
-  const cityOptions = getAllCities();
-
-  // The PICKER view, not the validation view: `getTownsForCity` still returns
-  // deprecated towns so existing profiles stay valid, while this hides them
-  // from new selections. Without this the deprecation is inert and users keep
-  // creating the very values it exists to retire.
-  const baseTownOptions = formData.city
-    ? getSelectableTownsForCity(formData.city)
-    : [];
-  const townOptions = buildTownOptions(formData.city || "");
-
-  // The sub-area step exists only for towns that actually have canonical data.
-  // A free-text town never does — its value lives in `townOther`, leaving
-  // `town` empty — so the step is skipped and not required for those.
-  const showSubArea =
-    !townIsCustom && requiresSubArea(formData.city || "", formData.town || "");
-
-  const subAreaOptions = showSubArea
-    ? [...getSubAreasForTown(formData.city!, formData.town!), OTHER_OPTION]
-    : [];
-
-  // ── "Other" suggestions ────────────────────────────────────────────────────
-  // While someone types a free-text town or sub-area, offer canonical entries
-  // that look like what they wrote, so a near-miss spelling gets steered back
-  // onto the list instead of becoming another `*Other` row to review later.
-  // Debounced so the list settles rather than churning mid-word.
-  const debouncedTownOther = useDebouncedValue(formData.townOther || "");
-  const debouncedSubAreaOther = useDebouncedValue(formData.subAreaOther || "");
-
-  const townSuggestions = townIsCustom
-    ? matchCanonicalNames(baseTownOptions, debouncedTownOther)
-    : [];
-
-  const subAreaSuggestions =
-    showSubArea && subAreaIsOther
-      ? matchCanonicalNames(
-          getSubAreasForTown(formData.city!, formData.town!),
-          debouncedSubAreaOther,
-        )
-      : [];
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
   const clearError = (field: string) => {
     if (errors[field]) setErrors((p) => ({ ...p, [field]: "" }));
   };
 
-  const openPicker = (field: PickerField, options: string[], label: string) => {
-    setPickerModal({ visible: true, field, options, label });
-  };
-
-  /**
-   * Clears the sub-area answer state. Called whenever the town changes: the
-   * question is about the new town, so a previous "Other" must not carry over
-   * and satisfy the required rule by accident.
-   */
-  const resetSubAreaState = () => {
-    setSubAreaIsOther(false);
-  };
-
-  /**
-   * The pin fields, blanked. Spread into every setFormData that changes the
-   * selected PLACE — city or town.
-   *
-   * A pin placed in the old town says nothing true about the new one, and
-   * `validateForm` only checks that a pin parses, not that it is anywhere near
-   * the place named above it. Within Karachi that is a ~30km error that saves
-   * cleanly.
-   *
-   * The pin is cleared rather than moved to the new town's centroid, which is
-   * the other way to read "the pin should move": a centroid is where an area
-   * is, not where a person lives, and a pin the app placed is tagged
-   * `legacy_string`/`unknown` — excluded from routing. It would look set and
-   * route nowhere. Clearing forces a real one, and the map now opens on the new
-   * town (see `getSelectionRegion`), so re-pinning starts in the right place.
-   */
-  const CLEARED_PIN = { latitude: "", longitude: "" };
-
-  /** Drops the placement alongside the pin, so the next one starts from scratch. */
-  const forgetPinPlacement = () => {
-    pinPlacementRef.current = null;
-  };
-
-  /** Commit a canonical town — from the dropdown or from a suggestion tap. */
-  /**
-   * NOTE on the placement ref and town changes: the town handlers clear the PIN
-   * but deliberately do not clear `pinPlacementRef`. They cannot — they are
-   * reached from `renderTownField`, which runs during render, and a ref write
-   * there is a render-time ref access.
-   *
-   * It is also unnecessary. Placement and coordinate are only ever written
-   * together, by `onConfirm`. Clearing the coordinate leaves a placement that
-   * nothing can consume: `validateForm` blocks a save without a pin, and the
-   * only way to get a pin back is through the map, which rewrites the placement
-   * as it does so. A stale placement can never be paired with a coordinate it
-   * did not describe.
-   *
-   * `handleCitySelect` and the pin's clear button still drop it, because they
-   * can and it costs nothing.
-   */
-  const selectCanonicalTown = (value: string) => {
-    setFormData((p) => ({
-      ...p, town: value, townOther: "", subArea: "", subAreaOther: "",
-      ...CLEARED_PIN,
-    }));
-    setTownIsCustom(false);
-    resetSubAreaState();
-    clearError("town");
-  };
-
-  /** Commit a canonical sub-area — from the dropdown or from a suggestion tap. */
-  const selectCanonicalSubArea = (value: string) => {
-    setFormData((p) => ({ ...p, subArea: value, subAreaOther: "" }));
-    resetSubAreaState();
-    clearError("subArea");
-  };
-
-  /**
-   * City is the top of the cascade. Changing it clears town and sub-area: both
-   * answers are only meaningful under the city they were chosen for.
-   *
-   * It clears the PIN for the same reason. A coordinate placed in Karachi says
-   * nothing true about a Lahore address, and `validateForm` only checks that a
-   * pin parses — not that it is anywhere near the city named beside it — so a
-   * kept pin would sail through and be stored as this address's location. The
-   * user is sent back through the map, which is the only place a coordinate for
-   * the new city can come from.
-   */
-  const handleCitySelect = (value: string) => {
-    if (value === formData.city) return;
-    setFormData((p) => ({
-      ...p, city: value, town: "", townOther: "", subArea: "", subAreaOther: "",
-      ...CLEARED_PIN,
-    }));
-    setTownIsCustom(false);
-    resetSubAreaState();
-    // The placement goes with the pin: a stale `user_placed` would otherwise
-    // let the NEXT pin inherit precision it never earned.
-    forgetPinPlacement();
-    setErrors((p) => ({ ...p, city: "", town: "" }));
-  };
-
-  /** Town choice from the searchable picker, including the "Other" escape. */
-  const handleTownSelect = (value: string) => {
-    // Re-picking the same town is not a change, and must not clear the sub-area
-    // the user already answered under it. Mirrors the city guard above.
-    if (value === formData.town) return;
-    // Mutual exclusivity: free text goes to `townOther`, never to `town`.
-    if (value === OTHER_OPTION) {
-      setFormData((p) => ({
-        ...p, town: "", townOther: "", subArea: "", subAreaOther: "",
-        ...CLEARED_PIN,
-      }));
-      setTownIsCustom(true);
-      resetSubAreaState();
-      clearError("town");
-      return;
-    }
-    selectCanonicalTown(value);
-  };
-
-  /**
-   * Abandons a free-text town and returns to the list. Defined here rather than
-   * inline in `renderTownField` because that helper runs during render, and a
-   * ref write inside it reads as a render-time ref access.
-   */
-  const handleTownBackToList = () => {
-    setTownIsCustom(false);
-    setFormData((p) => ({
-      ...p, town: "", townOther: "", subArea: "", subAreaOther: "",
-      ...CLEARED_PIN,
-    }));
-    resetSubAreaState();
-  };
-
-  const handlePickerSelect = (value: string) => {
-    setPickerModal({ visible: false, field: null, options: [], label: "" });
-
-    // Mutual exclusivity: exactly one of the two fields can ever hold a value.
-    if (value === OTHER_OPTION) {
-      setFormData((p) => ({ ...p, subArea: "", subAreaOther: "" }));
-      setSubAreaIsOther(true);
-      clearError("subArea");
-    } else {
-      selectCanonicalSubArea(value);
-    }
-  };
-
   // ── Validation ─────────────────────────────────────────────────────────────
+  // Identity is this screen's; everything about the place is `locationSave`'s,
+  // so the confirm-address modal cannot end up enforcing a different rule.
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
-    if (!formData.userName?.trim())  newErrors.userName = "Username is required";
-    if (!formData.email?.trim())     newErrors.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = "Please enter a valid email";
-    if (!formData.phone?.trim())     newErrors.phone = "Phone number is required";
-    else if (!isPhone(formData.phone))
+    if (!identity.userName.trim())  newErrors.userName = "Username is required";
+    if (!identity.email.trim())     newErrors.email = "Email is required";
+    else if (!/\S+@\S+\.\S+/.test(identity.email)) newErrors.email = "Please enter a valid email";
+    if (!identity.phone.trim())     newErrors.phone = "Phone number is required";
+    else if (!isPhone(identity.phone))
       newErrors.phone = "Please enter a valid phone number (10-15 digits)";
-    // No province rule: the field is derived from the city at payload time and
-    // is never asked for, so it can never be independently missing.
-    if (!formData.city?.trim())      newErrors.city = "City is required";
-    // Either a canonical town or free-text "Other" satisfies the requirement.
-    if (!formData.town?.trim() && !formData.townOther?.trim())
-      newErrors.town = "Town is required";
-    if (!formData.houseNo?.trim())
-      newErrors.houseNo = `${getHouseNoField(formData.city || "", formData.town || "").label} is required`;
-    if (!formData.address?.trim())   newErrors.address = "Address is required";
-    // The map pin is required (see "Exact Location (Pin) *" label below) — a
-    // saved coordinate must be a parseable number, not just a non-empty string.
-    if (
-      !formData.latitude?.trim() ||
-      !formData.longitude?.trim() ||
-      isNaN(parseFloat(formData.latitude)) ||
-      isNaN(parseFloat(formData.longitude))
-    )
-      newErrors.location = "Please pin your exact location on the map";
-    // Required only where there is canonical data to choose from. Free-text
-    // towns and towns without sub-areas never render the field, so it must not
-    // gate their save.
-    if (
-      showSubArea &&
-      !formData.subArea?.trim() &&
-      !formData.subAreaOther?.trim()
-    )
-      newErrors.subArea = `${getBlockLabel(formData.city || "", formData.town || "")} is required`;
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+
+    const location = validateLocationValues(form.values, {
+      // Required only where there is canonical data to choose from. Free-text
+      // towns and towns without sub-areas never render the field, so it must
+      // not gate their save.
+      requireSubArea: form.showSubArea,
+      houseNoLabel: form.houseNoField.label,
+    });
+
+    const merged = { ...newErrors, ...location.errors };
+    setErrors(merged);
+    return Object.keys(merged).length === 0;
   };
 
-  const handleUpdateField = (field: keyof UserProfile, value: string) => {
+  const handleUpdateField = (field: keyof IdentityFields, value: string) => {
     // `phone-pad` still offers *, #, + and ; and pasting bypasses the keyboard
     // entirely, so strip anything that is not a digit (or a leading +) here.
     const next = field === "phone" ? sanitizePhone(value) : value;
-    setFormData((p) => ({ ...p, [field]: next }));
-    clearError(field as string);
+    setIdentity((p) => ({ ...p, [field]: next }));
+    clearError(field);
   };
 
-  const trimCapped = (v?: string) => (v || "").trim().slice(0, OTHER_TEXT_MAX);
-
-  /**
-   * Normalises both canonical/free-text pairs before they leave the client.
-   * `town` and `subArea` are re-checked against the canonical lists here rather
-   * than trusted from form state, and at most one of each pair survives. Every
-   * field is always sent (as "" when unset) so clearing a previously-saved
-   * value actually reaches the server.
-   */
-  const buildPayload = (): Partial<UserProfile> => {
-    const city = formData.city || "";
-
-    // Province is no longer asked for — it is derived from the city, which is a
-    // closed list. An off-registry city yields "" and does NOT block the save
-    // (the P0.2d null path); `isProfileComplete` will simply keep treating that
-    // profile as incomplete, which is the honest answer.
-    const province = resolveProvinceForPayload(city);
-
-    // `houseNo` is flat in form state but nested on the server. It rides the
-    // primary update-profile call as well as the structured PATCH: the PATCH is
-    // allowed to fail, and a REQUIRED field that only travels on the failable
-    // request would be silently lost by a timeout. update-profile writes it as
-    // a dotted path, so it cannot wipe the siblings the PATCH writes.
-    const houseNo = (formData.houseNo || "").trim();
-
-    // Town: a non-canonical value is never allowed through as `town`; it
-    // degrades to `townOther` rather than being dropped, so nothing is lost.
-    const townIsCanonical = isCanonicalTown(city, formData.town || "");
-    const town = townIsCanonical ? formData.town! : "";
-    const townOther = townIsCanonical
-      ? ""
-      : trimCapped(formData.townOther || formData.town);
-
-    // Sub-area: only meaningful under a canonical town, and only for towns that
-    // actually have sub-area data — one with none never offered "Other", so
-    // neither field can legitimately hold anything.
-    const canonicalSubAreas = town ? getSubAreasForTown(city, town) : [];
-    if (canonicalSubAreas.length === 0) {
-      return {
-        ...formData, province, town, townOther, subArea: "", subAreaOther: "",
-        houseNo,
-        ...(houseNo ? { structuredAddress: { houseNo } } : {}),
-      };
-    }
-
-    const subArea =
-      formData.subArea && canonicalSubAreas.includes(formData.subArea)
-        ? formData.subArea
-        : "";
-    const subAreaOther = subArea ? "" : trimCapped(formData.subAreaOther);
-
-    return {
-      ...formData, province, town, townOther, subArea, subAreaOther,
-      houseNo,
-      ...(houseNo ? { structuredAddress: { houseNo } } : {}),
-    };
-  };
+  /** Identity plus the normalized location — the shape `update-profile` wants. */
+  const buildPayload = (): Partial<UserProfile> => ({
+    ...identity,
+    ...buildLocationPayload(form.values),
+  });
 
   /**
    * Sends the STRUCTURED location after the legacy save has already landed.
@@ -475,7 +184,10 @@ const EditProfile = () => {
     payload: Partial<UserProfile>,
   ): Promise<boolean> => {
     try {
-      const patch = buildLocationPatchPayload(payload, pinPlacementRef.current);
+      // `null` here means the map was never opened this session, which makes
+      // `buildLocationPatchPayload` omit `location` entirely rather than
+      // downgrade a precise stored pin to `legacy_string`/`unknown`.
+      const patch = buildLocationPatchPayload(payload, form.placementRef.current);
 
       // Reported on the SAVE, not on this request's outcome. By the time we get
       // here update-profile has already persisted the coordinate, so the user
@@ -545,200 +257,35 @@ const EditProfile = () => {
   // two taps in the same frame from firing two updateProfile calls.
   const { run: handleSubmit, inFlight: submitting } = useSingleFlight(submitProfile);
 
-  // ── Render helpers ─────────────────────────────────────────────────────────
   const renderInput = (
-    field: keyof UserProfile,
+    field: keyof IdentityFields,
     label: string,
     placeholder: string,
     keyboardType: "default" | "email-address" | "phone-pad" = "default",
-    multiline = false,
-    required = false,
   ) => (
     <View style={styles.inputContainer}>
       <Text style={styles.label}>
-        {label}{required && <Text style={styles.asterisk}> *</Text>}
+        {label}<Text style={styles.asterisk}> *</Text>
       </Text>
       <TextInput
         style={[
           styles.input,
           errors[field] && styles.inputError,
           { backgroundColor: field === "email" ? "#e2e8f0" : "#f8f9fa" },
-          multiline && styles.inputMultiline,
         ]}
-        value={formData[field] || ""}
+        value={identity[field]}
         onChangeText={(v) => handleUpdateField(field, v)}
         placeholder={placeholder}
         placeholderTextColor="#a0aec0"
         keyboardType={keyboardType}
         autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
         readOnly={field === "email"}
-        multiline={multiline}
         maxLength={field === "phone" ? 16 : undefined}
-        textAlignVertical={multiline ? "top" : "center"}
+        textAlignVertical="center"
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
     </View>
   );
-
-  /**
-   * Canonical entries resembling what the user has typed into an "Other" field.
-   * Tapping one switches them onto the canonical value and clears the free text.
-   */
-  const renderSuggestions = (
-    suggestions: string[],
-    onPick: (value: string) => void,
-  ) => {
-    if (suggestions.length === 0) return null;
-
-    return (
-      <View style={styles.suggestionBox}>
-        <Text style={styles.suggestionHeading}>Did you mean</Text>
-        {suggestions.map((suggestion) => (
-          <TouchableOpacity
-            key={suggestion}
-            style={styles.suggestionRow}
-            onPress={() => onPick(suggestion)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-forward-circle-outline" size={16} color="#449EB2" />
-            <Text style={styles.suggestionText}>{suggestion}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  };
-
-  // Town field: searchable picker or free-text input depending on townIsCustom.
-  const renderTownField = () => (
-    <View style={styles.inputContainer}>
-      {townIsCustom ? (
-        <>
-          <Text style={styles.label}>
-            Town<Text style={styles.asterisk}> *</Text>
-          </Text>
-          <View style={styles.customTownRow}>
-            <TextInput
-              style={[
-                styles.input,
-                styles.customTownInput,
-                errors.town && styles.inputError,
-              ]}
-              value={formData.townOther || ""}
-              // Writes to `townOther` but clears the `town` error — both fields
-              // satisfy the same "Town is required" rule.
-              onChangeText={(v) => {
-                setFormData((p) => ({ ...p, townOther: v }));
-                clearError("town");
-              }}
-              placeholder="Enter your town"
-              placeholderTextColor="#a0aec0"
-              autoCapitalize="words"
-              maxLength={OTHER_TEXT_MAX}
-              autoFocus
-            />
-            <TouchableOpacity
-              style={styles.townBackBtn}
-              onPress={handleTownBackToList}
-            >
-              <Ionicons name="list" size={20} color="#00528A" />
-            </TouchableOpacity>
-          </View>
-        </>
-      ) : (
-        // `value` is the STORED town, which may be a deprecated entry absent
-        // from `options` — the picker displays it, but it cannot be re-picked.
-        <LocationPicker
-          label="Town"
-          required
-          placeholder={formData.city ? "Select town" : "Select city first"}
-          options={townOptions}
-          value={formData.town || ""}
-          onChange={handleTownSelect}
-          disabled={!formData.city}
-          hasError={!!errors.town}
-          containerStyle={styles.pickerInFieldGroup}
-          testID="town-picker"
-        />
-      )}
-
-      {renderSuggestions(townSuggestions, selectCanonicalTown)}
-
-      {errors.town && <Text style={styles.errorText}>{errors.town}</Text>}
-      <Text style={styles.fieldHint}>
-        {townIsCustom
-          ? 'Tap the list icon to choose from available towns instead'
-          : 'Select "Other" if your town isn\'t listed'}
-      </Text>
-    </View>
-  );
-
-  /**
-   * Sub-area (block / sector / phase). Renders only for towns with canonical
-   * data — towns without it skip the step entirely rather than showing an empty
-   * dropdown, and are not gated by the required rule.
-   */
-  const renderSubAreaField = () => {
-    if (!showSubArea) return null;
-
-    // What this level is actually called here — "Block" in DHA, "Sector" in
-    // Islamabad, "Phase" elsewhere. Registry-driven, never city-derived: a
-    // hard-coded "Sub Area" reads as jargon to the person filling the form.
-    const blockLabel = getBlockLabel(formData.city!, formData.town!);
-    const answered = formData.subArea || subAreaIsOther;
-    const displayValue =
-      formData.subArea ||
-      (subAreaIsOther ? OTHER_OPTION : `Select ${blockLabel.toLowerCase()}`);
-
-    return (
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>
-          {blockLabel}<Text style={styles.asterisk}> *</Text>
-        </Text>
-
-        <TouchableOpacity
-          style={[
-            styles.input,
-            styles.dropdownBtn,
-            errors.subArea && styles.inputError,
-          ]}
-          onPress={() => openPicker("subArea", subAreaOptions, blockLabel)}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.dropdownText, !answered && styles.placeholderText]}>
-            {displayValue}
-          </Text>
-          <Ionicons name="chevron-down" size={18} color="#a0aec0" />
-        </TouchableOpacity>
-
-        {subAreaIsOther && (
-          <TextInput
-            style={[styles.input, styles.subAreaOtherInput]}
-            value={formData.subAreaOther || ""}
-            // Writes to `subAreaOther` but clears the `subArea` error — both
-            // fields satisfy the same required rule.
-            onChangeText={(v) => {
-              setFormData((p) => ({ ...p, subAreaOther: v }));
-              clearError("subArea");
-            }}
-            placeholder="Enter your block, sector or phase"
-            placeholderTextColor="#a0aec0"
-            autoCapitalize="words"
-            maxLength={OTHER_TEXT_MAX}
-            autoFocus
-          />
-        )}
-
-        {renderSuggestions(subAreaSuggestions, selectCanonicalSubArea)}
-
-        {errors.subArea && <Text style={styles.errorText}>{errors.subArea}</Text>}
-        <Text style={styles.fieldHint}>
-          {subAreaIsOther
-            ? "We'll review entries like yours and add common ones to the list"
-            : `Select "${OTHER_OPTION}" if yours isn't listed`}
-        </Text>
-      </View>
-    );
-  };
 
   return (
     <View style={styles.container}>
@@ -767,92 +314,26 @@ const EditProfile = () => {
           </View>
 
           <View style={styles.formSection}>
-            {renderInput("userName", "Username", "Enter your username", "default", false, true)}
-            {renderInput("email", "Email", "Enter your email", "email-address", false, true)}
-            {renderInput("phone", "Phone Number", "Enter your phone number", "phone-pad", false, true)}
+            {renderInput("userName", "Username", "Enter your username")}
+            {renderInput("email", "Email", "Enter your email", "email-address")}
+            {renderInput("phone", "Phone Number", "Enter your phone number", "phone-pad")}
 
-            <LocationPicker
-              label="City"
-              required
-              placeholder="Select city"
-              options={cityOptions}
-              value={formData.city || ""}
-              onChange={handleCitySelect}
-              hasError={!!errors.city}
-              error={errors.city}
-              testID="city-picker"
+            <LocationFields
+              form={form}
+              errors={errors}
+              clearError={clearError}
+              onOpenMap={() => setMapVisible(true)}
             />
-
-            {renderTownField()}
-
-            {renderSubAreaField()}
-
-            {/* Wording is registry-driven: a household is asked for a house or
-                flat number, an industrial plot for a unit or building name —
-                most households cannot answer the latter, and vice versa. */}
-            {(() => {
-              const house = getHouseNoField(formData.city || "", formData.town || "");
-              return renderInput(
-                "houseNo",
-                house.label,
-                `e.g. ${house.placeholder}`,
-                "default",
-                false,
-                true,
-              );
-            })()}
-
-            {renderInput("address", "Street Address", "e.g. 12 Main Street, Suburb", "default", true, true)}
-
-            {/* Location Pin */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>
-                Exact Location (Pin)<Text style={styles.asterisk}> *</Text>
-              </Text>
-              <TouchableOpacity
-                style={styles.locationBtn}
-                onPress={() => setMapVisible(true)}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={formData.latitude ? "location" : "location-outline"}
-                  size={20}
-                  color="#00528A"
-                />
-                <Text style={styles.locationBtnText}>
-                  {formData.latitude && formData.longitude
-                    ? `${parseFloat(formData.latitude).toFixed(5)}, ${parseFloat(formData.longitude).toFixed(5)}`
-                    : "Set location on map"}
-                </Text>
-                {formData.latitude ? (
-                  <TouchableOpacity
-                    onPress={() => {
-                      setFormData((p) => ({ ...p, latitude: "", longitude: "" }));
-                      pinPlacementRef.current = null;
-                    }}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Ionicons name="close-circle" size={18} color="#a0aec0" />
-                  </TouchableOpacity>
-                ) : (
-                  <Ionicons name="chevron-forward" size={18} color="#a0aec0" />
-                )}
-              </TouchableOpacity>
-              {errors.location && (
-                <Text style={styles.errorText}>{errors.location}</Text>
-              )}
-            </View>
           </View>
 
           <MapPicker
             visible={mapVisible}
-            initialLatitude={formData.latitude}
-            initialLongitude={formData.longitude}
-            city={formData.city}
-            town={formData.town}
+            initialLatitude={form.values.latitude}
+            initialLongitude={form.values.longitude}
+            city={form.values.city}
+            town={form.values.town}
             onConfirm={(lat, lng, placement) => {
-              setFormData((p) => ({ ...p, latitude: lat, longitude: lng }));
-              pinPlacementRef.current = placement ?? null;
+              form.confirmPin(lat, lng, placement);
               clearError("location");
             }}
             onClose={() => setMapVisible(false)}
@@ -899,56 +380,6 @@ const EditProfile = () => {
         </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* ── Picker Modal ── */}
-      <Modal
-        visible={pickerModal.visible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPickerModal({ visible: false, field: null, options: [], label: "" })}
-      >
-        <View style={styles.pickerOverlay}>
-          <View style={styles.pickerSheet}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>{pickerModal.label}</Text>
-              <TouchableOpacity
-                onPress={() => setPickerModal({ visible: false, field: null, options: [], label: "" })}
-              >
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              data={pickerModal.options}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.pickerItem,
-                    formData[pickerModal.field!] === item && styles.pickerItemSelected,
-                  ]}
-                  onPress={() => handlePickerSelect(item)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[
-                    styles.pickerItemText,
-                    formData[pickerModal.field!] === item && styles.pickerItemTextSelected,
-                    item === OTHER_OPTION && styles.pickerItemOther,
-                  ]}>
-                    {item}
-                  </Text>
-                  {formData[pickerModal.field!] === item && (
-                    <Ionicons name="checkmark" size={18} color="#00528A" />
-                  )}
-                </TouchableOpacity>
-              )}
-              ItemSeparatorComponent={() => <View style={styles.pickerSeparator} />}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 24 }}
-            />
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 };
@@ -974,9 +405,6 @@ const styles = StyleSheet.create({
   },
   formSection: { marginBottom: 20 },
   inputContainer: { marginBottom: 20 },
-  // Neutralises LocationPicker's own bottom gap where the surrounding field
-  // group renders its own suggestions / error / hint footer.
-  pickerInFieldGroup: { marginBottom: 0 },
   label: { fontSize: 16, fontWeight: "600", color: "#2d3748", marginBottom: 8 },
   asterisk: { color: "#e53e3e", fontWeight: "700" },
   input: {
@@ -990,76 +418,6 @@ const styles = StyleSheet.create({
     color: "#2d3748",
   },
   inputError: { borderColor: "#e53e3e", backgroundColor: "#fef5f5" },
-  inputMultiline: { height: 90, paddingTop: 14 },
-
-  // Dropdown
-  dropdownBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  dropdownText: { fontSize: 16, color: "#2d3748", flex: 1 },
-  placeholderText: { color: "#a0aec0" },
-  dropdownDisabled: { backgroundColor: "#f0f0f0", borderColor: "#e2e8f0" },
-
-  // Free-text sub-area, revealed under the dropdown when "Other" is picked
-  subAreaOtherInput: { marginTop: 8 },
-
-  // Canonical near-matches offered under an "Other" free-text input
-  suggestionBox: {
-    marginTop: 8,
-    padding: 10,
-    backgroundColor: "#f0f7f9",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#d5e8ee",
-    gap: 2,
-  },
-  suggestionHeading: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#5b7683",
-    marginBottom: 4,
-  },
-  suggestionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 7,
-  },
-  suggestionText: {
-    flex: 1,
-    fontSize: 14,
-    color: "#00528A",
-    fontWeight: "500",
-  },
-
-  // Custom town row
-  customTownRow: { flexDirection: "row", gap: 8 },
-  customTownInput: { flex: 1 },
-  townBackBtn: {
-    width: 50,
-    backgroundColor: "#f0f8ff",
-    borderWidth: 1,
-    borderColor: "#bee3f8",
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  fieldHint: { fontSize: 12, color: "#a0aec0", marginTop: 5 },
-
-  locationBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f8f9fa",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 10,
-  },
-  locationBtnText: { flex: 1, fontSize: 16, color: "#2d3748" },
   errorText: { color: "#e53e3e", fontSize: 14, marginTop: 4 },
   errorContainer: {
     flexDirection: "row",
@@ -1104,42 +462,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   cancelButtonText: { color: "#00528A", fontSize: 16, fontWeight: "600" },
-
-  // Picker modal
-  pickerOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "flex-end",
-  },
-  pickerSheet: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "60%",
-    paddingTop: 8,
-  },
-  pickerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
-  },
-  pickerTitle: { fontSize: 17, fontWeight: "700", color: "#2d3748" },
-  pickerItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-  },
-  pickerItemSelected: { backgroundColor: "#f0f8ff" },
-  pickerItemText: { fontSize: 16, color: "#2d3748" },
-  pickerItemTextSelected: { color: "#00528A", fontWeight: "600" },
-  pickerItemOther: { color: "#718096", fontStyle: "italic" },
-  pickerSeparator: { height: 1, backgroundColor: "#f7f7f7", marginHorizontal: 20 },
 
   // Unused legacy styles kept for Navbar compatibility
   headerSection: { backgroundColor: "#00528A", paddingBottom: 20 },

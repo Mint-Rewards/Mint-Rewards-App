@@ -105,6 +105,9 @@ describe("province removal keeps isProfileComplete satisfiable", () => {
         latitude: "31.5204",
         longitude: "74.3587",
         address: "12 Main Street",
+        // Required since the house number became part of completeness
+        // (owner ruling, 2026-08-25).
+        structuredAddress: { houseNo: "12" },
       } as any),
     ).toBe(true);
   });

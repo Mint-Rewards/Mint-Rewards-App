@@ -37,9 +37,10 @@ const DealsScreen = () => {
   // scrolls under it. No-op on Android, where the bar takes layout.
   const tabBarOverflow = useBottomTabOverflow();
   const { user, getDeals, deals, isDealsLoading, dealsError } = useAppStore();
-  // `isProfileComplete` now covers the saved coordinate and address too (owner
-  // ruling), so the local `hasLocation` this screen used to keep — and which
-  // defined the same idea differently from home.tsx — is gone.
+  // `isProfileComplete` now covers the saved coordinate and house number too
+  // (owner ruling; street address is no longer part of it), so the local
+  // `hasLocation` this screen used to keep — and which defined the same idea
+  // differently from home.tsx — is gone.
   const profileComplete = isProfileComplete(user);
   // Chooses words only; `profileComplete` is what gates.
   const areaAnswered = isAreaAnswered(user);

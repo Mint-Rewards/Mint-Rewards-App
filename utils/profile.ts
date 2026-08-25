@@ -57,25 +57,23 @@ export function isAreaAnswered(user: User | null | undefined): boolean {
 }
 
 /**
- * True when we know where to actually deliver to: a saved coordinate AND a
- * street address.
+ * True when we know where to actually deliver to: a saved coordinate.
  *
- * The two travel together because neither is usable alone — a pin with no
- * address cannot be written on a collection sheet, and an address with no pin
- * cannot be routed to. Both screens already treated them as one condition
- * before this was a function.
+ * Used to pair a coordinate with a street address, on the reasoning that
+ * neither was usable alone — a pin with no address could not be written on a
+ * collection sheet, and an address with no pin could not be routed to. Street
+ * became optional by owner decision on 2026-08-25: the coordinate is what a
+ * route actually needs, and `isProfileComplete` below now gates on a house
+ * number instead, which does the job a free-text street used to.
  */
 export function isDeliveryPointSet(user: User | null | undefined): boolean {
   if (!user) return false;
   // Truthiness, not parseability, and deliberately so: this mirrors exactly what
   // the two screens tested before the rule moved here, so no existing user's
   // gate flips as a side effect. `validateForm` in editProfile is the
-  // parseability gate, and it runs before anything is saved.
-  return (
-    !!user.latitude?.trim() &&
-    !!user.longitude?.trim() &&
-    !!user.address?.trim()
-  );
+  // parseability gate, and it runs before anything is saved. (Street address
+  // was dropped from this check on 2026-08-25 — see the doc comment above.)
+  return !!user.latitude?.trim() && !!user.longitude?.trim();
 }
 
 /**
@@ -88,13 +86,21 @@ export function isDeliveryPointSet(user: User | null | undefined): boolean {
  * two screens did, with two different definitions of what counted. Stating it
  * once here is the point.
  *
+ * The HOUSE NUMBER is also required (owner ruling, 2026-08-25 — the same pass
+ * that dropped street address out of `isDeliveryPointSet`): it is where the
+ * client's completion definition and the backend's tier-A one now agree, and
+ * unlike a free-text street it is a value the app can actually route a
+ * collection to. Read from `structuredAddress.houseNo`, the only field of
+ * that subdocument this app consumes (see the `User` type).
+ *
  * THIS is what gates. `isAreaAnswered` and `isDeliveryPointSet` exist so a
  * caller can say WHICH half is missing when it writes a prompt; they are not
  * alternative gates, and using one alone to decide access would reintroduce
  * exactly the split this function exists to close.
  */
 export function isProfileComplete(user: User | null | undefined): boolean {
-  return isAreaAnswered(user) && isDeliveryPointSet(user);
+  const hasHouseNo = !!user?.structuredAddress?.houseNo?.trim();
+  return isAreaAnswered(user) && isDeliveryPointSet(user) && hasHouseNo;
 }
 
 /**

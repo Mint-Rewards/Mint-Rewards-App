@@ -108,7 +108,7 @@ const PLACEMENT_TRUST: Record<
 /**
  * Builds the PATCH body from the SAME normalized payload that goes to
  * `update-profile`, so the canonical/"Other" resolution lives in exactly one
- * place (`buildPayload` in app/editProfile.tsx) and the two calls cannot
+ * place (`buildLocationPayload` in utils/locationSave.ts) and the two calls cannot
  * disagree about which of a pair holds the value.
  *
  * Pair rule, and it matters: never send BOTH members of a pair. The endpoint
