@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useReducer, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,12 +12,23 @@ import {
   View,
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
+import {
+  initialPinState,
+  pinReducer,
+  PinEvent,
+  PinPlacement,
+  PinState,
+} from "@/utils/pinState";
 
 interface MapPickerProps {
   visible: boolean;
   initialLatitude?: string;
   initialLongitude?: string;
-  onConfirm: (latitude: string, longitude: string) => void;
+  onConfirm: (
+    latitude: string,
+    longitude: string,
+    placement?: PinPlacement
+  ) => void;
   onClose: () => void;
 }
 
@@ -35,22 +46,32 @@ export default function MapPicker({
   onConfirm,
   onClose,
 }: MapPickerProps) {
-  const [pin, setPin] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
+  // Local wrapper around the pure pinReducer: adds a component-lifecycle
+  // "reset" action so reopening the modal without a saved coordinate starts
+  // clean, without teaching the pure (unit-tested) reducer about remounts.
+  type LocalPinAction = PinEvent | { type: "reset" };
+  const localPinReducer = (state: PinState, action: LocalPinAction): PinState =>
+    action.type === "reset" ? initialPinState : pinReducer(state, action);
+
+  const [state, dispatch] = useReducer(localPinReducer, initialPinState);
   const [locating, setLocating] = useState(false);
+  // Tracks whether a GPS fix has centered the camera this session with no
+  // pin placed yet, so the footer can nudge the user toward placing one.
+  const [gpsCentered, setGpsCentered] = useState(false);
   const mapRef = useRef<MapView>(null);
 
   useEffect(() => {
     if (!visible) return;
 
+    setGpsCentered(false);
+
     const parsedLat = parseFloat(initialLatitude ?? "");
     const parsedLng = parseFloat(initialLongitude ?? "");
 
     if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
-      setPin({ latitude: parsedLat, longitude: parsedLng });
+      dispatch({ type: "open_with_saved", latitude: parsedLat, longitude: parsedLng });
     } else {
+      dispatch({ type: "reset" });
       requestAndCenter();
     }
   }, [visible]);
@@ -75,7 +96,10 @@ export default function MapPicker({
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
       };
-      setPin(coords);
+      // GPS is viewport only: it may recenter the camera, it must never
+      // place or move the pin. `gps_fix` is a documented no-op.
+      dispatch({ type: "gps_fix" });
+      setGpsCentered(true);
       mapRef.current?.animateToRegion(
         { ...coords, latitudeDelta: 0.01, longitudeDelta: 0.01 },
         600
@@ -88,8 +112,12 @@ export default function MapPicker({
   };
 
   const handleConfirm = () => {
-    if (!pin) return;
-    onConfirm(pin.latitude.toFixed(7), pin.longitude.toFixed(7));
+    if (!state.pin) return;
+    onConfirm(
+      state.pin.latitude.toFixed(7),
+      state.pin.longitude.toFixed(7),
+      state.placement
+    );
     onClose();
   };
 
@@ -124,15 +152,19 @@ export default function MapPicker({
             ref={mapRef}
             style={StyleSheet.absoluteFill}
             initialRegion={initialRegion}
-            onPress={(e) => setPin(e.nativeEvent.coordinate)}
+            onPress={(e) =>
+              dispatch({ type: "user_place", ...e.nativeEvent.coordinate })
+            }
             showsUserLocation
             showsMyLocationButton={false}
           >
-            {pin && (
+            {state.pin && (
               <Marker
-                coordinate={pin}
+                coordinate={state.pin}
                 draggable
-                onDragEnd={(e) => setPin(e.nativeEvent.coordinate)}
+                onDragEnd={(e) =>
+                  dispatch({ type: "user_place", ...e.nativeEvent.coordinate })
+                }
                 pinColor="#00528A"
               />
             )}
@@ -154,17 +186,24 @@ export default function MapPicker({
 
         {/* Footer */}
         <View style={styles.footer}>
-          {pin ? (
+          {state.pin ? (
             <Text style={styles.coords}>
-              {pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}
+              {state.pin.latitude.toFixed(5)}, {state.pin.longitude.toFixed(5)}
             </Text>
           ) : (
-            <Text style={styles.noPin}>No pin placed yet</Text>
+            <>
+              <Text style={styles.noPin}>No pin placed yet</Text>
+              {gpsCentered && (
+                <Text style={styles.hint}>
+                  Drag the pin to your door — so the collector can find it
+                </Text>
+              )}
+            </>
           )}
           <TouchableOpacity
-            style={[styles.confirmBtn, !pin && styles.confirmBtnDisabled]}
+            style={[styles.confirmBtn, !state.pin && styles.confirmBtnDisabled]}
             onPress={handleConfirm}
-            disabled={!pin}
+            disabled={!state.pin}
             activeOpacity={0.8}
           >
             <Ionicons name="checkmark-circle" size={20} color="#fff" />
