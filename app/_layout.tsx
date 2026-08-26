@@ -16,6 +16,7 @@ import { useEffect, useRef } from "react";
 import { configureGoogleSignIn } from '@/utils/googleAuth';
 import { logScreenView } from "@/utils/logger";
 import { EnvBanner } from "@/components/EnvBanner";
+import LocationGate from "@/components/LocationGate";
 import UpdateGate from "@/components/UpdateGate";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { PostHogProvider } from "posthog-react-native";
@@ -129,6 +130,9 @@ export default Sentry.wrap(function RootLayout() {
               user lands where they were already headed rather than back on the
               loading screen. Renders null unless it decides to block. */}
           <UpdateGate />
+          {/* Same contract as UpdateGate: renders null unless it decides a
+              location modal is due, and only on Home. */}
+          <LocationGate />
           {/* Pinned to "dark" (dark glyphs) rather than "auto". "auto" follows
               the ThemeProvider above and resolves to light glyphs in dark mode,
               which vanish against the hardcoded-white screens. Same reason the

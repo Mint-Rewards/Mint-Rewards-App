@@ -40,15 +40,20 @@
  *     surface.
  *   - `areaCentroids` exports `AREA_CENTROIDS` (`"City::Town"` -> `[lng,
  *     lat]`) and `CITY_CENTROIDS` (`"City"` -> `[lng, lat]`) verbatim. Both
- *     are EMPTY as of this writing — the P0.1a geocoder sweep produces a
- *     `centroids.json` by-product (`scripts/geocode-spike/report.js`) that
- *     was searched for across both repos (working tree and full git
- *     history) and does not exist anywhere: `report.js` requires
- *     `scripts/geocode-spike/out/results.jsonl`, which was never generated
- *     (`out/` is gitignored and holds no such file), so `centroids.json`
- *     itself was never produced. The audit script therefore ships a
- *     `--centroids <path>` override flag so a future run of the sweep can
- *     supply real coverage without a registry edit or a re-export here.
+ *     were EMPTY until 2026-08-26 and are now POPULATED — 214 areas and 54
+ *     cities, produced by `scripts/geocode-spike/centroid-sweep.js` (P2-6),
+ *     which is a different script from the P0.1a sweep this paragraph used
+ *     to describe: it forward-geocodes registry names through two providers
+ *     and keeps only what they agree on. See `pakistan_areas.ts`'s own
+ *     centroid header for the provenance and the licence constraint.
+ *
+ *     WHAT THIS DOES NOT UNLOCK: the backend's P3.1 audit script still
+ *     buckets every town as `no_centroid` unless given a `--centroids
+ *     <path>` file. That is deliberate on its side and unchanged by this
+ *     data — these are bare `[lng, lat]` pairs with no
+ *     `maxSampleRadiusMeters`, so no containment threshold can be derived
+ *     from them, and the audit refuses to invent one. The override flag is
+ *     still how that script gets real coverage.
  *
  * No timestamp or other non-deterministic field is written: the artifact must
  * be byte-stable, so running this script twice with no registry change

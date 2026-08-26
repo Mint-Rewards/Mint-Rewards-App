@@ -197,7 +197,7 @@ module.exports = () => ({
     // Deliberately identical across variants: both builds live under one EAS
     // project.
     slug: "mint-rewards",
-    version: "2.1.10",
+    version: "2.1.11",
     orientation: "portrait",
     icon: isDev
       ? "./assets/images/icon-dev.png"

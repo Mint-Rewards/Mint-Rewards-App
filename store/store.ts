@@ -1,5 +1,6 @@
 import { logAuthEvent, logError, logEvent } from "@/utils/logger";
 import { authenticatedFetch } from "@/utils/api";
+import type { LocationEvaluation } from "@/utils/locationApi";
 import { API_BASE_URL } from "@/utils/constants";
 import { setUnauthorizedHandler } from "@/utils/session";
 import { addBreadcrumb, captureWarning, setSentryUser } from "@/utils/sentry";
@@ -88,6 +89,23 @@ export interface User {
   subArea?: string;
   subAreaOther?: string;
   mintId?: string;
+  /**
+   * Structured address subdocument, as returned whole by `GET
+   * /api/users/my-profile`. Only the leaf the app reads is declared — the
+   * others exist on the document but nothing here consumes them yet.
+   */
+  structuredAddress?: {
+    houseNo?: string;
+  };
+  /**
+   * Which version of the location requirements this user has satisfied.
+   *
+   * Stamped server-side by `PATCH /api/users/location` the first time a
+   * location evaluates as complete. The gate reads it to decide whether to ask
+   * again: bumping LOCATION_COMPLETION_VERSION on the server re-prompts
+   * everyone exactly once. Absent on users who have never completed.
+   */
+  locationVersion?: number;
   latitude?: string;
   longitude?: string;
   deviceToken?: string;
@@ -108,6 +126,13 @@ export interface UserProfile {
   phone: string;
   province: string;
   city: string;
+  /**
+   * House / flat number — or unit / building name in a non-residential area;
+   * `getHouseNoField` picks the wording. Flat here for the form's convenience;
+   * it is sent nested, as `structuredAddress.houseNo`, which is where it lives
+   * on the server.
+   */
+  houseNo?: string;
   /**
    * Canonical town. Only ever holds a value from `getTownsForCity(city)`, or
    * "". Mutually exclusive with `townOther`.
@@ -234,6 +259,19 @@ interface UserSlice {
    */
   locationPromptShown: boolean;
   dismissLocationPrompt: () => void;
+  /**
+   * The server's own verdict on this user's location, from the last successful
+   * `PATCH /api/users/location` — `complete`, what is `missing`, and which
+   * `bucket` they fall in.
+   *
+   * Kept rather than discarded because it is the only authoritative answer to
+   * "is this location finished": the client's `isProfileComplete` answers a
+   * different, looser question: it is computed from what this client happens to
+   * hold, while this is the server's own verdict over the whole document. Null
+   * until a save happens in this session.
+   */
+  locationEvaluation: LocationEvaluation | null;
+  setLocationEvaluation: (evaluation: LocationEvaluation | null) => void;
   setUserData: (userData: Partial<User>) => void;
   getProfile: () => Promise<void>;
   signIn: (
@@ -426,8 +464,36 @@ export const useAppStore = create<AppStore>((set, get) => ({
   isLoading: false,
   error: null,
   locationPromptShown: false,
+  locationEvaluation: null,
 
   dismissLocationPrompt: () => set({ locationPromptShown: true }),
+
+  /**
+   * Stores the server's location verdict, and stamps the user's
+   * `locationVersion` from it.
+   *
+   * The stamp is the point. `resolveLocationGate` decides whether to re-prompt
+   * by reading `user.locationVersion`, and the PATCH that completes a location
+   * bumps it SERVER-side — after `updateProfile`'s `getProfile()` has already
+   * refetched the user. Without this write the store keeps the pre-bump value
+   * until some later refetch, so a user who just finished their profile is
+   * asked again on their next visit to Home.
+   *
+   * `currentVersion`, never `version`. `version` is the constant naming which
+   * questionnaire is current and comes back to EVERY caller, complete or not;
+   * writing it would mark the entire userbase complete and switch the gate off
+   * for good. `currentVersion` is this user's own stamp, which the backend
+   * deliberately synthesizes post-bump so a completing PATCH already reports
+   * the new value.
+   */
+  setLocationEvaluation: (evaluation) =>
+    set((state) => ({
+      locationEvaluation: evaluation,
+      user:
+        state.user && evaluation
+          ? { ...state.user, locationVersion: evaluation.currentVersion }
+          : state.user,
+    })),
 
   setUserData: (userData) =>
     set((state) => ({

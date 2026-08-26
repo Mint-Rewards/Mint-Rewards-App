@@ -1,13 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   FlatList,
   Modal,
+  StyleProp,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  ViewStyle,
 } from "react-native";
 import { Constants } from "../../utils/constants";
 
@@ -20,6 +22,16 @@ interface LocationPickerProps {
   disabled?: boolean;
   testID?: string;
   hasError?: boolean;
+  /** Renders the required-field asterisk after the label. */
+  required?: boolean;
+  /** Validation message rendered under the selector. */
+  error?: string;
+  /**
+   * Overrides the group's own spacing. Callers that render their own footer
+   * (hints, suggestions, a shared error line) pass `{ marginBottom: 0 }` so the
+   * group's gap doesn't detach that footer from the field.
+   */
+  containerStyle?: StyleProp<ViewStyle>;
 }
 
 export const LocationPicker: React.FC<LocationPickerProps> = ({
@@ -31,6 +43,9 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   disabled = false,
   testID,
   hasError = false,
+  required = false,
+  error,
+  containerStyle,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -46,8 +61,11 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   };
 
   return (
-    <View style={styles.inputGroup}>
-      <Text style={styles.inputLabel}>{label}</Text>
+    <View style={[styles.inputGroup, containerStyle]}>
+      <Text style={styles.inputLabel}>
+        {label}
+        {required && <Text style={styles.asterisk}> *</Text>}
+      </Text>
 
       {/* Trigger button */}
       <TouchableOpacity
@@ -72,6 +90,8 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
           color={disabled ? "#CCCCCC" : "#666666"}
         />
       </TouchableOpacity>
+
+      {!!error && <Text style={styles.errorText}>{error}</Text>}
 
       {/* Modal dropdown */}
       <Modal
@@ -163,41 +183,53 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
 };
 
 const styles = StyleSheet.create({
+  // The tokens below mirror app/editProfile.tsx's form fields so this picker
+  // sits in the same visual language as the inputs above and below it.
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   inputLabel: {
     fontSize: 16,
-    fontWeight: "500",
-    color: "#333333",
+    fontWeight: "600",
+    color: "#2d3748",
     marginBottom: 8,
   },
+  asterisk: {
+    color: "#e53e3e",
+    fontWeight: "700",
+  },
   selector: {
-    height: 50,
+    minHeight: 50,
     borderWidth: 1,
-    borderColor: "#E0E0E0",
+    borderColor: "#e2e8f0",
     borderRadius: 12,
-    paddingHorizontal: 15,
-    backgroundColor: "#FAFAFA",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: "#f8f9fa",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   selectorDisabled: {
-    backgroundColor: "#F5F5F5",
-    borderColor: "#EEEEEE",
+    backgroundColor: "#f1f3f5",
+    borderColor: "#edf2f7",
   },
   inputError: {
-    borderColor: "#E53935",
-    borderWidth: 1.5,
+    borderColor: "#e53e3e",
+    backgroundColor: "#fef5f5",
   },
   selectorText: {
     fontSize: 16,
-    color: "#333333",
+    color: "#2d3748",
     flex: 1,
   },
   placeholderText: {
-    color: "#999999",
+    color: "#a0aec0",
+  },
+  errorText: {
+    color: "#e53e3e",
+    fontSize: 14,
+    marginTop: 4,
   },
   // Modal styles
   overlay: {

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import React, { useEffect, useReducer, useRef, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +12,13 @@ import {
   View,
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
+import { isFixWithinCity, resolveSelectionViewport } from "@/utils/locationForm";
+import {
+  FlowStep,
+  trackFlowAbandoned,
+  trackMapOpened,
+  trackPinInteracted,
+} from "@/utils/locationAnalytics";
 import {
   initialPinState,
   pinReducer,
@@ -24,6 +31,14 @@ interface MapPickerProps {
   visible: boolean;
   initialLatitude?: string;
   initialLongitude?: string;
+  /**
+   * The city and town already chosen on the form. Used ONLY to pick a sensible
+   * opening camera position when there is no saved pin — never to place one.
+   */
+  city?: string;
+  town?: string;
+  /** Widest fallback rung: used when no city has been chosen yet. */
+  province?: string;
   onConfirm: (
     latitude: string,
     longitude: string,
@@ -43,6 +58,9 @@ export default function MapPicker({
   visible,
   initialLatitude,
   initialLongitude,
+  city,
+  town,
+  province,
   onConfirm,
   onClose,
 }: MapPickerProps) {
@@ -59,24 +77,57 @@ export default function MapPicker({
   // pin placed yet, so the footer can nudge the user toward placing one.
   const [gpsCentered, setGpsCentered] = useState(false);
   const mapRef = useRef<MapView>(null);
+  // Analytics bookkeeping. Refs, not state: nothing renders from these, and
+  // `flow_abandoned` must read the CURRENT step from inside a close handler
+  // that would otherwise close over a stale render's value.
+  const pinInteractionsRef = useRef(0);
+  const lastStepRef = useRef<FlowStep>("map_opened");
+  // A confirmed pin is not an abandoned flow. Set by handleConfirm, which
+  // calls onClose itself.
+  const confirmedRef = useRef(false);
+
+  // Resolved once per selection, and read from BOTH the opening camera and the
+  // analytics call so the two cannot disagree about where the map opened.
+  const selectionViewport = useMemo(
+    () => resolveSelectionViewport(city, town, province),
+    [city, town, province],
+  );
 
   useEffect(() => {
     if (!visible) return;
 
     setGpsCentered(false);
+    pinInteractionsRef.current = 0;
+    lastStepRef.current = "map_opened";
+    confirmedRef.current = false;
 
     const parsedLat = parseFloat(initialLatitude ?? "");
     const parsedLng = parseFloat(initialLongitude ?? "");
 
     if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
       dispatch({ type: "open_with_saved", latitude: parsedLat, longitude: parsedLng });
+      trackMapOpened("saved_pin");
     } else {
       dispatch({ type: "reset" });
-      requestAndCenter();
+      // Reported once the initial centering SETTLES, not here: without a saved
+      // coordinate the camera starts on wherever `initialRegion` put it and
+      // only becomes `device_gps` if a fix actually arrives. Counting the
+      // attempt would hide every permission denial.
+      //
+      // When GPS does not arrive, the reported value is what the camera is
+      // actually showing — the registry centroid if one was found, `default`
+      // (the whole country) if not. Reporting `default` for both would make the
+      // fix for P2-6 invisible in exactly the funnel built to measure it.
+      requestAndCenter().then((centered) =>
+        trackMapOpened(
+          centered ? "device_gps" : (selectionViewport?.source ?? "default"),
+        ),
+      );
     }
   }, [visible]);
 
-  const requestAndCenter = async () => {
+  /** Resolves true when a GPS fix actually recentered the camera. */
+  const requestAndCenter = async (): Promise<boolean> => {
     setLocating(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -87,7 +138,7 @@ export default function MapPicker({
           [{ text: "OK" }]
         );
         setLocating(false);
-        return;
+        return false;
       }
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
@@ -96,23 +147,72 @@ export default function MapPicker({
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
       };
+
+      // A fix that is nowhere near the city the user picked must NOT move the
+      // camera. This used to be unconditional, and was right when it was
+      // written: with no centroids the alternative was the whole of Pakistan,
+      // which a fix anywhere on earth improved on. Now the map has already
+      // opened on the selected city, and a distant fix makes it worse — it
+      // describes where the phone is, not where the address being entered is.
+      // The case that surfaced it is the everyday one: an iOS Simulator
+      // reports Apple HQ, so the camera flew from Karachi to California on
+      // every open. A relative's address or a trip does the same thing to a
+      // real user.
+      //
+      // Rejected here rather than in the reducer because it is a VIEWPORT
+      // judgement, and the reducer deliberately knows nothing about cities.
+      if (!isFixWithinCity(coords.latitude, coords.longitude, city)) {
+        // Reported as the centroid, not `device_gps` — the camera is showing
+        // the centroid, and the funnel must say what is on screen.
+        return false;
+      }
+
       // GPS is viewport only: it may recenter the camera, it must never
       // place or move the pin. `gps_fix` is a documented no-op.
       dispatch({ type: "gps_fix" });
       setGpsCentered(true);
+      // Only advances the step — a pin already placed is further along, and a
+      // GPS re-center after it must not walk the funnel backwards.
+      if (lastStepRef.current === "map_opened") lastStepRef.current = "gps_centered";
       mapRef.current?.animateToRegion(
         { ...coords, latitudeDelta: 0.01, longitudeDelta: 0.01 },
         600
       );
+      return true;
     } catch {
       // stay centered on Pakistan default
+      return false;
     } finally {
       setLocating(false);
     }
   };
 
+  /**
+   * A deliberate placement: map tap or marker drag-end. Both are the same
+   * event to the reducer and the same interaction to the funnel.
+   */
+  const handleUserPlace = (coordinate: {
+    latitude: number;
+    longitude: number;
+  }) => {
+    dispatch({ type: "user_place", ...coordinate });
+    pinInteractionsRef.current += 1;
+    lastStepRef.current = "pin_placed";
+    trackPinInteracted(pinInteractionsRef.current);
+  };
+
+  /**
+   * Closing without confirming. Reports how far the user got, so the drop-off
+   * can be told apart from a user who never got a map worth pinning.
+   */
+  const handleClose = () => {
+    if (!confirmedRef.current) trackFlowAbandoned(lastStepRef.current);
+    onClose();
+  };
+
   const handleConfirm = () => {
     if (!state.pin) return;
+    confirmedRef.current = true;
     onConfirm(
       state.pin.latitude.toFixed(7),
       state.pin.longitude.toFixed(7),
@@ -127,15 +227,29 @@ export default function MapPicker({
     if (!isNaN(lat) && !isNaN(lng)) {
       return { latitude: lat, longitude: lng, latitudeDelta: 0.01, longitudeDelta: 0.01 };
     }
-    return PAKISTAN_CENTER;
+    // No saved pin. The form already knows their city and town, so open on that
+    // rather than on the whole country — the view a user gets when GPS is
+    // denied or fails. Still nullable: the sweep that sourced the centroids
+    // rejected every name its providers disagreed about, and a free-text town
+    // has no registry key at all.
+    return selectionViewport?.region ?? PAKISTAN_CENTER;
   })();
 
   return (
-    <Modal visible={visible} animationType="slide" statusBarTranslucent>
+    // `onRequestClose` is what the Android hardware back button fires. Without
+    // it, back closes the picker without ever reaching `handleClose`, so
+    // `flow_abandoned` never fires for that path and the funnel under-reports on
+    // one platform only.
+    <Modal
+      visible={visible}
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={handleClose}
+    >
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
+          <TouchableOpacity onPress={handleClose} style={styles.headerBtn}>
             <Ionicons name="close" size={24} color="#2d3748" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Pin Your Location</Text>
@@ -152,9 +266,7 @@ export default function MapPicker({
             ref={mapRef}
             style={StyleSheet.absoluteFill}
             initialRegion={initialRegion}
-            onPress={(e) =>
-              dispatch({ type: "user_place", ...e.nativeEvent.coordinate })
-            }
+            onPress={(e) => handleUserPlace(e.nativeEvent.coordinate)}
             showsUserLocation
             showsMyLocationButton={false}
           >
@@ -162,9 +274,7 @@ export default function MapPicker({
               <Marker
                 coordinate={state.pin}
                 draggable
-                onDragEnd={(e) =>
-                  dispatch({ type: "user_place", ...e.nativeEvent.coordinate })
-                }
+                onDragEnd={(e) => handleUserPlace(e.nativeEvent.coordinate)}
                 pinColor="#00528A"
               />
             )}
