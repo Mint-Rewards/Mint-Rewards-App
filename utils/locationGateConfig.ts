@@ -1,4 +1,8 @@
 import { API_BASE_URL } from "@/config/env";
+import {
+  normalizeProfileBonus,
+  type ProfileBonusConfig,
+} from "@/utils/profileBonusConfig";
 
 /**
  * Pure decision-adjacent data shape for the location-capture gate.
@@ -144,16 +148,45 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
  * version-gate fetch in UpdateGate.tsx that hits it.
  */
 export async function fetchLocationGateConfig(): Promise<LocationGateConfig | null> {
+  return (await fetchGateConfigs()).locationGate;
+}
+
+export interface GateConfigs {
+  locationGate: LocationGateConfig | null;
+  profileBonus: ProfileBonusConfig | null;
+}
+
+/**
+ * Fetches /api/app-config ONCE and normalises every block the gate needs.
+ *
+ * One fetch, deliberately. UpdateGate already makes its own independent call to
+ * this endpoint (documented in fetchWithTimeout's comment above), so the gates
+ * were already hitting it twice on every launch; adding the profile bonus as a
+ * third bare fetch would have made it three requests for one payload on the
+ * app's most latency-sensitive path.
+ *
+ * Never throws. Note the two blocks resolve their failures in OPPOSITE
+ * directions and each normaliser owns that decision: a null `locationGate`
+ * means "gate off" (fail open — a bad config must not lock anyone out), while a
+ * null `profileBonus` means "no bonus copy" (fail closed — a bad config must
+ * not promise points). They share a request, not a policy.
+ */
+export async function fetchGateConfigs(): Promise<GateConfigs> {
   try {
     const response = await fetchWithTimeout(
       `${API_BASE_URL}/api/app-config`,
       CONFIG_TIMEOUT_MS,
     );
-    if (!response.ok) return null;
-    return normalizeLocationGate(await response.json());
+    if (!response.ok) return { locationGate: null, profileBonus: null };
+
+    const body = await response.json();
+    return {
+      locationGate: normalizeLocationGate(body),
+      profileBonus: normalizeProfileBonus(body),
+    };
   } catch {
     // Covers network rejection, the AbortController timeout, and malformed
     // JSON (response.json() rejects) in one place — all the same decision.
-    return null;
+    return { locationGate: null, profileBonus: null };
   }
 }

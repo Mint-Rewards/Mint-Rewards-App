@@ -139,3 +139,37 @@ export function trackLocationPatchFailed(reason: string): void {
 export function trackFlowAbandoned(lastStep: FlowStep): void {
   capture("flow_abandoned", { lastStep });
 }
+
+/**
+ * A profile-completion bonus was offered on screen.
+ *
+ * Also NOT in the master plan's event list, for the same reason
+ * `location_patch_failed` is not: the plan predates the campaign. Without this
+ * pair there is no way to answer the only question the campaign is run to
+ * answer — of the people shown the badge, how many finished — because the
+ * existing `location_saved` fires identically whether or not a bonus was on
+ * offer.
+ *
+ * `minutesLeft` rather than a raw deadline: how much of the window remains when
+ * someone is asked is the interesting variable, and it is the one that says
+ * whether 24 hours is the right number. Bucketing is left to the dashboard.
+ */
+export function trackProfileBonusShown(
+  points: number,
+  minutesLeft: number,
+): void {
+  capture("profile_bonus_shown", { points, minutesLeft });
+}
+
+/**
+ * A profile was completed while a bonus was on offer.
+ *
+ * Fired by the CLIENT on a successful save, so it counts intent-to-earn, not
+ * confirmed payment: the server decides independently whether the window was
+ * still open when the write landed, and can decline. Treat any gap between this
+ * event and the granted count in the database as clock skew and racing
+ * deadlines rather than as lost money.
+ */
+export function trackProfileBonusEarned(points: number): void {
+  capture("profile_bonus_earned", { points });
+}

@@ -6,16 +6,27 @@
  * Someone who DOES have a pin never sees this — they get the confirm-address
  * modal instead, which can finish the job inline.
  *
- * The mockup carries a "+100 POINTS" badge and a "Continue & earn 100 points"
- * CTA. Both are omitted deliberately: `points` exists on the user model and
- * nothing anywhere awards it, so the copy would promise something the system
- * cannot pay. Owner decision, 2026-08-25 — the badge returns when the award does.
+ * The mockup's "+100 POINTS" badge and "Continue & earn 100 points" CTA were
+ * omitted when this sheet was written, because `points` existed on the user
+ * model and nothing anywhere awarded it — the copy would have promised
+ * something the system could not pay (owner decision, 2026-08-25, "the badge
+ * returns when the award does").
+ *
+ * The award now exists, so the badge is back — but only ever when the server
+ * says a live campaign has an open window for THIS user. That is what the
+ * `bonus` prop carries, and a null `bonus` renders exactly the copy this sheet
+ * showed before the campaign existed. The original ruling therefore still
+ * holds: there is no code path here that promises points outside a window the
+ * server will actually pay on. See utils/profileBonus.ts.
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect } from "react";
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useDeadline } from "@/hooks/useDeadline";
+import { trackProfileBonusShown } from "@/utils/locationAnalytics";
 import type { MissingField } from "@/utils/locationGate";
+import { formatTimeLeft, type ProfileBonus } from "@/utils/profileBonus";
 import type { ProfileFocusTarget } from "@/utils/profileFocus";
 
 /**
@@ -62,6 +73,12 @@ interface Props {
    */
   onSelectRow: (focus: ProfileFocusTarget) => void;
   onDismiss: () => void;
+  /**
+   * The live bonus, or null when there is none to promise. Null is the default
+   * and the safe case: campaign off, window elapsed, config unreadable, or a
+   * user the server never opened a window for all arrive here as null.
+   */
+  bonus?: ProfileBonus | null;
 }
 
 export function FinishProfileModal({
@@ -71,6 +88,7 @@ export function FinishProfileModal({
   onContinue,
   onSelectRow,
   onDismiss,
+  bonus = null,
 }: Props) {
   const rows = ROWS.map((row) => ({
     ...row,
@@ -80,6 +98,27 @@ export function FinishProfileModal({
   const doneCount = rows.filter((r) => r.done).length;
   const remaining = rows.length - doneCount;
   const progress = doneCount / rows.length;
+
+  // Unconditional hook call with a null deadline when there is no bonus —
+  // hooks cannot be called conditionally, and useDeadline is written to return
+  // 0 and schedule nothing for null.
+  const msLeft = useDeadline(bonus?.expiresAt ?? null);
+  // A window that runs out while the sheet is open drops the promise on the
+  // spot rather than showing "Expired" next to a CTA that still offers points.
+  const showBonus = bonus !== null && msLeft > 0;
+
+  // Keyed on the deadline, not on `msLeft`, so this fires once per offer rather
+  // than once per tick. The gate mounts this sheet only when it has decided to
+  // show it, so a mount is an impression.
+  const offeredPoints = showBonus ? bonus.points : null;
+  const offeredUntil = showBonus ? bonus.expiresAt : null;
+  useEffect(() => {
+    if (offeredPoints === null || offeredUntil === null) return;
+    trackProfileBonusShown(
+      offeredPoints,
+      Math.max(0, Math.round((offeredUntil - Date.now()) / 60_000)),
+    );
+  }, [offeredPoints, offeredUntil]);
 
   return (
     <Modal
@@ -92,6 +131,15 @@ export function FinishProfileModal({
     >
       <View style={styles.overlay}>
         <View style={styles.sheet}>
+          {showBonus ? (
+            <View style={styles.badgeRow}>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>+{bonus.points} POINTS</Text>
+              </View>
+              <Text style={styles.badgeTimer}>{formatTimeLeft(msLeft)}</Text>
+            </View>
+          ) : null}
+
           <Text style={styles.title}>Finish your profile</Text>
           <Text style={styles.subtitle}>
             {remaining === 1
@@ -146,7 +194,9 @@ export function FinishProfileModal({
             activeOpacity={0.85}
             accessibilityRole="button"
           >
-            <Text style={styles.ctaText}>Continue</Text>
+            <Text style={styles.ctaText}>
+              {showBonus ? `Continue & earn ${bonus.points} points` : "Continue"}
+            </Text>
           </TouchableOpacity>
 
           {dismissible ? (
@@ -175,6 +225,29 @@ const styles = StyleSheet.create({
     paddingBottom: 34,
     gap: 6,
   },
+  badgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 10,
+  },
+  // The mockup's pill. Same construction as deals.tsx's expiryPill (self-start,
+  // fully rounded, tinted fill) recoloured for this dark sheet: the CTA mint on
+  // the sheet's own dark teal, so the badge and the button read as one promise.
+  badge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#9FD8C8",
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+  },
+  badgeText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0B3B3B",
+    letterSpacing: 0.8,
+  },
+  badgeTimer: { fontSize: 13, fontWeight: "600", color: "#BFE0DA" },
   title: { fontSize: 32, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.5 },
   subtitle: { fontSize: 17, color: "#BFE0DA", lineHeight: 24, marginBottom: 14 },
   progressTrack: {

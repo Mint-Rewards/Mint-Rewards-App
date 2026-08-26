@@ -8,9 +8,16 @@
  * locked rows and FROM PIN chip were rejected against the standing project
  * constraint and the owner's own "all fields editable".
  *
- * Copy carries no points. The mockup's "Save & earn 50" promises an award that
- * does not exist anywhere in either repo; the CTA is "Save" until it does
+ * The mockup's "Save & earn 50" was dropped when this sheet was written: it
+ * promised an award that existed nowhere in either repo, so the CTA read "Save"
  * (owner decision, 2026-08-25).
+ *
+ * The award now exists and the CTA carries it again — but at the SAME amount
+ * this modal's sibling offers, not the mockup's 50. There is one bonus for
+ * reaching a complete profile, and which sheet a user happened to meet is an
+ * accident of whether they had a pin already, not a measure of the work they
+ * did. The `bonus` prop is null whenever there is no live window, and a null
+ * bonus renders the pre-campaign copy exactly.
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -27,7 +34,10 @@ import MapPicker from "@/components/ui/MapPicker";
 import { LocationFields } from "@/components/location/LocationFields";
 import { useLocationForm } from "@/hooks/useLocationForm";
 import { useAppStore } from "@/store/store";
-import { trackAreaOverridden } from "@/utils/locationAnalytics";
+import {
+  trackAreaOverridden,
+  trackProfileBonusShown,
+} from "@/utils/locationAnalytics";
 import {
   buildPrefill,
   reverseGeocode,
@@ -38,6 +48,8 @@ import {
 } from "@/utils/locationSave";
 import { requiresSubArea } from "@/utils/pakistan_areas";
 import type { PinPlacement } from "@/utils/pinState";
+import { useDeadline } from "@/hooks/useDeadline";
+import { formatTimeLeft, type ProfileBonus } from "@/utils/profileBonus";
 
 interface Props {
   visible: boolean;
@@ -58,6 +70,8 @@ interface Props {
      */
     placement: PinPlacement | null,
   ) => Promise<void>;
+  /** The live bonus, or null when there is none to promise. See the header. */
+  bonus?: ProfileBonus | null;
 }
 
 export function ConfirmAddressModal({
@@ -65,6 +79,7 @@ export function ConfirmAddressModal({
   dismissible,
   onDismiss,
   onConfirm,
+  bonus = null,
 }: Props) {
   const { user, token } = useAppStore();
   const form = useLocationForm();
@@ -72,6 +87,23 @@ export function ConfirmAddressModal({
   const [mapVisible, setMapVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [prefillReady, setPrefillReady] = useState(false);
+
+  // See the equivalent note in FinishProfileModal: the hook is called
+  // unconditionally with a null deadline when there is no bonus, and a window
+  // that elapses while the sheet is open withdraws the promise immediately.
+  const msLeft = useDeadline(bonus?.expiresAt ?? null);
+  const showBonus = bonus !== null && msLeft > 0;
+
+  // One impression per offer — see the equivalent note in FinishProfileModal.
+  const offeredPoints = showBonus ? bonus.points : null;
+  const offeredUntil = showBonus ? bonus.expiresAt : null;
+  useEffect(() => {
+    if (offeredPoints === null || offeredUntil === null) return;
+    trackProfileBonusShown(
+      offeredPoints,
+      Math.max(0, Math.round((offeredUntil - Date.now()) / 60_000)),
+    );
+  }, [offeredPoints, offeredUntil]);
 
   /**
    * What the geocoder suggested, kept so an edit can be told apart from an
@@ -279,6 +311,15 @@ export function ConfirmAddressModal({
               <Text style={styles.errorText}>{errors.location}</Text>
             ) : null}
 
+            {showBonus ? (
+              <View style={styles.badgeRow}>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>+{bonus.points} POINTS</Text>
+                </View>
+                <Text style={styles.badgeTimer}>{formatTimeLeft(msLeft)}</Text>
+              </View>
+            ) : null}
+
             <Text style={styles.title}>Just your house no.</Text>
             <Text style={styles.subtitle}>
               We&apos;ve filled in your address from your pin — check it, fix
@@ -316,7 +357,13 @@ export function ConfirmAddressModal({
               activeOpacity={0.85}
               accessibilityRole="button"
             >
-              <Text style={styles.ctaText}>{saving ? "Saving…" : "Save"}</Text>
+              <Text style={styles.ctaText}>
+                {saving
+                  ? "Saving…"
+                  : showBonus
+                    ? `Save & earn ${bonus.points} points`
+                    : "Save"}
+              </Text>
             </TouchableOpacity>
 
             {dismissible ? (
@@ -383,6 +430,29 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   adjustChipText: { fontSize: 13, fontWeight: "600", color: "#00528A" },
+  badgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+  },
+  // The light-sheet counterpart of FinishProfileModal's badge: same pill, this
+  // sheet's own navy instead of the dark sheet's mint, so each reads as native
+  // to the surface it sits on while promising the identical thing.
+  badge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#00528A",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.8,
+  },
+  badgeTimer: { fontSize: 12, fontWeight: "600", color: "#4a5568" },
   title: {
     fontSize: 26,
     fontWeight: "800",
