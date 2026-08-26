@@ -17,11 +17,22 @@ import { posthog } from "@/utils/posthog";
  *
  * Resolved AFTER the initial centering settles, not at first render: with no
  * saved coordinate the camera starts on the Pakistan-wide default and only
- * becomes `device_gps` if a fix actually arrives. `default` therefore means the
- * user was shown the whole country — a permission denial or a failed fix — and
- * that is exactly the population worth counting.
+ * becomes `device_gps` if a fix actually arrives.
+ *
+ * `area_centroid` / `city_centroid` are the registry fallbacks, added when the
+ * centroid dataset landed (P2-6). They exist so `default` keeps the meaning it
+ * had before: the user was shown the WHOLE COUNTRY. Without them the dataset
+ * would silently redefine `default` to also cover "opened on their own city",
+ * and the one population worth counting — everyone who got no useful view at
+ * all — would stop being visible without any dashboard change to explain it.
+ * Their ratio is also the live read on area coverage, which is partial.
  */
-export type ViewportSource = "saved_pin" | "device_gps" | "default";
+export type ViewportSource =
+  | "saved_pin"
+  | "device_gps"
+  | "area_centroid"
+  | "city_centroid"
+  | "default";
 
 /**
  * The furthest point reached before the picker was closed without confirming.

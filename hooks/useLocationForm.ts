@@ -75,6 +75,39 @@ const EMPTY: LocationFormValues = {
  */
 const CLEARED_PIN = { latitude: "", longitude: "" };
 
+/**
+ * Everything a TOWN change invalidates: the town itself, its "Other" escape,
+ * the sub-area beneath it, and the pin.
+ *
+ * Spread by all four paths that change the town — the picker, "Other", a "did
+ * you mean" suggestion, and back-to-list — so they cannot drift apart. Three of
+ * this repo's defects have been one of these paths forgetting a field.
+ */
+export const CLEARED_BY_TOWN_CHANGE = {
+  town: "",
+  townOther: "",
+  subArea: "",
+  subAreaOther: "",
+  ...CLEARED_PIN,
+} as const;
+
+/**
+ * Everything a CITY change invalidates: all of the above, plus the house number.
+ *
+ * The house number is in THIS list and not in the town one, and that asymmetry
+ * is the decision (P2-15). A coordinate is absolute — after any place change it
+ * is provably wrong. A house number is relative: "14-B" is meaningless without
+ * its area rather than incorrect within it, and someone who mis-taps a town and
+ * corrects it usually still lives at 14-B, so clearing there would force a
+ * pointless retype. A different CITY is the stronger signal — and since the
+ * field is mandatory, a value carried across one would satisfy validation and
+ * save silently against an address it was never written for.
+ */
+export const CLEARED_BY_CITY_CHANGE = {
+  ...CLEARED_BY_TOWN_CHANGE,
+  houseNo: "",
+} as const;
+
 export function useLocationForm(initial?: Partial<LocationFormValues>) {
   const [values, setValues] = useState<LocationFormValues>({
     ...EMPTY,
@@ -171,21 +204,14 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
   }, []);
 
   /**
-   * City is the top of the cascade. Changing it clears town, sub-area and the
-   * pin: none of those answers means anything under a different city.
+   * City is the top of the cascade. Changing it clears town, sub-area, the
+   * house number and the pin — see `CLEARED_BY_CITY_CHANGE` for why the house
+   * number is on that list and not on the town one.
    */
   const selectCity = useCallback((city: string) => {
     setValues((prev) => {
       if (city === prev.city) return prev; // re-picking is not a change
-      return {
-        ...prev,
-        city,
-        town: "",
-        townOther: "",
-        subArea: "",
-        subAreaOther: "",
-        ...CLEARED_PIN,
-      };
+      return { ...prev, ...CLEARED_BY_CITY_CHANGE, city };
     });
     setTownIsCustom(false);
     setSubAreaIsOther(false);
@@ -204,14 +230,7 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
   const selectTown = useCallback((town: string) => {
     setValues((prev) => {
       if (town === prev.town) return prev;
-      return {
-        ...prev,
-        town,
-        townOther: "",
-        subArea: "",
-        subAreaOther: "",
-        ...CLEARED_PIN,
-      };
+      return { ...prev, ...CLEARED_BY_TOWN_CHANGE, town };
     });
     setTownIsCustom(false);
     setSubAreaIsOther(false);
@@ -219,28 +238,14 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
 
   /** Switches the town to free text. Mutually exclusive with a canonical town. */
   const useCustomTown = useCallback(() => {
-    setValues((prev) => ({
-      ...prev,
-      town: "",
-      townOther: "",
-      subArea: "",
-      subAreaOther: "",
-      ...CLEARED_PIN,
-    }));
+    setValues((prev) => ({ ...prev, ...CLEARED_BY_TOWN_CHANGE }));
     setTownIsCustom(true);
     setSubAreaIsOther(false);
   }, []);
 
   /** Abandons a free-text town and returns to the list. */
   const backToTownList = useCallback(() => {
-    setValues((prev) => ({
-      ...prev,
-      town: "",
-      townOther: "",
-      subArea: "",
-      subAreaOther: "",
-      ...CLEARED_PIN,
-    }));
+    setValues((prev) => ({ ...prev, ...CLEARED_BY_TOWN_CHANGE }));
     setTownIsCustom(false);
     setSubAreaIsOther(false);
   }, []);

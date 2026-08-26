@@ -81,7 +81,24 @@ const AREA_DELTA = 0.05;
 const CITY_DELTA = 0.2;
 
 /**
- * Where to point the map camera for a user who has no saved pin.
+ * Which rung of the registry supplied the opening camera position.
+ *
+ * Reported as `map_opened`'s `viewportSource`, so it is a dashboard contract.
+ * The two levels are kept apart rather than collapsed into one "centroid"
+ * value because the difference is the open question about the dataset: area
+ * coverage is partial and city coverage is near-total, so the split says how
+ * often anyone actually gets the tighter view.
+ */
+export type SelectionViewportSource = "area_centroid" | "city_centroid";
+
+export interface SelectionViewport {
+  region: MapRegion;
+  source: SelectionViewportSource;
+}
+
+/**
+ * Where to point the map camera for a user who has no saved pin, and which
+ * rung of the registry answered.
  *
  * The form already knows their city and town by the time they open the map, so
  * opening on a country-wide view — which is what happens when GPS is denied or
@@ -94,24 +111,35 @@ const CITY_DELTA = 0.2;
  * event exists for the prefill flow, which is a different question and ships
  * with the gate-flow plan.
  *
- * Returns null when the registry has no centroid for this selection — which is
- * every selection today, since `CITY_CENTROIDS` and `AREA_CENTROIDS` are still
- * empty. The caller must fall back.
+ * Returns null when the registry has no centroid for this selection. That is no
+ * longer every selection — the dataset landed — but it is still a live path:
+ * the sweep that sourced it rejected every name its two providers disagreed
+ * about, and a free-text town has no registry key at all. The caller must fall
+ * back.
  */
-export function getSelectionRegion(
+export function resolveSelectionViewport(
   city: string | undefined,
   town: string | undefined,
-): MapRegion | null {
+): SelectionViewport | null {
   const trimmedCity = (city || "").trim();
   if (!trimmedCity) return null;
 
   const area = getAreaCentroid(trimmedCity, (town || "").trim());
-  if (area) return toRegion(area, AREA_DELTA);
+  if (area) return { region: toRegion(area, AREA_DELTA), source: "area_centroid" };
 
   const cityCentroid = getCityCentroid(trimmedCity);
-  if (cityCentroid) return toRegion(cityCentroid, CITY_DELTA);
+  if (cityCentroid)
+    return { region: toRegion(cityCentroid, CITY_DELTA), source: "city_centroid" };
 
   return null;
+}
+
+/** The camera position alone, for callers that do not report where it came from. */
+export function getSelectionRegion(
+  city: string | undefined,
+  town: string | undefined,
+): MapRegion | null {
+  return resolveSelectionViewport(city, town)?.region ?? null;
 }
 
 /**

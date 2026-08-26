@@ -133,12 +133,26 @@ describe("getSelectionRegion", () => {
     expect(getSelectionRegion("   ", "DHA")).toBeNull();
   });
 
-  it("returns null while the registry has no centroids", () => {
-    // Today CITY_CENTROIDS and AREA_CENTROIDS are both empty, so every lookup
-    // misses and the caller falls back. This test is the tripwire: when the
-    // centroid dataset lands, it fails and the fallback assumptions get
-    // revisited on purpose rather than by accident.
-    expect(getSelectionRegion("Karachi", "DHA")).toBeNull();
+  it("opens on the area when the registry has its centroid", () => {
+    // This replaces the tripwire that asserted null everywhere while
+    // CITY_CENTROIDS and AREA_CENTROIDS were empty. The dataset landed
+    // (P2-6), the tripwire fired, and the fallback assumptions were revisited
+    // here on purpose — which is exactly what it was for.
+    const region = getSelectionRegion("Karachi", "DHA");
+    expect(region).not.toBeNull();
+    // DHA Karachi, to within a viewport. Asserted loosely: the value is
+    // regenerated from a geocoder sweep, so pinning six decimals here would
+    // make every refresh of the dataset a test edit.
+    expect(region!.latitude).toBeCloseTo(24.81, 1);
+    expect(region!.longitude).toBeCloseTo(67.08, 1);
+  });
+
+  it("still falls back to null for a name the sweep could not confirm", () => {
+    // Coverage is partial by design — every name the two providers disagreed
+    // about was dropped. A free-text town has no registry key at all, so this
+    // path is live and the caller must keep handling it.
+    expect(getSelectionRegion("Karachi", "Not A Real Town")).not.toBeNull(); // city rung answers
+    expect(getSelectionRegion("Nowhereabad", "Anywhere")).toBeNull();
   });
 
   it("puts latitude and longitude the right way round", () => {

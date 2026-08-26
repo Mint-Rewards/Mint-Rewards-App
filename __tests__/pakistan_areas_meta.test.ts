@@ -216,10 +216,21 @@ describe("resolveGeocodedName", () => {
 });
 
 describe("centroids", () => {
-  // Empty until P0.1a. Consumers must handle null from day one.
-  it("return null while the survey has not run", () => {
-    expect(getAreaCentroid("Karachi", "DHA")).toBeNull();
-    expect(getCityCentroid("Karachi")).toBeNull();
+  // The tables were empty until the P2-6 sweep ran; this used to assert that.
+  // Now it asserts the accessors on both sides of a partial dataset, which is
+  // the state that actually ships: the sweep drops every name its two
+  // providers disagreed about, so a miss is permanent, not pending.
+  it("answer for a name the sweep confirmed", () => {
+    expect(getAreaCentroid("Karachi", "DHA")).not.toBeNull();
+    expect(getCityCentroid("Karachi")).not.toBeNull();
+  });
+
+  it("still return null on a miss rather than approximating one", () => {
+    // A free-text town reaches here as a town with no registry key; falling
+    // back to the city rung is the caller's job (`getSelectionRegion`), not
+    // this accessor's.
+    expect(getAreaCentroid("Karachi", "Somewhere Nobody Curated")).toBeNull();
+    expect(getCityCentroid("Nowhereabad")).toBeNull();
   });
 });
 

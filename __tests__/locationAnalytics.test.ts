@@ -16,6 +16,7 @@ jest.mock("@/utils/posthog", () => ({
   },
 }));
 
+import type { ViewportSource } from "@/utils/locationAnalytics";
 import {
   trackAreaOverridden,
   trackFlowAbandoned,
@@ -33,6 +34,23 @@ describe("event names and payload shapes", () => {
     trackMapOpened("saved_pin");
     expect(mockCapture).toHaveBeenCalledWith("map_opened", {
       viewportSource: "saved_pin",
+    });
+  });
+
+  it.each<ViewportSource>([
+    "saved_pin",
+    "device_gps",
+    "area_centroid",
+    "city_centroid",
+    "default",
+  ])("map_opened accepts viewportSource %s verbatim", (source) => {
+    // The full set, spelled out. `area_centroid` and `city_centroid` arrived
+    // with the centroid dataset (P2-6) specifically so `default` keeps meaning
+    // "shown the whole country"; a rename or a quiet collapse back to four
+    // values would change what the funnel counts without changing the funnel.
+    trackMapOpened(source);
+    expect(mockCapture).toHaveBeenCalledWith("map_opened", {
+      viewportSource: source,
     });
   });
 

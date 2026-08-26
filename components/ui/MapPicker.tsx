@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import React, { useEffect, useReducer, useRef, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
-import { getSelectionRegion } from "@/utils/locationForm";
+import { resolveSelectionViewport } from "@/utils/locationForm";
 import {
   FlowStep,
   trackFlowAbandoned,
@@ -83,6 +83,13 @@ export default function MapPicker({
   // calls onClose itself.
   const confirmedRef = useRef(false);
 
+  // Resolved once per selection, and read from BOTH the opening camera and the
+  // analytics call so the two cannot disagree about where the map opened.
+  const selectionViewport = useMemo(
+    () => resolveSelectionViewport(city, town),
+    [city, town],
+  );
+
   useEffect(() => {
     if (!visible) return;
 
@@ -100,11 +107,18 @@ export default function MapPicker({
     } else {
       dispatch({ type: "reset" });
       // Reported once the initial centering SETTLES, not here: without a saved
-      // coordinate the camera starts on the country-wide default and only
-      // becomes `device_gps` if a fix actually arrives. Counting the attempt
-      // would hide every permission denial.
+      // coordinate the camera starts on wherever `initialRegion` put it and
+      // only becomes `device_gps` if a fix actually arrives. Counting the
+      // attempt would hide every permission denial.
+      //
+      // When GPS does not arrive, the reported value is what the camera is
+      // actually showing — the registry centroid if one was found, `default`
+      // (the whole country) if not. Reporting `default` for both would make the
+      // fix for P2-6 invisible in exactly the funnel built to measure it.
       requestAndCenter().then((centered) =>
-        trackMapOpened(centered ? "device_gps" : "default"),
+        trackMapOpened(
+          centered ? "device_gps" : (selectionViewport?.source ?? "default"),
+        ),
       );
     }
   }, [visible]);
@@ -192,9 +206,10 @@ export default function MapPicker({
     }
     // No saved pin. The form already knows their city and town, so open on that
     // rather than on the whole country — the view a user gets when GPS is
-    // denied or fails. Null until the registry ships centroids, hence the
-    // fallback below.
-    return getSelectionRegion(city, town) ?? PAKISTAN_CENTER;
+    // denied or fails. Still nullable: the sweep that sourced the centroids
+    // rejected every name its providers disagreed about, and a free-text town
+    // has no registry key at all.
+    return selectionViewport?.region ?? PAKISTAN_CENTER;
   })();
 
   return (
