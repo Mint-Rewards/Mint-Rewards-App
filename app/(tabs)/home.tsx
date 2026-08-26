@@ -16,7 +16,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
 import { mergeBrandsWithDeals } from "@/utils/deals";
 import { logEvent } from "@/utils/logger";
-import LocationUpdateModal from "@/components/LocationUpdateModal";
 import {
   isAreaAnswered,
   isDeliveryPointSet,
@@ -196,8 +195,6 @@ export default function HomeScreen() {
     scheduledCollection,
     loadScheduledCollection,
   } = useAppStore();
-  const locationPromptShown = useAppStore((s) => s.locationPromptShown);
-  const dismissLocationPrompt = useAppStore((s) => s.dismissLocationPrompt);
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
   // absolutely positioned, so the scroll has to clear it by its full height.
   const tabBarOverflow = useBottomTabOverflow();
@@ -526,19 +523,6 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
-
-      <LocationUpdateModal
-        visible={locationUpdateNeeded && !locationPromptShown}
-        // The modal's own copy names only the area. Users who ALSO lack a
-        // delivery point will be stopped by the pin requirement on save, so say
-        // so up front rather than letting the form spring it on them.
-        alsoNeedsPin={!hasDeliveryPoint}
-        onLater={dismissLocationPrompt}
-        onUpdate={() => {
-          dismissLocationPrompt();
-          navigateOnce(() => router.push("/editProfile"));
-        }}
-      />
     </View>
   );
 }

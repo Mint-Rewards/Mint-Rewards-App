@@ -88,6 +88,7 @@ const EditProfile = () => {
   const scrollRef = useRef<ScrollView>(null);
   const contentRef = useRef<View>(null);
   const userNameRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
   const addressRef = useRef<View>(null);
   const pinRef = useRef<View>(null);
@@ -210,6 +211,41 @@ const EditProfile = () => {
   };
 
   // ── Validation ─────────────────────────────────────────────────────────────
+  // Visual top-to-bottom order, used to jump to the first invalid field after a
+  // failed save. The location half reuses the same anchors the checklist's
+  // deep-focus uses: city / town / sub-area / house number are one block on
+  // screen, so the top of that block is the honest target for any of them.
+  const ERROR_FIELD_ORDER = [
+    "userName", "email", "phone",
+    "province", "city", "location", "town", "subArea", "houseNo",
+  ];
+
+  /** Scrolls the first field with an error into view. */
+  const scrollToFirstError = (fieldErrors: { [key: string]: string }) => {
+    const field = ERROR_FIELD_ORDER.find((f) => fieldErrors[f]);
+    if (!field) return;
+    const anchors: Partial<Record<string, React.RefObject<View | TextInput | null>>> = {
+      userName: userNameRef,
+      email: emailRef,
+      phone: phoneRef,
+      location: pinRef,
+    };
+    const anchor = (anchors[field] ?? addressRef).current;
+    const content = contentRef.current;
+    // A measurement that cannot be taken must leave the user on a perfectly
+    // usable form, so every failure path here is a no-op.
+    if (!anchor || !content) return;
+    anchor.measureLayout(
+      content,
+      (_x, y) =>
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, y - FOCUS_SCROLL_MARGIN),
+          animated: true,
+        }),
+      () => {},
+    );
+  };
+
   // Identity is this screen's; everything about the place is `locationSave`'s,
   // so the confirm-address modal cannot end up enforcing a different rule.
   const validateForm = () => {
@@ -219,7 +255,7 @@ const EditProfile = () => {
     else if (!/\S+@\S+\.\S+/.test(identity.email)) newErrors.email = "Please enter a valid email";
     if (!identity.phone.trim())     newErrors.phone = "Phone number is required";
     else if (!isPhone(identity.phone))
-      newErrors.phone = "Please enter a valid phone number (10-15 digits)";
+      newErrors.phone = "Please enter a valid phone number in the format 03XXXXXXXXX";
 
     const location = validateLocationValues(form.values, {
       // Required only where there is canonical data to choose from. Free-text
@@ -231,6 +267,7 @@ const EditProfile = () => {
 
     const merged = { ...newErrors, ...location.errors };
     setErrors(merged);
+    scrollToFirstError(merged);
     return Object.keys(merged).length === 0;
   };
 
@@ -436,7 +473,7 @@ const EditProfile = () => {
         keyboardType={keyboardType}
         autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
         readOnly={field === "email"}
-        maxLength={field === "phone" ? 16 : undefined}
+        maxLength={field === "phone" ? 11 : undefined}
         textAlignVertical="center"
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
@@ -478,7 +515,13 @@ const EditProfile = () => {
               "default",
               userNameRef,
             )}
-            {renderInput("email", "Email", "Enter your email", "email-address")}
+            {renderInput(
+              "email",
+              "Email",
+              "Enter your email",
+              "email-address",
+              emailRef,
+            )}
             {renderInput(
               "phone",
               "Phone Number",
