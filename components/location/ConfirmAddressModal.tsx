@@ -109,6 +109,11 @@ export function ConfirmAddressModal({
 
       form.reset(
         {
+          // Same fallback as Edit Profile (Issue 8). `buildPrefill` only
+          // accepts a geocoded city the registry knows, so a prefill that
+          // falls back to the SAVED city can be off-registry — and this modal
+          // is exactly where a legacy user meets the mandatory province.
+          province: user.province || "",
           city: prefill.city,
           town: prefill.town,
           subArea: prefill.subArea,

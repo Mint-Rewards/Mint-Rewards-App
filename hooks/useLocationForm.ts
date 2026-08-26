@@ -141,6 +141,26 @@ export const CLEARED_BY_CITY_CHANGE = {
  * Province is only a filter, but changing it can leave the chosen city outside
  * the offered list — a selection the user can no longer see or re-pick. Clearing
  * the city is what keeps the picker and the value in step.
+ *
+ * **This cascade reaching the PIN is intended behaviour (owner ruling,
+ * 2026-08-26). Do not "fix" it.**
+ *
+ * It was raised as a defect: in the confirm modal, using the province filter to
+ * correct a wrong city also destroys a pin that was right, because province
+ * clears the city and a city change clears the pin. The ruling is that this is
+ * the correct trade, and it is NOT the same shape as the town inversion above.
+ * A town is PRODUCED by the pin, so clearing the pin on a town edit destroys the
+ * evidence being corrected. A province is not produced by anything — it is
+ * chosen, upstream of the city, to narrow a list of 58. Changing it is a
+ * statement that the whole place is wrong, not that one derived label was read
+ * wrongly, and a pin is the most place-specific value on the form. Keeping a
+ * coordinate across a province change would let a Karachi pin sit under a
+ * Peshawar address and satisfy validation, which is the failure the mandatory
+ * cascade exists to prevent — and which a real screenshot showed happening.
+ *
+ * The cost is a re-pin for someone who used the filter as a search box. That is
+ * accepted: re-pinning is one map tap, and the alternative silently saves a
+ * wrong address. Cheap and loud beats invisible and wrong.
  */
 export const CLEARED_BY_PROVINCE_CHANGE = {
   ...CLEARED_BY_CITY_CHANGE,
@@ -520,10 +540,27 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
       setValues({
         ...EMPTY,
         ...next,
-        // Rehydrating a saved profile gives a city but no province — it is not
-        // persisted. Deriving it here is what makes the filter show the right
-        // province on a returning user instead of resetting to "all cities".
-        province: next.province || (city ? (getProvinceForCity(city) ?? "") : ""),
+        // Province precedence, and the order is the decision (Issue 8).
+        //
+        // 1. The REGISTRY wins whenever it recognises the city. It is the only
+        //    source that cannot contradict the city on screen, and keeping the
+        //    filter honest is the whole reason this field is derived rather
+        //    than asked for.
+        // 2. Otherwise fall back to whatever the caller carried in — in
+        //    practice the profile's own saved `province`, which both hosts now
+        //    pass. This is the legacy-user rescue: a city outside the registry
+        //    derives nothing, and since province became MANDATORY on
+        //    2026-08-26 an empty field blocked the save outright. The only way
+        //    out was to pick a province, which fires
+        //    `CLEARED_BY_PROVINCE_CHANGE` and wipes the city, town, house
+        //    number and pin the user came in with. Their stored province —
+        //    answered back when the dropdown existed, and required by
+        //    `isProfileComplete` ever since — fills the field instead, so they
+        //    edit a house number without being marched through a re-pick.
+        // 3. "" only when neither knows, which is the pre-existing P0.2d null
+        //    path and still blocks the save, correctly: nobody has ever
+        //    answered the question.
+        province: (city ? getProvinceForCity(city) : null) ?? next.province ?? "",
       });
       setTownIsCustom(!!next.townOther?.trim());
       setSubAreaIsOther(!!next.subAreaOther?.trim());

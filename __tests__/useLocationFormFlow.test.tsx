@@ -277,4 +277,28 @@ describe("rehydrating a saved profile", () => {
     // No filter, so the user can still find a real city.
     expect(h.api.cityOptions).toContain("Karachi");
   });
+
+  // Issue 8: province became mandatory on 2026-08-26, so an off-registry city
+  // that derived nothing blocked the save — and the only escape, picking a
+  // province, fired CLEARED_BY_PROVINCE_CHANGE and wiped the city, town, house
+  // number and pin the user arrived with.
+  it("falls back to the profile's saved province when the city is off-registry", () => {
+    const h = mount();
+    h.run((api) => api.reset({ city: "Nowhereabad", province: "Sindh" }));
+    expect(h.api.values.province).toBe("Sindh");
+  });
+
+  it("lets the registry beat a saved province that disagrees with the city", () => {
+    const h = mount();
+    // A stale stored province must never be allowed to contradict a city the
+    // registry knows — that pairing is exactly what the derived field prevents.
+    h.run((api) => api.reset({ city: "Lahore", province: "Sindh" }));
+    expect(h.api.values.province).toBe("Punjab");
+  });
+
+  it("still ends up empty when neither the registry nor the profile knows", () => {
+    const h = mount();
+    h.run((api) => api.reset({ city: "Nowhereabad", province: "" }));
+    expect(h.api.values.province).toBe("");
+  });
 });

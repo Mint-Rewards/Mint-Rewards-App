@@ -81,6 +81,22 @@ describe("resolveProvinceForPayload", () => {
     expect(resolveProvinceForPayload("Nowhereabad")).toBe("");
     expect(resolveProvinceForPayload("")).toBe("");
   });
+
+  // Issue 8: "" here overwrote a legacy user's stored province on every save,
+  // so they came out of an edit less complete than they went in.
+  it("falls back for an off-registry city rather than wiping the stored value", () => {
+    expect(resolveProvinceForPayload("Nowhereabad", "Sindh")).toBe("Sindh");
+    expect(resolveProvinceForPayload("Nowhereabad", "  Sindh  ")).toBe("Sindh");
+  });
+
+  it("still lets the registry win over a fallback that disagrees", () => {
+    expect(resolveProvinceForPayload("Lahore", "Sindh")).toBe("Punjab");
+  });
+
+  it("yields \"\" when neither the registry nor the fallback knows", () => {
+    expect(resolveProvinceForPayload("Nowhereabad", "")).toBe("");
+    expect(resolveProvinceForPayload("Nowhereabad", "   ")).toBe("");
+  });
 });
 
 describe("province removal keeps isProfileComplete satisfiable", () => {

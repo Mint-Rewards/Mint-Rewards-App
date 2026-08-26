@@ -181,6 +181,10 @@ const EditProfile = () => {
       });
 
       form.reset({
+        // Carried in so an off-registry city still lands with a province
+        // (Issue 8). `reset` prefers the registry whenever it recognises the
+        // city, so this only shows through when derivation finds nothing.
+        province: user.province || "",
         city: existingCity,
         town: existingTown,
         townOther: existingTownOther,

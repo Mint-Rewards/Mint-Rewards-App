@@ -28,7 +28,10 @@ const trimCapped = (v?: string) => (v || "").trim().slice(0, OTHER_TEXT_MAX);
  *
  * Province is derived, never asked: every registry city belongs to exactly one
  * province, so a field would only let someone save a pair that cannot exist. An
- * off-registry city yields "" and does not block the save — the P0.2d null path.
+ * off-registry city derives nothing and falls back to the form's own province
+ * (Issue 8) — sending "" there would overwrite a legacy user's stored province
+ * with nothing and leave them incomplete. Neither known still yields "" and
+ * still does not block the save — the P0.2d null path.
  *
  * `houseNo` is sent BOTH flat and nested. The nested copy is where it lives on
  * the server; sending it on this call as well as on the structured PATCH means a
@@ -38,7 +41,7 @@ export function buildLocationPayload(
   values: LocationFormValues,
 ): Partial<UserProfile> {
   const city = values.city.trim();
-  const province = resolveProvinceForPayload(city);
+  const province = resolveProvinceForPayload(city, values.province);
   const houseNo = values.houseNo.trim();
 
   // A non-canonical town is never allowed through as `town`; it degrades to

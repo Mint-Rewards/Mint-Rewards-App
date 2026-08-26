@@ -94,12 +94,21 @@ export function buildTownOptions(city: string): string[] {
  *
  * The province dropdown was removed, but the field is still part of the profile
  * contract and `isProfileComplete` still requires it, so it is derived at
- * payload time instead of being asked for. An unknown city yields "" rather
- * than throwing — the P0.2d null path. Save is NOT blocked on it: a city
- * outside the registry is a data gap, not a user error.
+ * payload time instead of being asked for.
+ *
+ * `fallback` is what an off-registry city falls back to — in practice the
+ * form's own `province`, which the user can see and which is mandatory since
+ * 2026-08-26. Without it this function returned "" for such a city and the save
+ * OVERWROTE a stored province with nothing, so a legacy user came out of the
+ * edit less complete than they went in and the gate re-armed on the next
+ * launch (Issue 8). The registry still wins whenever it recognises the city, so
+ * a saved province can never contradict one it knows.
+ *
+ * Neither known still yields "" rather than throwing — the P0.2d null path. The
+ * save is not blocked on it here; `validateLocationValues` is what asks.
  */
-export function resolveProvinceForPayload(city: string): string {
-  return getProvinceForCity(city) ?? "";
+export function resolveProvinceForPayload(city: string, fallback = ""): string {
+  return getProvinceForCity(city) ?? (fallback || "").trim();
 }
 
 /** A map camera position, in the shape react-native-maps expects. */
