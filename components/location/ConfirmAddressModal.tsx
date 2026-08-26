@@ -103,7 +103,17 @@ export function ConfirmAddressModal({
       if (cancelledRef.current) return;
 
       const prefill = buildPrefill(geo, user);
-      if (geo?.resolved && geo.areaName && prefill.town === geo.areaName) {
+      // The same condition twice, deliberately: this is both the suggestion
+      // `area_overridden` is measured against AND the provenance `reset` needs
+      // — a town the geocoder produced from the pin, not one the user chose.
+      // Without it every correction of a geocoder mistake here would trip the
+      // Issue 9 prompt, in the one screen that exists to collect them.
+      const townIsGeocoded = !!(
+        geo?.resolved &&
+        geo.areaName &&
+        prefill.town === geo.areaName
+      );
+      if (townIsGeocoded) {
         suggestedAreaRef.current = geo.areaName;
       }
 
@@ -133,6 +143,7 @@ export function ConfirmAddressModal({
         // this sheet to add a house number must not lose their pin's precision
         // as a side effect.
         null,
+        { town: townIsGeocoded },
       );
       setPrefillReady(true);
     })();
@@ -277,6 +288,15 @@ export function ConfirmAddressModal({
                 }
                 // The map strip above is this modal's pin surface.
                 showPinRow={false}
+                // Reachable here, contrary to first appearances (Issue 9). The
+                // prompt is suppressed in this modal only when the geocoder
+                // PRODUCED the town — `reset` is told so via `derived.town`.
+                // When the lookup fails or returns a town that is not canonical
+                // for the user's city, `buildPrefill` falls back to their SAVED
+                // town, nothing derived it, the pin is rehydrated, and the edit
+                // is genuinely ambiguous again. Without this the "I've moved"
+                // answer would clear the pin and open nothing.
+                onOpenMap={() => setMapVisible(true)}
               />
             ) : (
               <Text style={styles.loading}>Checking your pin…</Text>

@@ -12,9 +12,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { TownChangeModal } from "@/components/location/TownChangeModal";
 import { LocationPicker } from "@/components/ui/LocationPicker";
 import type { LocationFormApi } from "@/hooks/useLocationForm";
 import { OTHER_TEXT_MAX } from "@/hooks/useLocationForm";
+import { trackTownChangeResolved } from "@/utils/locationAnalytics";
 import { OTHER_OPTION } from "@/utils/locationForm";
 
 interface Props {
@@ -239,6 +241,33 @@ export function LocationFields({
           form.selectTown(town);
           clearError("town");
         })}
+
+        {/*
+          Issue 9. Lives here rather than in either host because both drive the
+          same three town controls through this fieldset, and the condition that
+          opens it is about the form's own state, not about which screen is
+          showing. `onOpenMap` is optional, so a host without a map simply
+          leaves the cleared pin to validation — which already blocks the save
+          and names the field.
+        */}
+        <TownChangeModal
+          visible={!!form.pendingTownChange}
+          currentTown={values.town.trim() || values.townOther.trim()}
+          onMoved={() => {
+            trackTownChangeResolved("moved");
+            if (form.resolveTownChange(true)) onOpenMap?.();
+            clearError("town");
+          }}
+          onRelabel={() => {
+            trackTownChangeResolved("relabelled");
+            form.resolveTownChange(false);
+            clearError("town");
+          }}
+          onCancel={() => {
+            trackTownChangeResolved("cancelled");
+            form.cancelTownChange();
+          }}
+        />
 
         {errors.town ? <Text style={styles.errorText}>{errors.town}</Text> : null}
         <Text style={styles.hint}>

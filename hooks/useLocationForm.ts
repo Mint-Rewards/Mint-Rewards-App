@@ -167,6 +167,17 @@ export const CLEARED_BY_PROVINCE_CHANGE = {
   city: "",
 } as const;
 
+/**
+ * A town edit, described rather than performed, so it can be held pending an
+ * answer and replayed unchanged once one arrives. Mirrors the three entry
+ * points exactly: the picker, the "Other" escape (and its suggestions), and
+ * back-to-list.
+ */
+export type PendingTownChange =
+  | { kind: "select"; town: string }
+  | { kind: "custom" }
+  | { kind: "list" };
+
 export function useLocationForm(initial?: Partial<LocationFormValues>) {
   const [values, setValues] = useState<LocationFormValues>({
     ...EMPTY,
@@ -210,6 +221,15 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
    * ever discarding an answer somebody typed.
    */
   const derivedRef = useRef({ town: false, subArea: false });
+
+  /**
+   * A town edit held back until the user says which kind of edit it is.
+   *
+   * Null whenever nothing is being asked, which is the overwhelming majority of
+   * the time — `townChangeNeedsConfirm` decides, and it is deliberately narrow.
+   */
+  const [pendingTownChange, setPendingTownChange] =
+    useState<PendingTownChange | null>(null);
 
   // ── Derived options ──────────────────────────────────────────────────────
   // City is the top of the cascade now that the province dropdown is gone, so
@@ -351,31 +371,99 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
    * save without a pin, so a stale placement can never be paired with a
    * coordinate it did not describe.
    */
-  const selectTown = useCallback((town: string) => {
+  const applyTownChange = useCallback((change: PendingTownChange) => {
     derivedRef.current = { town: false, subArea: false };
-    setValues((prev) => {
-      if (town === prev.town) return prev;
-      return { ...prev, ...CLEARED_BY_TOWN_CHANGE, town };
-    });
-    setTownIsCustom(false);
     setSubAreaIsOther(false);
+    if (change.kind === "select") {
+      setValues((prev) => {
+        if (change.town === prev.town) return prev;
+        return { ...prev, ...CLEARED_BY_TOWN_CHANGE, town: change.town };
+      });
+      setTownIsCustom(false);
+      return;
+    }
+    setValues((prev) => ({ ...prev, ...CLEARED_BY_TOWN_CHANGE }));
+    setTownIsCustom(change.kind === "custom");
   }, []);
+
+  /**
+   * Whether this town edit is the ambiguous one, and has to be asked about.
+   *
+   * True only when all three hold:
+   *
+   * - there is a town to lose (an empty one cannot be stale), and
+   * - there is a pin, and
+   * - **that pin did not produce this town.** `derivedRef.current.town` says a
+   *   prefill wrote it from the pin now on the map; `placementRef.current`
+   *   says the pin was placed in this session rather than rehydrated. Either
+   *   one means the pair is fresh and consistent, so the edit can only mean
+   *   "the geocoder read my coordinate wrongly" — the case the town ruling
+   *   exists to protect, which must never be interrupted.
+   *
+   * What is left is a rehydrated pin under a town nothing this session
+   * derived: the app genuinely cannot tell a mislabelled area from a house
+   * move, so it stops guessing and asks. See Issue 9.
+   */
+  const townChangeNeedsConfirm = useCallback(
+    () =>
+      !!(values.town.trim() || values.townOther.trim()) &&
+      !!values.latitude.trim() &&
+      !!values.longitude.trim() &&
+      placementRef.current === null &&
+      !derivedRef.current.town,
+    [values.town, values.townOther, values.latitude, values.longitude],
+  );
+
+  const requestTownChange = useCallback(
+    (change: PendingTownChange) => {
+      if (townChangeNeedsConfirm()) setPendingTownChange(change);
+      else applyTownChange(change);
+    },
+    [townChangeNeedsConfirm, applyTownChange],
+  );
+
+  const selectTown = useCallback(
+    (town: string) => requestTownChange({ kind: "select", town }),
+    [requestTownChange],
+  );
 
   /** Switches the town to free text. Mutually exclusive with a canonical town. */
-  const useCustomTown = useCallback(() => {
-    derivedRef.current = { town: false, subArea: false };
-    setValues((prev) => ({ ...prev, ...CLEARED_BY_TOWN_CHANGE }));
-    setTownIsCustom(true);
-    setSubAreaIsOther(false);
-  }, []);
+  const useCustomTown = useCallback(
+    () => requestTownChange({ kind: "custom" }),
+    [requestTownChange],
+  );
 
   /** Abandons a free-text town and returns to the list. */
-  const backToTownList = useCallback(() => {
-    derivedRef.current = { town: false, subArea: false };
-    setValues((prev) => ({ ...prev, ...CLEARED_BY_TOWN_CHANGE }));
-    setTownIsCustom(false);
-    setSubAreaIsOther(false);
-  }, []);
+  const backToTownList = useCallback(
+    () => requestTownChange({ kind: "list" }),
+    [requestTownChange],
+  );
+
+  /**
+   * Answers the pending question and applies the edit either way.
+   *
+   * `moved: true` means the address itself changed, so the coordinate is wrong
+   * and goes; `false` means only the label was wrong, which is the existing
+   * behaviour unchanged. Returns whether the pin was cleared, so a host can
+   * open the map on the answer that needs a new one.
+   */
+  const resolveTownChange = useCallback(
+    (moved: boolean): boolean => {
+      const change = pendingTownChange;
+      setPendingTownChange(null);
+      if (!change) return false;
+      applyTownChange(change);
+      if (!moved) return false;
+      setValues((prev) => ({ ...prev, ...CLEARED_PIN }));
+      placementRef.current = null;
+      prefillSeqRef.current += 1;
+      return true;
+    },
+    [pendingTownChange, applyTownChange],
+  );
+
+  /** Backs out of the edit entirely, leaving the town and the pin as they were. */
+  const cancelTownChange = useCallback(() => setPendingTownChange(null), []);
 
   const selectSubArea = useCallback((subArea: string) => {
     derivedRef.current.subArea = false;
@@ -535,7 +623,11 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
    * pin" — which is what keeps an untouched pin from being re-described.
    */
   const reset = useCallback(
-    (next: Partial<LocationFormValues>, placement: PinPlacement | null = null) => {
+    (
+      next: Partial<LocationFormValues>,
+      placement: PinPlacement | null = null,
+      derived: { town?: boolean; subArea?: boolean } = {},
+    ) => {
       const city = (next.city || "").trim();
       setValues({
         ...EMPTY,
@@ -565,9 +657,20 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
       setTownIsCustom(!!next.townOther?.trim());
       setSubAreaIsOther(!!next.subAreaOther?.trim());
       placementRef.current = placement;
-      // A rehydrate is not a prefill: nothing here was derived from a pin this
-      // session, and any in-flight request describes the form that just went.
-      derivedRef.current = { town: false, subArea: false };
+      // Defaults to "nothing here came from a pin", which is what a plain
+      // rehydrate is — Edit Profile reads saved strings and passes nothing.
+      //
+      // The confirm modal is the exception and must say so: it resets with a
+      // GEOCODED town, derived from the rehydrated pin moments earlier. Left at
+      // the default, `townChangeNeedsConfirm` would read that town as
+      // user-chosen and interrupt every correction of a geocoder mistake in the
+      // one screen built for exactly that (Issue 9). It also keeps
+      // `applyPinPrefill`'s stale-town branch honest on the first pin
+      // adjustment there, which the flat `false` quietly disabled.
+      derivedRef.current = {
+        town: !!derived.town,
+        subArea: !!derived.subArea,
+      };
       prefillSeqRef.current += 1;
     },
     [],
@@ -596,6 +699,9 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
     selectTown,
     useCustomTown,
     backToTownList,
+    pendingTownChange,
+    resolveTownChange,
+    cancelTownChange,
     selectSubArea,
     useCustomSubArea,
 

@@ -302,3 +302,154 @@ describe("rehydrating a saved profile", () => {
     expect(h.api.values.province).toBe("");
   });
 });
+
+/**
+ * Issue 9 — the ambiguous town edit.
+ *
+ * A town change no longer clears the pin, which is right when the pin PRODUCED
+ * the town and wrong when the user has moved house. These two cases are
+ * identical in form state, so the hook asks instead of guessing — but only in
+ * the narrow case where it genuinely cannot tell.
+ */
+describe("a town change on a rehydrated pin asks which kind of change it is", () => {
+  // Edit Profile's rehydrate: saved strings, a saved coordinate, no placement
+  // and nothing derived this session. The one ambiguous shape.
+  const rehydrate = (api: Api) =>
+    api.reset({
+      city: "Karachi",
+      town: "Clifton",
+      latitude: "24.8100",
+      longitude: "67.0300",
+    });
+
+  it("holds the edit back instead of applying it", () => {
+    const h = mount();
+    h.run(rehydrate);
+    h.run((api) => api.selectTown("Gulshan-e-Iqbal"));
+    expect(h.api.pendingTownChange).toEqual({
+      kind: "select",
+      town: "Gulshan-e-Iqbal",
+    });
+    // Nothing has moved yet — the question is still open.
+    expect(h.api.values.town).toBe("Clifton");
+    expect(h.api.values.latitude).toBe("24.8100");
+  });
+
+  it('"I moved" applies the town and drops the pin', () => {
+    const h = mount();
+    h.run(rehydrate);
+    h.run((api) => api.selectTown("Gulshan-e-Iqbal"));
+    let clearedPin = false;
+    h.run((api) => {
+      clearedPin = api.resolveTownChange(true);
+    });
+    expect(clearedPin).toBe(true);
+    expect(h.api.values.town).toBe("Gulshan-e-Iqbal");
+    expect(h.api.values.latitude).toBe("");
+    expect(h.api.values.longitude).toBe("");
+    expect(h.api.pendingTownChange).toBeNull();
+  });
+
+  it('"the area name is wrong" applies the town and keeps the pin', () => {
+    const h = mount();
+    h.run(rehydrate);
+    h.run((api) => api.selectTown("Gulshan-e-Iqbal"));
+    let clearedPin = true;
+    h.run((api) => {
+      clearedPin = api.resolveTownChange(false);
+    });
+    // This is the town ruling's behaviour, unchanged — the whole point is that
+    // correcting a label must never cost the user their coordinate.
+    expect(clearedPin).toBe(false);
+    expect(h.api.values.town).toBe("Gulshan-e-Iqbal");
+    expect(h.api.values.latitude).toBe("24.8100");
+  });
+
+  it("cancelling changes nothing at all", () => {
+    const h = mount();
+    h.run(rehydrate);
+    h.run((api) => api.selectTown("Gulshan-e-Iqbal"));
+    h.run((api) => api.cancelTownChange());
+    expect(h.api.pendingTownChange).toBeNull();
+    expect(h.api.values.town).toBe("Clifton");
+    expect(h.api.values.latitude).toBe("24.8100");
+  });
+
+  it("asks on the 'Other' escape and on back-to-list too", () => {
+    // All three entry points clear the town, so all three can strand a pin.
+    const custom = mount();
+    custom.run(rehydrate);
+    custom.run((api) => api.useCustomTown());
+    expect(custom.api.pendingTownChange).toEqual({ kind: "custom" });
+    expect(custom.api.townIsCustom).toBe(false); // not switched yet
+
+    const list = mount();
+    list.run(rehydrate);
+    list.run((api) => api.backToTownList());
+    expect(list.api.pendingTownChange).toEqual({ kind: "list" });
+  });
+});
+
+describe("it does NOT ask when the pin and the town already agree", () => {
+  it("stays silent when the town was derived from this pin (the confirm modal)", () => {
+    const h = mount();
+    // What ConfirmAddressModal does: a rehydrated pin, but a GEOCODED town.
+    // Editing it here can only mean the geocoder read the coordinate wrongly —
+    // the case the town ruling exists to protect. Interrupting it would put
+    // back the loop that ruling removed.
+    h.run((api) =>
+      api.reset(
+        {
+          city: "Karachi",
+          town: "Clifton",
+          latitude: "24.8100",
+          longitude: "67.0300",
+        },
+        null,
+        { town: true },
+      ),
+    );
+    h.run((api) => api.selectTown("Gulshan-e-Iqbal"));
+    expect(h.api.pendingTownChange).toBeNull();
+    expect(h.api.values.town).toBe("Gulshan-e-Iqbal");
+    expect(h.api.values.latitude).toBe("24.8100");
+  });
+
+  it("stays silent when the pin was placed in this session", () => {
+    const h = mount();
+    h.run(rehydrateWithoutPin);
+    h.run((api) => api.confirmPin("24.8100", "67.0300", "user_placed"));
+    h.run((api) => api.selectTown("Gulshan-e-Iqbal"));
+    // The user placed this pin moments ago; it cannot be describing an old
+    // address they have since moved out of.
+    expect(h.api.pendingTownChange).toBeNull();
+    expect(h.api.values.town).toBe("Gulshan-e-Iqbal");
+  });
+
+  it("stays silent when there is no pin to strand", () => {
+    const h = mount();
+    h.run(rehydrateWithoutPin);
+    h.run((api) => api.selectTown("Gulshan-e-Iqbal"));
+    expect(h.api.pendingTownChange).toBeNull();
+    expect(h.api.values.town).toBe("Gulshan-e-Iqbal");
+  });
+
+  it("stays silent when there is no town to lose", () => {
+    const h = mount();
+    h.run((api) =>
+      api.reset({
+        city: "Karachi",
+        latitude: "24.8100",
+        longitude: "67.0300",
+      }),
+    );
+    h.run((api) => api.selectTown("Clifton"));
+    expect(h.api.pendingTownChange).toBeNull();
+    expect(h.api.values.town).toBe("Clifton");
+    expect(h.api.values.latitude).toBe("24.8100");
+  });
+});
+
+function rehydrateWithoutPin(api: Api) {
+  api.reset({ city: "Karachi", town: "Clifton" });
+}

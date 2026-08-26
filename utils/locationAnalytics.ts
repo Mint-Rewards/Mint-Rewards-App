@@ -101,6 +101,28 @@ export function trackAreaOverridden(params: {
 }
 
 /**
+ * How the user answered the ambiguous town edit (Issue 9).
+ *
+ * This is the whole reason the prompt is a prompt rather than a guess: the two
+ * cases are indistinguishable from form state, and the person making the edit
+ * knows which one it is. Capturing the answer turns that into the measurement
+ * nothing else here can produce — how often a town edit is actually a house
+ * move.
+ *
+ * It also decides the prompt's own future. If `moved` is vanishingly rare, the
+ * interruption is not paying for itself and should be narrowed or dropped; if
+ * it is common, stale pins were reaching the routing data all along and the
+ * prompt is load-bearing. `cancelled` is the third answer and the one to watch
+ * for: a lot of it means the question is being read as a warning rather than a
+ * choice.
+ */
+export function trackTownChangeResolved(
+  answer: "moved" | "relabelled" | "cancelled",
+): void {
+  capture("town_change_resolved", { answer });
+}
+
+/**
  * The structured-location write failed after a successful save.
  *
  * NOT in the master plan's event list — added because `location_saved` fires on
