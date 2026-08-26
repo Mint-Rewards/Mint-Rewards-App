@@ -217,6 +217,16 @@ describe("a new pin re-derives the town and sub-area", () => {
     expect(h.api.values.subArea).toBe("");
   });
 
+  it("survives the FIRST city choice — there is no old city to be wrong about", () => {
+    const h = mount();
+    h.run((api) => api.selectProvince("Sindh"));
+    // The map is openable from the province rung, so a pin can legitimately
+    // exist before a city is named.
+    placePin(h);
+    h.run((api) => api.selectCity("Karachi"));
+    expect(h.api.values.latitude).toBe("24.81");
+  });
+
   it("a CITY change still clears the pin", () => {
     const h = mount();
     h.run((api) => api.selectCity("Karachi"));

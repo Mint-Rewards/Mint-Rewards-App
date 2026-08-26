@@ -19,8 +19,9 @@ import { posthog } from "@/utils/posthog";
  * saved coordinate the camera starts on the Pakistan-wide default and only
  * becomes `device_gps` if a fix actually arrives.
  *
- * `area_centroid` / `city_centroid` are the registry fallbacks, added when the
- * centroid dataset landed (P2-6). They exist so `default` keeps the meaning it
+ * `area_centroid` / `city_centroid` / `province_centroid` are the registry
+ * fallbacks, added when the centroid dataset landed (P2-6) and widened when the
+ * map gained a province rung. They exist so `default` keeps the meaning it
  * had before: the user was shown the WHOLE COUNTRY. Without them the dataset
  * would silently redefine `default` to also cover "opened on their own city",
  * and the one population worth counting — everyone who got no useful view at
@@ -32,6 +33,7 @@ export type ViewportSource =
   | "device_gps"
   | "area_centroid"
   | "city_centroid"
+  | "province_centroid"
   | "default";
 
 /**

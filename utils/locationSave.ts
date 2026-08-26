@@ -92,6 +92,13 @@ export function validateLocationValues(
 ): LocationValidationResult {
   const errors: Record<string, string> = {};
 
+  // Mandatory as of 2026-08-26 (owner request). It is still never PERSISTED —
+  // `buildLocationPayload` derives the saved province from the city — so this
+  // is a gate on the order the form is filled in, not a new stored answer. It
+  // guarantees the cascade is entered from the top, which is what lets the map
+  // open on the province before a city has been picked.
+  if (!values.province.trim()) errors.province = "Province is required";
+
   if (!values.city.trim()) errors.city = "City is required";
 
   // Either a canonical town or free-text "Other" satisfies the requirement.

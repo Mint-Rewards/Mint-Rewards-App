@@ -24,7 +24,9 @@ import {
   patchUserLocation,
 } from "@/utils/locationApi";
 import { trackLocationPatchFailed, trackLocationSaved } from "@/utils/locationAnalytics";
+import { missingSentence } from "@/utils/locationEvaluation";
 import { resolveLocationGate } from "@/utils/locationGate";
+import type { PinPlacement } from "@/utils/pinState";
 import {
   fetchLocationGateConfig,
   type LocationGateConfig,
@@ -161,17 +163,22 @@ export default function LocationGate() {
    * the gate must not invent a third way to save an address.
    */
   const handleConfirmSave = useCallback(
-    async (payload: Partial<UserProfile>) => {
+    async (payload: Partial<UserProfile>, placement: PinPlacement | null) => {
       const result = await updateProfile(payload);
       if (result.Status !== "Success") {
         alertOnce("Error", result.ErrorMessage || "Could not save your address");
         return;
       }
 
-      // The modal only opens for a user with a saved coordinate, redisplayed —
-      // "derived" by the same ruling as MapPicker's open_with_saved. A pin the
-      // user re-placed inside the modal was already tagged by its confirm.
-      const patch = buildLocationPatchPayload(payload, "derived");
+      // The placement comes FROM the modal. It used to be hardcoded "derived"
+      // here, on the reasoning that this sheet only opens for a redisplayed
+      // saved coordinate — but "Adjust pin" makes that false, and the tag the
+      // re-placement produced was being thrown away. `derived` maps to
+      // `legacy_string`, which the server does not accept as a pin at all
+      // (only `map_pin` and `collector_verified` count), so re-placing the pin
+      // could never satisfy it: the save succeeded, the profile stayed
+      // incomplete, and until the evaluation was surfaced nothing said so.
+      const patch = buildLocationPatchPayload(payload, placement);
       if (patch.location) {
         trackLocationSaved(patch.location.source, patch.location.precision);
       }
@@ -182,6 +189,23 @@ export default function LocationGate() {
         // storing the evaluation is what lets the gate fall silent without a
         // refetch.
         setLocationEvaluation(patched.evaluation ?? null);
+
+        // A save that succeeded and STILL did not complete the profile. The
+        // client and the server do not agree about "complete" and cannot — the
+        // server judges the structured record, this form judges its own fields
+        // — so this is reachable, most obviously for a user whose coordinate
+        // predates the structured pin and counts as `legacy_string`.
+        //
+        // Without this the modal simply stays up: client validation passed so
+        // nothing is marked, the request succeeded so nothing errors, and the
+        // Save button looks broken. The server already named the gap; this is
+        // the only place that reads it.
+        const stillMissing = missingSentence(patched.evaluation, {
+          city: payload.city,
+          town: payload.town,
+          hasCoordinate: !!payload.latitude?.trim(),
+        });
+        if (stillMissing) alertOnce("Almost there", stillMissing);
       } else {
         await logError("locationGate patch failed", {
           userId: user?.mintId,

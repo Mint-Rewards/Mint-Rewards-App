@@ -1250,6 +1250,75 @@ export function getCityCentroid(city: string): readonly [number, number] | null 
   return CITY_CENTROIDS[(city || "").trim()] ?? null;
 }
 
+/** A province's extent: where to centre, and how much to show. */
+export interface ProvinceExtent {
+  /** [lng, lat], GeoJSON order — same as every other centroid here. */
+  centroid: readonly [number, number];
+  latitudeDelta: number;
+  longitudeDelta: number;
+}
+
+/**
+ * Smallest span a province viewport may have, in degrees (~55km).
+ *
+ * Islamabad Capital Territory contains exactly one registry city, so its
+ * bounding box is a POINT and the derived deltas are zero — a viewport nobody
+ * could read. This is the floor that makes a one-city province usable.
+ */
+const MIN_PROVINCE_DELTA = 0.5;
+
+/** Breathing room so the outermost cities are not flush against the edge. */
+const PROVINCE_PADDING = 1.3;
+
+/**
+ * Province -> the extent of the cities we actually have coordinates for.
+ *
+ * DERIVED, not sourced, and deliberately so. A geocoded "province centroid"
+ * would be the middle of a polygon — for Balochistan, a point in empty desert
+ * hundreds of km from anywhere a user lives. What a person picking their city
+ * next needs to see is WHERE THE CITIES ARE, which is exactly the bounding box
+ * of the city centroids the sweep confirmed. It also costs no new API calls and
+ * cannot drift from the city data, because it IS the city data.
+ *
+ * A province whose cities were all rejected by the sweep gets no entry, and the
+ * caller falls back exactly as it does for a city with no centroid. Every
+ * province has at least one today (ICT has exactly one).
+ */
+export const PROVINCE_EXTENTS: Record<string, ProvinceExtent> = (() => {
+  const extents: Record<string, ProvinceExtent> = {};
+  for (const [province, cities] of Object.entries(PAKISTAN_LOCATIONS.cities)) {
+    const points = cities
+      .map((city) => CITY_CENTROIDS[city])
+      .filter((point): point is readonly [number, number] => !!point);
+    if (points.length === 0) continue;
+
+    const lngs = points.map(([lng]) => lng);
+    const lats = points.map(([, lat]) => lat);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+
+    extents[province] = {
+      centroid: [(minLng + maxLng) / 2, (minLat + maxLat) / 2],
+      latitudeDelta: Math.max(
+        (maxLat - minLat) * PROVINCE_PADDING,
+        MIN_PROVINCE_DELTA,
+      ),
+      longitudeDelta: Math.max(
+        (maxLng - minLng) * PROVINCE_PADDING,
+        MIN_PROVINCE_DELTA,
+      ),
+    };
+  }
+  return extents;
+})();
+
+/** Extent for a province, or null when none of its cities has a centroid. */
+export function getProvinceExtent(province: string): ProvinceExtent | null {
+  return PROVINCE_EXTENTS[(province || "").trim()] ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Deprecated sub-areas
 // ---------------------------------------------------------------------------

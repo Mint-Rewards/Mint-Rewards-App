@@ -25,19 +25,17 @@ jest.mock("@/utils/sentry", () => ({
   setSentryUser: jest.fn(),
 }));
 
-const mockStore = {
-  user: {
-    mintId: "M1",
+const savedUser = {
+  mintId: "M1",
     city: "Karachi",
     town: "Clifton",
     subArea: "",
     address: "",
     latitude: "24.8100",
     longitude: "67.0300",
-    structuredAddress: { houseNo: "14-B" },
-  },
-  token: "t",
+  structuredAddress: { houseNo: "14-B" },
 };
+const mockStore = { user: savedUser as Record<string, unknown>, token: "t" };
 jest.mock("@/store/store", () => ({ useAppStore: () => mockStore }));
 
 const mockTrackOverride = jest.fn();
@@ -137,6 +135,7 @@ async function save(tree: renderer.ReactTestRenderer) {
 }
 
 beforeEach(() => {
+  mockStore.user = savedUser;
   mockTrackOverride.mockReset();
   mockOnConfirm.mockReset();
   for (const k of Object.keys(geoByCoord)) delete geoByCoord[k];
@@ -212,6 +211,67 @@ describe("Adjust pin re-derives the address", () => {
     // suggestion made for the OLD pin, this would report an override the user
     // never performed and quietly corrupt the prefill-accuracy metric.
     expect(mockTrackOverride).not.toHaveBeenCalled();
+  });
+
+  it("does NOT save while a required field is missing", async () => {
+    mockStore.user = { ...savedUser, structuredAddress: { houseNo: "" } };
+    const tree = await mount();
+    await save(tree);
+
+    // House number is the one field this modal exists to collect, so a save
+    // without it must go nowhere — and the modal stays up, because the host
+    // only takes it down once the server says the profile is complete.
+    expect(mockOnConfirm).not.toHaveBeenCalled();
+  });
+
+  it("surfaces which field is missing rather than failing silently", async () => {
+    mockStore.user = { ...savedUser, structuredAddress: { houseNo: "" } };
+    const tree = await mount();
+    await save(tree);
+    expect(tree.root.findByType(LocationFields).props.errors.houseNo).toContain(
+      "required",
+    );
+  });
+
+  it("saves once every required field is filled", async () => {
+    const tree = await mount();
+    await act(async () => {
+      tree.root.findByType(LocationFields).props.form.setValue("houseNo", "14-B");
+    });
+    await save(tree);
+    expect(mockOnConfirm).toHaveBeenCalled();
+  });
+
+  it("hands the host the placement, so a re-placed pin counts as one", async () => {
+    geoByCoord["24.81,67.08"] = resolvedAs(["DHA Phase 8"]);
+    const tree = await mount();
+    await adjustPinTo(tree, "24.81", "67.08");
+    await act(async () => {
+      tree.root.findByType(LocationFields).props.form.setValue("houseNo", "14-B");
+    });
+    await save(tree);
+
+    // The host hardcoded "derived" before this, which maps to `legacy_string` —
+    // a source the server does not accept as a pin at all. Re-placing the pin
+    // could therefore never satisfy it.
+    expect(mockOnConfirm).toHaveBeenCalledWith(
+      expect.anything(),
+      "user_placed",
+    );
+  });
+
+  it("sends NO placement when the pin was only rehydrated", async () => {
+    const tree = await mount();
+    await act(async () => {
+      tree.root.findByType(LocationFields).props.form.setValue("houseNo", "99");
+    });
+    await save(tree);
+
+    // null omits `location` from the patch entirely — "don't touch". Sending
+    // "derived" would re-describe a coordinate this session never produced and
+    // downgrade a `building`-precision pin to `legacy_string` (the P0-1 defect)
+    // for anyone who opened this sheet just to add a house number.
+    expect(mockOnConfirm).toHaveBeenCalledWith(expect.anything(), null);
   });
 
   it("reports an override against the NEW suggestion, not the old one", async () => {

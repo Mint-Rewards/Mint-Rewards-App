@@ -94,14 +94,18 @@ export function LocationFields({
       {showProvince ? (
       <LocationPicker
         label="Province"
-        placeholder="All provinces"
+        required
+        placeholder="Select province"
         options={form.provinceOptions}
         value={values.province}
         onChange={(province) => {
           form.selectProvince(province);
+          clearError("province");
           clearError("city");
           clearError("town");
         }}
+        hasError={!!errors.province}
+        error={errors.province}
         testID="province-picker"
       />
       ) : null}
@@ -109,7 +113,8 @@ export function LocationFields({
       <LocationPicker
         label="City"
         required
-        placeholder="Select city"
+        placeholder={values.province ? "Select city" : "Select province first"}
+        disabled={!values.province}
         options={form.cityOptions}
         value={values.city}
         onChange={(city) => {
@@ -142,19 +147,28 @@ export function LocationFields({
             style={styles.pinBtn}
             onPress={onOpenMap}
             activeOpacity={0.8}
-            disabled={!values.city}
+            // Openable from the PROVINCE rung, not just the city one: the map
+            // has somewhere real to point as soon as a province is chosen (see
+            // `resolveSelectionViewport`), and opening it there is how someone
+            // who is unsure of their city finds it on a map.
+            disabled={!values.province && !values.city}
           >
             <Ionicons
               name={values.latitude ? "location" : "location-outline"}
               size={20}
-              color={values.city ? "#00528A" : "#a0aec0"}
+              color={values.province || values.city ? "#00528A" : "#a0aec0"}
             />
-            <Text style={[styles.pinText, !values.city && styles.pinTextDisabled]}>
+            <Text
+              style={[
+                styles.pinText,
+                !values.province && !values.city && styles.pinTextDisabled,
+              ]}
+            >
               {values.latitude && values.longitude
                 ? `${parseFloat(values.latitude).toFixed(5)}, ${parseFloat(values.longitude).toFixed(5)}`
-                : values.city
+                : values.province || values.city
                   ? "Set location on map"
-                  : "Select city first"}
+                  : "Select province first"}
             </Text>
             {values.latitude ? (
               <TouchableOpacity

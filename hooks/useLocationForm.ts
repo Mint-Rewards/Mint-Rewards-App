@@ -304,6 +304,12 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
       return {
         ...prev,
         ...CLEARED_BY_CITY_CHANGE,
+        // Clearing the pin is for a CHANGE of city, not the first choice of
+        // one. With the map openable from the province rung, a user may place a
+        // pin and then name the city it sits in — wiping it there would punish
+        // the exact order the province viewport exists to support, and there is
+        // no old city for it to be wrong about.
+        ...(prev.city ? {} : { latitude: prev.latitude, longitude: prev.longitude }),
         city,
         // Keep the filter honest. Picking a city with no province chosen (or
         // one from a different province, which the unfiltered list allows)

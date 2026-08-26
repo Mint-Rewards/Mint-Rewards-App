@@ -37,6 +37,7 @@ import {
   validateLocationValues,
 } from "@/utils/locationSave";
 import { requiresSubArea } from "@/utils/pakistan_areas";
+import type { PinPlacement } from "@/utils/pinState";
 
 interface Props {
   visible: boolean;
@@ -48,7 +49,15 @@ interface Props {
    * the save (update-profile + structured PATCH + evaluation): this modal owns
    * only the questions, so the save flow exists in exactly one place.
    */
-  onConfirm: (payload: ReturnType<typeof buildLocationPayload>) => Promise<void>;
+  onConfirm: (
+    payload: ReturnType<typeof buildLocationPayload>,
+    /**
+     * How the pin being saved was set, or null when this session did not
+     * produce one. The HOST builds the structured patch and cannot know this —
+     * it lives in the form — so it has to travel with the payload.
+     */
+    placement: PinPlacement | null,
+  ) => Promise<void>;
 }
 
 export function ConfirmAddressModal({
@@ -111,9 +120,14 @@ export function ConfirmAddressModal({
           latitude: user.latitude || "",
           longitude: user.longitude || "",
         },
-        // The redisplayed pin is a previously saved coordinate, not a fresh
-        // deliberate placement — same ruling as MapPicker's open_with_saved.
-        "derived",
+        // NULL, not "derived": nothing this session produced this coordinate,
+        // it was rehydrated. `derived` maps to `legacy_string`/`unknown`, so
+        // sending it would DOWNGRADE a pin the user had deliberately placed —
+        // the P0-1 defect, restated in `buildLocationPatchPayload`'s own
+        // comment about an absent key meaning "don't touch". A user who opens
+        // this sheet to add a house number must not lose their pin's precision
+        // as a side effect.
+        null,
       );
       setPrefillReady(true);
     })();
@@ -201,7 +215,7 @@ export function ConfirmAddressModal({
 
     setSaving(true);
     try {
-      await onConfirm(buildLocationPayload(form.values));
+      await onConfirm(buildLocationPayload(form.values), form.placementRef.current);
     } finally {
       setSaving(false);
     }
@@ -292,6 +306,7 @@ export function ConfirmAddressModal({
         initialLongitude={form.values.longitude}
         city={form.values.city}
         town={form.values.town}
+        province={form.values.province}
         onConfirm={(lat, lng, placement) => {
           const seq = form.confirmPin(lat, lng, placement);
           setErrors((p) => ({ ...p, location: "", town: "", subArea: "" }));

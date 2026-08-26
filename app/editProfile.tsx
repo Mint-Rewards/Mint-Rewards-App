@@ -18,6 +18,7 @@ import {
 } from "@/utils/locationSave";
 import { logError } from "@/utils/logger";
 import { getSubAreasForTown, isCanonicalTown } from "@/utils/pakistan_areas";
+import { missingSentence } from "@/utils/locationEvaluation";
 import { buildPrefill, reverseGeocode } from "@/utils/locationPrefill";
 import { needsLocationUpdate } from "@/utils/profile";
 import { parseProfileFocus } from "@/utils/profileFocus";
@@ -290,6 +291,13 @@ const EditProfile = () => {
     }
   };
 
+  /**
+   * What the server said was still outstanding on the last successful PATCH,
+   * or null. A ref rather than state: nothing renders from it, and it is read
+   * once, immediately, by the alert that follows the save that set it.
+   */
+  const incompleteRef = useRef<string | null>(null);
+
   const buildPayload = (): Partial<UserProfile> => ({
     ...identity,
     ...buildLocationPayload(form.values),
@@ -329,6 +337,14 @@ const EditProfile = () => {
         // authority on that, since it knows about fields this form does not yet
         // collect.
         setLocationEvaluation(result.evaluation ?? null);
+        // Carried back to the caller so the success alert can say it. NOT
+        // raised here: the save genuinely succeeded, and a second alert stacked
+        // on the success one would read as a failure.
+        incompleteRef.current = missingSentence(result.evaluation, {
+          city: payload.city,
+          town: payload.town,
+          hasCoordinate: !!payload.latitude?.trim(),
+        });
         return false;
       }
 
@@ -356,6 +372,7 @@ const EditProfile = () => {
 
   const submitProfile = async () => {
     if (!validateForm()) return;
+    incompleteRef.current = null;
     try {
       const payload = buildPayload();
       const result = await updateProfile(payload);
@@ -366,9 +383,17 @@ const EditProfile = () => {
         // on a save while they are being bounced is worse than saying nothing —
         // the save itself did land, and their profile will show it next login.
         if (signedOut) return;
-        alertOnce("Success", "Profile updated successfully!", [
-          { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
-        ]);
+        // The server can accept the save and still not consider the address
+        // finished — it judges the structured record, this form judges its own
+        // fields. Saying so beats a bare "success" the user later discovers was
+        // not enough to book a pickup.
+        alertOnce(
+          "Success",
+          incompleteRef.current
+            ? `Profile updated. ${incompleteRef.current}`
+            : "Profile updated successfully!",
+          [{ text: "OK", onPress: () => router.replace("/(tabs)/profile") }],
+        );
       } else {
         alertOnce("Error", result.ErrorMessage || "Failed to update profile");
       }
@@ -478,6 +503,7 @@ const EditProfile = () => {
             initialLongitude={form.values.longitude}
             city={form.values.city}
             town={form.values.town}
+            province={form.values.province}
             onConfirm={(lat, lng, placement) => {
               const seq = form.confirmPin(lat, lng, placement);
               clearError("location");

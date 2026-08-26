@@ -15,6 +15,7 @@ import {
   getAreaCentroid,
   getCitiesForProvince,
   getCityCentroid,
+  getProvinceExtent,
   getProvinceForCity,
   getSelectableTownsForCity,
 } from "@/utils/pakistan_areas";
@@ -123,7 +124,10 @@ const CITY_DELTA = 0.2;
  * coverage is partial and city coverage is near-total, so the split says how
  * often anyone actually gets the tighter view.
  */
-export type SelectionViewportSource = "area_centroid" | "city_centroid";
+export type SelectionViewportSource =
+  | "area_centroid"
+  | "city_centroid"
+  | "province_centroid";
 
 export interface SelectionViewport {
   region: MapRegion;
@@ -154,16 +158,38 @@ export interface SelectionViewport {
 export function resolveSelectionViewport(
   city: string | undefined,
   town: string | undefined,
+  province?: string,
 ): SelectionViewport | null {
   const trimmedCity = (city || "").trim();
-  if (!trimmedCity) return null;
 
-  const area = getAreaCentroid(trimmedCity, (town || "").trim());
-  if (area) return { region: toRegion(area, AREA_DELTA), source: "area_centroid" };
+  if (trimmedCity) {
+    const area = getAreaCentroid(trimmedCity, (town || "").trim());
+    if (area) return { region: toRegion(area, AREA_DELTA), source: "area_centroid" };
 
-  const cityCentroid = getCityCentroid(trimmedCity);
-  if (cityCentroid)
-    return { region: toRegion(cityCentroid, CITY_DELTA), source: "city_centroid" };
+    const cityCentroid = getCityCentroid(trimmedCity);
+    if (cityCentroid)
+      return { region: toRegion(cityCentroid, CITY_DELTA), source: "city_centroid" };
+  }
+
+  // Province is the widest useful rung, and the only one available before a
+  // city is chosen. Its extent is the bounding box of the cities we have
+  // coordinates for rather than a geocoded midpoint — see `PROVINCE_EXTENTS`
+  // for why a polygon centre would put Balochistan users in empty desert. Its
+  // deltas therefore come from the data and are NOT a fixed zoom like the two
+  // rungs above.
+  const extent = getProvinceExtent((province || "").trim());
+  if (extent) {
+    const [longitude, latitude] = extent.centroid;
+    return {
+      region: {
+        latitude,
+        longitude,
+        latitudeDelta: extent.latitudeDelta,
+        longitudeDelta: extent.longitudeDelta,
+      },
+      source: "province_centroid",
+    };
+  }
 
   return null;
 }
@@ -172,8 +198,9 @@ export function resolveSelectionViewport(
 export function getSelectionRegion(
   city: string | undefined,
   town: string | undefined,
+  province?: string,
 ): MapRegion | null {
-  return resolveSelectionViewport(city, town)?.region ?? null;
+  return resolveSelectionViewport(city, town, province)?.region ?? null;
 }
 
 /**

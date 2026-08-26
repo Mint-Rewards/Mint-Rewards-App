@@ -22,6 +22,11 @@ jest.mock("@/utils/sentry", () => ({
   setSentryUser: jest.fn(),
 }));
 
+const mockAlert = jest.fn();
+jest.mock("@/utils/alert", () => ({
+  alertOnce: (...a: unknown[]) => mockAlert(...a),
+}));
+
 let mockPathname = "/home";
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
@@ -39,9 +44,11 @@ const INCOMPLETE_USER = {
   town: "",
 };
 const mockStore = {
-  user: INCOMPLETE_USER,
+  user: INCOMPLETE_USER as Record<string, unknown>,
   token: "t",
-  updateProfile: jest.fn(),
+  updateProfile: jest.fn<
+    (...a: unknown[]) => Promise<{ Status: string; ErrorMessage?: string }>
+  >(async () => ({ Status: "Success" })),
   setLocationEvaluation: jest.fn(),
 };
 jest.mock("@/store/store", () => ({ useAppStore: () => mockStore }));
@@ -63,6 +70,16 @@ jest.mock("@/components/location/FinishProfileModal", () => ({
 jest.mock("@/components/location/ConfirmAddressModal", () => ({
   ConfirmAddressModal: () => null,
 }));
+
+const mockPatch = jest.fn<(...a: unknown[]) => Promise<unknown>>();
+jest.mock("@/utils/locationApi", () => {
+  const actual =
+    jest.requireActual<typeof import("@/utils/locationApi")>("@/utils/locationApi");
+  return {
+    ...actual,
+    patchUserLocation: (...a: unknown[]) => mockPatch(...a),
+  };
+});
 
 import LocationGate from "@/components/LocationGate";
 
@@ -95,6 +112,10 @@ async function navigateTo(tree: renderer.ReactTestRenderer, path: string) {
 }
 
 beforeEach(() => {
+  mockPatch.mockReset();
+  mockAlert.mockReset();
+  mockStore.updateProfile.mockClear();
+  mockStore.setLocationEvaluation.mockClear();
   mockPush.mockClear();
   mockPathname = "/home";
   mockStore.user = { ...INCOMPLETE_USER };
@@ -137,6 +158,140 @@ describe("tapping an outstanding checklist row", () => {
     await navigateTo(tree, "/home");
     // Still dismissible => the dismissal budget was never touched.
     expect(tree.root.findByType(finish()).props.dismissible).toBe(true);
+  });
+});
+
+describe("saving from the confirm modal", () => {
+  const confirm = () =>
+    require("@/components/location/ConfirmAddressModal").ConfirmAddressModal;
+
+  /** A user WITH a pin gets the confirm modal rather than the checklist. */
+  const withPin = {
+    ...INCOMPLETE_USER,
+    city: "Karachi",
+    town: "DHA",
+    latitude: "24.81",
+    longitude: "67.08",
+  };
+
+  it("hands the server's verdict to the store, which is what closes the gate", async () => {
+    mockStore.user = withPin;
+    mockPatch.mockResolvedValue({
+      Status: "Success",
+      evaluation: {
+        complete: true,
+        missing: [],
+        version: 1,
+        currentVersion: 1,
+        bucket: "complete",
+      },
+    });
+    const tree = await mountSettled();
+
+    await act(async () => {
+      await tree.root.findByType(confirm()).props.onConfirm({ city: "Karachi" });
+    });
+
+    // The gate has no "close" of its own: it stops rendering once the user's
+    // locationVersion reaches the completion version, and this call is the only
+    // thing that carries it there without a refetch.
+    expect(mockStore.setLocationEvaluation).toHaveBeenCalledWith(
+      expect.objectContaining({ currentVersion: 1 }),
+    );
+  });
+
+  it("does NOT report completion when the server says the profile is short", async () => {
+    mockStore.user = withPin;
+    mockPatch.mockResolvedValue({
+      Status: "Success",
+      evaluation: {
+        complete: false,
+        missing: ["houseNo"],
+        version: 1,
+        // No bump: the server did not consider this finished.
+        currentVersion: 0,
+        bucket: "has_pin_partial",
+      },
+    });
+    const tree = await mountSettled();
+
+    await act(async () => {
+      await tree.root.findByType(confirm()).props.onConfirm({ city: "Karachi" });
+    });
+
+    expect(mockStore.setLocationEvaluation).toHaveBeenCalledWith(
+      expect.objectContaining({ currentVersion: 0 }),
+    );
+    // Which leaves the gate up — correct, but see the handoff: the user is told
+    // nothing about why.
+  });
+
+  it("tells the user what the SERVER still wants, naming the field", async () => {
+    mockStore.user = withPin;
+    mockPatch.mockResolvedValue({
+      Status: "Success",
+      evaluation: {
+        complete: false,
+        // The reachable case: a coordinate written by an older build is
+        // `legacy_string`, which satisfies every check this app makes and
+        // fails the server's `pin`.
+        missing: ["pin"],
+        version: 1,
+        currentVersion: 0,
+        bucket: "no_pin",
+      },
+    });
+    const tree = await mountSettled();
+
+    await act(async () => {
+      await tree.root
+        .findByType(confirm())
+        .props.onConfirm({ city: "Karachi", town: "DHA" });
+    });
+
+    // Before this, the modal just stayed up: validation had passed so nothing
+    // was marked, the request had succeeded so nothing errored.
+    expect(mockAlert).toHaveBeenCalledWith(
+      "Almost there",
+      expect.stringContaining("Map pin"),
+    );
+  });
+
+  it("says nothing extra when the server agrees the profile is done", async () => {
+    mockStore.user = withPin;
+    mockPatch.mockResolvedValue({
+      Status: "Success",
+      evaluation: {
+        complete: true,
+        missing: [],
+        version: 1,
+        currentVersion: 1,
+        bucket: "complete",
+      },
+    });
+    const tree = await mountSettled();
+
+    await act(async () => {
+      await tree.root.findByType(confirm()).props.onConfirm({ city: "Karachi" });
+    });
+
+    expect(mockAlert).not.toHaveBeenCalled();
+  });
+
+  it("does not stamp anything when the legacy save fails", async () => {
+    mockStore.user = withPin;
+    mockStore.updateProfile.mockResolvedValueOnce({
+      Status: "Error",
+      ErrorMessage: "nope",
+    });
+    const tree = await mountSettled();
+
+    await act(async () => {
+      await tree.root.findByType(confirm()).props.onConfirm({ city: "Karachi" });
+    });
+
+    expect(mockPatch).not.toHaveBeenCalled();
+    expect(mockStore.setLocationEvaluation).not.toHaveBeenCalled();
   });
 });
 

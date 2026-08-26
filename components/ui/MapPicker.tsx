@@ -37,6 +37,8 @@ interface MapPickerProps {
    */
   city?: string;
   town?: string;
+  /** Widest fallback rung: used when no city has been chosen yet. */
+  province?: string;
   onConfirm: (
     latitude: string,
     longitude: string,
@@ -58,6 +60,7 @@ export default function MapPicker({
   initialLongitude,
   city,
   town,
+  province,
   onConfirm,
   onClose,
 }: MapPickerProps) {
@@ -86,8 +89,8 @@ export default function MapPicker({
   // Resolved once per selection, and read from BOTH the opening camera and the
   // analytics call so the two cannot disagree about where the map opened.
   const selectionViewport = useMemo(
-    () => resolveSelectionViewport(city, town),
-    [city, town],
+    () => resolveSelectionViewport(city, town, province),
+    [city, town, province],
   );
 
   useEffect(() => {
