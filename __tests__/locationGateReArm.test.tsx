@@ -54,12 +54,18 @@ const mockStore = {
 jest.mock("@/store/store", () => ({ useAppStore: () => mockStore }));
 
 jest.mock("@/utils/locationGateConfig", () => ({
-  fetchLocationGateConfig: () =>
+  // The gate now takes both config blocks off one request. `profileBonus: null`
+  // is the no-campaign case, which is what keeps these cases about re-arming
+  // rather than about bonus copy.
+  fetchGateConfigs: () =>
     Promise.resolve({
-      mode: "soft",
-      activatedCitiesOnly: false,
-      maxDismissals: 3,
-      minClientBuild: { ios: null, android: null },
+      locationGate: {
+        mode: "soft",
+        activatedCitiesOnly: false,
+        maxDismissals: 3,
+        minClientBuild: { ios: null, android: null },
+      },
+      profileBonus: null,
     }),
 }));
 

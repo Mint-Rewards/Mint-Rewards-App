@@ -28,9 +28,11 @@ import { missingSentence } from "@/utils/locationEvaluation";
 import { resolveLocationGate } from "@/utils/locationGate";
 import type { PinPlacement } from "@/utils/pinState";
 import {
-  fetchLocationGateConfig,
+  fetchGateConfigs,
   type LocationGateConfig,
 } from "@/utils/locationGateConfig";
+import { resolveProfileBonus } from "@/utils/profileBonus";
+import type { ProfileBonusConfig } from "@/utils/profileBonusConfig";
 import { logError } from "@/utils/logger";
 import type { ProfileFocusTarget } from "@/utils/profileFocus";
 import { Platform } from "react-native";
@@ -75,6 +77,12 @@ export default function LocationGate() {
 
   const [config, setConfig] = useState<LocationGateConfig | null>(null);
   const [configLoaded, setConfigLoaded] = useState(false);
+  // Rides along on the same /api/app-config request as `config`. Null means
+  // "no bonus to promise", which is both the disabled case and every failure
+  // case — see the polarity note in utils/profileBonusConfig.ts.
+  const [bonusConfig, setBonusConfig] = useState<ProfileBonusConfig | null>(
+    null,
+  );
   // Session-scoped on purpose: `maxDismissals` bounds nagging within a run of
   // the app, while the durable never-ask-again signal is the server-stamped
   // locationVersion. Persisting dismissals would let three taps months apart
@@ -146,9 +154,10 @@ export default function LocationGate() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchLocationGateConfig().then((cfg) => {
+    fetchGateConfigs().then((cfgs) => {
       if (cancelled) return;
-      setConfig(cfg);
+      setConfig(cfgs.locationGate);
+      setBonusConfig(cfgs.profileBonus);
       setConfigLoaded(true);
     });
     return () => {
@@ -231,6 +240,12 @@ export default function LocationGate() {
   if (decision.show === "none") return null;
   if (dismissedOnPath === pathname) return null;
 
+  // Computed AFTER the gate decision and passed only as copy. It deliberately
+  // has no influence on `decision`: who is asked to finish their profile is
+  // exactly who was asked before this campaign existed, and turning the bonus
+  // on or off cannot gate or ungate a single user.
+  const bonus = resolveProfileBonus({ user, config: bonusConfig });
+
   const dismiss = () => {
     setDismissals((n) => n + 1);
     setDismissedOnPath(pathname);
@@ -263,6 +278,7 @@ export default function LocationGate() {
         onContinue={() => goToProfile()}
         onSelectRow={(focus) => goToProfile(focus)}
         onDismiss={dismiss}
+        bonus={bonus}
       />
     );
   }
@@ -273,6 +289,7 @@ export default function LocationGate() {
       dismissible={decision.dismissible}
       onDismiss={dismiss}
       onConfirm={handleConfirmSave}
+      bonus={bonus}
     />
   );
 }

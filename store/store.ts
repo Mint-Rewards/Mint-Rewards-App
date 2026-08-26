@@ -1,6 +1,7 @@
 import { logAuthEvent, logError, logEvent } from "@/utils/logger";
 import { authenticatedFetch } from "@/utils/api";
 import type { LocationEvaluation } from "@/utils/locationApi";
+import { trackProfileBonusEarned } from "@/utils/locationAnalytics";
 import { API_BASE_URL } from "@/utils/constants";
 import { setUnauthorizedHandler } from "@/utils/session";
 import { addBreadcrumb, captureWarning, setSentryUser } from "@/utils/sentry";
@@ -110,6 +111,30 @@ export interface User {
   longitude?: string;
   deviceToken?: string;
   points?: number;
+  /**
+   * When the server opened this user's profile-completion bonus window, stamped
+   * on their first app open by GET /api/users/my-profile. Serialised as an ISO
+   * string on the wire.
+   *
+   * Read-only to the client in the strongest sense: it is never sent in an
+   * update, and the deadline the modals show is derived from it rather than
+   * from anything stored locally, because it is the same value the server pays
+   * on. Absent for a user whose window never opened — most often one whose
+   * profile was already complete. See utils/profileBonus.ts.
+   */
+  profileBonusWindowStartedAt?: string;
+  /**
+   * When the server actually paid the profile-completion bonus, and how much.
+   *
+   * These are the only trustworthy "was it paid" signal the client has. The
+   * client cannot compute it — the window is judged against the server's clock
+   * and the server's completeness rules — so `profileBonusGrantedAt` appearing
+   * on a refetched profile IS the payment, and `getProfile` treats the
+   * absent-to-present transition as the analytics event. Both absent for a user
+   * who has never been paid.
+   */
+  profileBonusGrantedAt?: string;
+  profileBonusPoints?: number;
   totalCollections?: string;
   totalWasteCollected?: string;
   referrals?: string[];
@@ -516,6 +541,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const data = await response.json();
 
       if (response.ok) {
+        // The profile-completion bonus becoming paid, observed rather than
+        // inferred. Every save path ends in a getProfile refetch, so checking
+        // here covers both of them (editProfile and the gate's confirm sheet)
+        // in one place, and it reports what the SERVER did rather than what the
+        // client hoped: the client cannot judge the window or the completeness
+        // rules, so `profileBonusGrantedAt` appearing is the only honest signal
+        // that the points were actually awarded.
+        //
+        // Compared before `set`, while `get().user` is still the previous
+        // document. Guarded on the previous value being absent so it fires once
+        // on the transition and not on every subsequent refetch.
+        const wasGranted = !!get().user?.profileBonusGrantedAt;
+        const isGranted = !!data.user?.profileBonusGrantedAt;
+        if (!wasGranted && isGranted) {
+          trackProfileBonusEarned(data.user.profileBonusPoints ?? 0);
+        }
+
         set({
           user: data.user,
           token: token,
