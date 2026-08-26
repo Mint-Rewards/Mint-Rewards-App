@@ -56,6 +56,7 @@ describe("buildPrefill — the geocoder is an enhancement, not a precondition", 
       town: "Gulshan-e-Iqbal",
       subArea: "Block 13-D",
       street: "12 Main Street",
+      townSource: "saved",
     });
   });
 
@@ -163,17 +164,35 @@ describe("buildPrefill — the geocoder is an enhancement, not a precondition", 
   });
 
   it("still refuses an unmatched candidate its area is not cleared for", () => {
-    // Gulshan-e-Iqbal is geocodePrefill:false — it never cleared the accuracy
-    // gate. Widening WHICH strings resolve must not widen what may be
-    // pre-selected.
+    // Lahore is not a broad-prefill city, so `Johar Town` is `none` and the
+    // second pass may not pre-select it — widening WHICH strings resolve must
+    // not widen what may be pre-selected.
+    //
+    // This assertion used Karachi's Gulshan-e-Iqbal until 2026-08-26, when the
+    // owner opened Karachi to flagged provisional prefills. The rule under test
+    // did not change; the example had to move to a city still governed by the
+    // evidence-only default.
     const result = buildPrefill(
       {
         ...EMPTY_GEOCODE_RESULT,
-        unmatched: ["Gulshan-e-Iqbal Block 13"],
+        unmatched: ["Johar Town Block G"],
       },
-      { city: "Karachi", town: "", subArea: "", address: "" },
+      { city: "Lahore", town: "", subArea: "", address: "" },
     );
     expect(result.town).toBe("");
+  });
+
+  it("pre-selects a provisional Karachi area, flag and all", () => {
+    // The other side of the same rule after the 2026-08-26 widening: inside a
+    // broad-prefill city an unmeasured residential area IS pre-selected. What
+    // marks it as a guess is `getPrefillConfidence`, which the form reads to
+    // show the note — not a blank field.
+    const result = buildPrefill(
+      { ...EMPTY_GEOCODE_RESULT, unmatched: ["Gulshan-e-Iqbal Block 13"] },
+      { city: "Karachi", town: "", subArea: "", address: "" },
+    );
+    expect(result.town).toBe("Gulshan-e-Iqbal");
+    expect(result.subArea).toBe("Block 13");
   });
 
   it("refuses an unmatched candidate from a different city", () => {
@@ -207,12 +226,14 @@ describe("buildPrefill — the geocoder is an enhancement, not a precondition", 
       town: "",
       subArea: "",
       street: "",
+      townSource: "none",
     });
     expect(buildPrefill(null, null)).toEqual({
       city: "",
       town: "",
       subArea: "",
       street: "",
+      townSource: "none",
     });
   });
 
@@ -227,6 +248,7 @@ describe("buildPrefill — the geocoder is an enhancement, not a precondition", 
       town: "DHA",
       subArea: "",
       street: "12 Main Street",
+      townSource: "saved",
     });
   });
 });
@@ -274,8 +296,27 @@ describe("buildPrefill — a resolved answer", () => {
   });
 
   it("never invents a house number — the field is not even in the shape", () => {
+    // `townSource` is provenance, not an address field — see LocationPrefill.
     expect(Object.keys(buildPrefill(geo({ cityName: "Karachi", areaName: "DHA" }), savedUser)))
-      .toEqual(["city", "town", "subArea", "street"]);
+      .toEqual(["city", "town", "subArea", "street", "townSource"]);
+  });
+
+  it("reports the town's provenance, second pass included", () => {
+    // The distinction the modal acts on. It used to be inferred by comparing
+    // `town` to `geo.areaName`, which answered "saved" for every second-pass
+    // hit — and the second pass is where most Karachi resolutions come from.
+    expect(
+      buildPrefill(geo({ cityName: "Karachi", areaName: "DHA" }), savedUser)
+        .townSource,
+    ).toBe("geocoder");
+    expect(
+      buildPrefill(
+        { ...EMPTY_GEOCODE_RESULT, unmatched: ["DHA Phase 8"] },
+        { city: "Karachi", town: "", subArea: "", address: "" },
+      ).townSource,
+    ).toBe("geocoder");
+    expect(buildPrefill(EMPTY_GEOCODE_RESULT, savedUser).townSource).toBe("saved");
+    expect(buildPrefill(EMPTY_GEOCODE_RESULT, {}).townSource).toBe("none");
   });
 });
 
@@ -303,13 +344,27 @@ describe("buildPrefill — shouldPrefillArea suppression", () => {
   });
 
   it("also refuses an area whose per-area precision gate is off", () => {
-    // `geocodePrefill: false` is the measured half of the rule: the area is
-    // residential, but the geocoder has not demonstrated it can place it.
+    // Outside a broad-prefill city the measured half of the rule still governs
+    // on its own: Lahore's areas are all `geocodePrefill: false`, so a
+    // residential Lahore area the geocoder has not demonstrated it can place
+    // is not pre-selected, and the saved answer survives.
+    const result = buildPrefill(
+      geo({ cityName: "Lahore", areaName: "Sabzazar" }),
+      { city: "Lahore", town: "Johar Town", subArea: "", address: "" },
+    );
+    expect(result.town).toBe("Johar Town");
+  });
+
+  it("pre-selects an unmeasured KARACHI area, because that city is opted in", () => {
+    // Same shape, opposite outcome, and the difference is the city — this is
+    // the whole of the 2026-08-26 policy change. `Surjani Town` has never been
+    // measured; it is residential and canonical in a broad-prefill city, so it
+    // is offered as a flagged guess instead of being dropped.
     const result = buildPrefill(
       geo({ cityName: "Karachi", areaName: "Surjani Town" }),
       savedUser,
     );
-    expect(result.town).toBe("Gulshan-e-Iqbal");
+    expect(result.town).toBe("Surjani Town");
   });
 
   it("suppressed areas remain resolvable — only the pre-selection is dropped", () => {
@@ -527,6 +582,7 @@ describe("reverseGeocode — never throws", () => {
       town: "Gulshan-e-Iqbal",
       subArea: "Block 13-D",
       street: "12 Main Street",
+      townSource: "saved",
     });
   });
 });

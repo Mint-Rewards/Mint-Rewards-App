@@ -103,17 +103,24 @@ export function ConfirmAddressModal({
       if (cancelledRef.current) return;
 
       const prefill = buildPrefill(geo, user);
-      // The same condition twice, deliberately: this is both the suggestion
-      // `area_overridden` is measured against AND the provenance `reset` needs
-      // — a town the geocoder produced from the pin, not one the user chose.
-      // Without it every correction of a geocoder mistake here would trip the
-      // Issue 9 prompt, in the one screen that exists to collect them.
-      const townIsGeocoded = !!(
-        geo?.resolved &&
-        geo.areaName &&
-        prefill.town === geo.areaName
-      );
-      if (townIsGeocoded) {
+      // The provenance `reset` needs: a town the geocoder produced from the
+      // pin, not one the user chose. Without it every correction of a geocoder
+      // mistake here would trip the Issue 9 prompt, in the one screen that
+      // exists to collect them — and a `provisional` area would be pre-selected
+      // with no guess note on it.
+      //
+      // Read off `townSource` rather than re-derived from `geo.areaName`, which
+      // is the narrower question of whether the SERVER placed it. The second
+      // pass resolves from `unmatched` while `resolved` is false, and that pass
+      // is where most Karachi towns now come from; comparing against
+      // `areaName` called every one of them user-chosen.
+      const townIsGeocoded = prefill.townSource === "geocoder";
+      // `area_overridden` stays on the narrow condition on purpose. It measures
+      // the SERVER's own answer against what the user saved, and widening its
+      // denominator mid-flight would break the comparison with everything
+      // already recorded. Second-pass accuracy needs its own event, not a
+      // silent redefinition of this one.
+      if (geo?.resolved && geo.areaName && prefill.town === geo.areaName) {
         suggestedAreaRef.current = geo.areaName;
       }
 

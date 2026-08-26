@@ -453,3 +453,67 @@ describe("it does NOT ask when the pin and the town already agree", () => {
 function rehydrateWithoutPin(api: Api) {
   api.reset({ city: "Karachi", town: "Clifton" });
 }
+
+/**
+ * The visible half of the 2026-08-26 prefill widening.
+ *
+ * Karachi now pre-selects unmeasured residential areas as flagged guesses, so
+ * the flag is what separates "we measured this at >=85%" from "we guessed".
+ * If it stops tracking the tier, the app presents both in the same voice — and
+ * a user who taps through a silent pre-selection keeps whatever it said.
+ */
+describe("townPrefillIsGuess", () => {
+  it("is false before anything has been prefilled", () => {
+    const h = mount();
+    expect(h.api.townPrefillIsGuess).toBe(false);
+  });
+
+  it("flags a pin-derived town the registry rates provisional", () => {
+    const h = mount();
+    h.run((api) => api.selectCity("Karachi"));
+    h.run((api) =>
+      api.applyPinPrefill({ town: "Clifton", subArea: "Block 2" }, 0),
+    );
+    expect(h.api.values.town).toBe("Clifton");
+    expect(h.api.townPrefillIsGuess).toBe(true);
+  });
+
+  it("does NOT flag a measured area", () => {
+    // DHA carries n=70 at 100%. A note on every prefill is a note nobody reads.
+    const h = mount();
+    h.run((api) => api.selectCity("Karachi"));
+    h.run((api) => api.applyPinPrefill({ town: "DHA", subArea: "Phase 6" }, 0));
+    expect(h.api.values.town).toBe("DHA");
+    expect(h.api.townPrefillIsGuess).toBe(false);
+  });
+
+  it("clears once the user answers the question themselves", () => {
+    const h = mount();
+    h.run((api) => api.selectCity("Karachi"));
+    h.run((api) => api.applyPinPrefill({ town: "Clifton" }, 0));
+    expect(h.api.townPrefillIsGuess).toBe(true);
+
+    h.run((api) => api.selectTown("Nazimabad"));
+    // Nazimabad is provisional too, but it is no longer a GUESS — the user
+    // picked it. The flag tracks provenance, not the area.
+    expect(h.api.values.town).toBe("Nazimabad");
+    expect(h.api.townPrefillIsGuess).toBe(false);
+  });
+
+  it("is false for a town rehydrated from the profile rather than a pin", () => {
+    // `reset` with no `derived` argument is a plain rehydrate: those strings are
+    // the user's own saved answers and were never guessed at.
+    const h = mount();
+    h.run((api) => api.reset({ city: "Karachi", town: "Clifton" }));
+    expect(h.api.values.town).toBe("Clifton");
+    expect(h.api.townPrefillIsGuess).toBe(false);
+  });
+
+  it("flags the confirm modal's own reset, which IS pin-derived", () => {
+    const h = mount();
+    h.run((api) =>
+      api.reset({ city: "Karachi", town: "Clifton" }, null, { town: true }),
+    );
+    expect(h.api.townPrefillIsGuess).toBe(true);
+  });
+});

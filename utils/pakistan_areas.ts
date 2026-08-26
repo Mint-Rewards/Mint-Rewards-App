@@ -274,8 +274,13 @@ export const AREA_META: Record<string, AreaMeta> = {
   "Karachi::Clifton": { geocodePrefill: false, residential: true, subAreaRequired: false, blockLabel: "Block" },
   // OSM carries the society's full registered name; PECHS is its acronym.
   // ("P.E.C.H.S." already folds to a match -- the spelled-out form does not.)
+  // geocodePrefill: true, 2026-08-26 -- n=20, 100% (20/20). P0.6-REPORT.md
+  // measured this at 87% over n=15 and held it back on sample size alone; the
+  // recall fixes committed with this change (alias-aware sub-area stripping)
+  // carry it over n>=20 without touching a single one of its correct answers.
+  // Re-checkable with `npx tsx scripts/measure-karachi-prefill.ts`.
   "Karachi::PECHS": {
-    geocodePrefill: false,
+    geocodePrefill: true,
     residential: true,
     subAreaRequired: true,
     blockLabel: "Block",
@@ -297,8 +302,14 @@ export const AREA_META: Record<string, AreaMeta> = {
   // Google spells it "Johar"; this registry spells it "Jauhar". Neither is
   // wrong, and no fold or affix rule bridges a vowel swap -- 33 of 1000
   // sampled Karachi points landed here and were counted as unregistered.
+  // geocodePrefill: true, 2026-08-26 -- n=21, 90% (19/21). It sat at n=6 in
+  // P0.6-REPORT.md because the aliases below were only ever consulted for a
+  // WHOLE-name match, so every "Gulistan e Johar Block 16" fell through the
+  // resolver and landed on the administrative parent "Gulshan-e-Iqbal Town"
+  // instead. Alias-aware sub-area stripping recovered 27 such points; they are
+  // what carries this area over the gate. See `extractSubAreaForTown`.
   "Karachi::Gulistan-e-Jauhar": {
-    geocodePrefill: false,
+    geocodePrefill: true,
     residential: true,
     subAreaRequired: true,
     blockLabel: "Block",
@@ -1209,8 +1220,86 @@ export function getBlockLabel(city: string, town: string): string {
  * for anything reading `geocodedAreaRaw`. Only the pre-selection is suppressed.
  */
 export function shouldPrefillArea(city: string, town: string): boolean {
+  return getPrefillConfidence(city, town) !== "none";
+}
+
+/**
+ * How much the app is entitled to claim for a pre-selected area.
+ *
+ *  - `"measured"` — the area cleared the original gate: precision >=85% over
+ *    n>=20, recorded beside its `AREA_META` entry and in
+ *    `scripts/geocode-spike/P0.6-REPORT.md`. Presented as an answer.
+ *  - `"provisional"` — the area is inside a broad-prefill city and nothing has
+ *    measured it BELOW the floor. Presented as a guess, visibly (see
+ *    `LocationFields`), because it has not earned silence.
+ *  - `"none"` — no pre-selection at all.
+ *
+ * `residential` still vetoes everything, at any tier: every consumer user is a
+ * household by construction, so a pin on an industrial plot is not evidence
+ * that the person filling the form works there.
+ */
+export type PrefillConfidence = "measured" | "provisional" | "none";
+
+export function getPrefillConfidence(
+  city: string,
+  town: string,
+): PrefillConfidence {
   const meta = getAreaMeta(city, town);
-  return meta.geocodePrefill && meta.residential;
+  if (!meta.residential) return "none";
+  if (meta.geocodePrefill) return "measured";
+  if (!isCanonicalTown(city, town)) return "none";
+  if (!BROAD_PREFILL_CITIES.has((city || "").trim())) return "none";
+  if (isPrefillDenied(city, town)) return "none";
+  return "provisional";
+}
+
+/**
+ * Cities where an UNMEASURED residential area may still be pre-selected, as a
+ * flagged guess.
+ *
+ * Owner decision, 2026-08-26, overriding the evidence-only default that
+ * `geocodePrefill` encodes. The reasoning: the confirm modal is a
+ * confirmation surface — every derived field is an editable dropdown sitting
+ * under "check it, fix anything that's off" — so a wrong guess costs one tap,
+ * while a blank costs one tap from EVERYONE. On the 466-point Karachi sample
+ * the evidence-only policy pre-selected a town for 36% of pins; this policy
+ * reaches ~80%.
+ *
+ * The cost this accepts, stated plainly rather than hidden: a user who taps
+ * through without reading keeps a wrong area, and at the tiers below
+ * `measured` that will sometimes happen. Two things bound it — the guess is
+ * labelled in the UI rather than presented as an answer, and `area_overridden`
+ * telemetry measures exactly how often it is wrong, which is what should
+ * eventually move each area onto `measured` or onto the denylist.
+ *
+ * Karachi only. It is the one city with a sampled sweep behind it, so it is the
+ * one city where "nothing measured this below the floor" is a statement about
+ * evidence rather than about the absence of it.
+ */
+const BROAD_PREFILL_CITIES: ReadonlySet<string> = new Set(["Karachi"]);
+
+/**
+ * The floor: areas measured to be WRONG more often than this are not guessed
+ * at, however broad the policy above is.
+ *
+ * 70%, over n>=10 — deliberately looser than the 85%/n>=20 promotion gate,
+ * because these two numbers answer different questions. 85% is what an area
+ * must prove to be presented as an ANSWER; 70% is the point below which a
+ * labelled GUESS stops being worth the tap it costs to undo.
+ *
+ * Empty as of 2026-08-26: measured against the live candidate fields
+ * (`suburb ?? neighbourhood`, never `town`) on the 466 cached LocationIQ
+ * points, no residential Karachi area with n>=10 scores under 70%. It is
+ * written down and tested so the next sweep has somewhere to put a demotion
+ * without touching this policy — see `scripts/measure-karachi-prefill.ts`.
+ */
+const PREFILL_DENYLIST: Record<string, ReadonlySet<string>> = {
+  Karachi: new Set<string>([]),
+};
+
+function isPrefillDenied(city: string, town: string): boolean {
+  const denied = PREFILL_DENYLIST[(city || "").trim()];
+  return denied ? denied.has(foldName(town)) : false;
 }
 
 /**
@@ -1541,7 +1630,7 @@ function matchesTownWithSubArea(
   city: string,
   town: string,
 ): boolean {
-  return extractSubAreaForTown(value, city, town) !== null;
+  return extractSubAreaFromPrefix(value, city, town) !== null;
 }
 
 /**
@@ -1556,23 +1645,275 @@ function matchesTownWithSubArea(
  *
  * Returns null when the remainder is not a real sub-area of that town, so
  * "DHA Marina" yields nothing rather than being forced onto the nearest entry.
+ *
+ * The town half is matched against the town's ALIASES as well as its canonical
+ * name, and that is not a refinement — it is the difference between working and
+ * not working for a whole town. The registry spells it "Gulistan-e-Jauhar";
+ * LocationIQ says "Gulistan e Johar Block 16". The vowel swap is exactly what
+ * the `Gulistan-e-Johar` alias exists to bridge, but the alias was only ever
+ * consulted for a WHOLE-name match, so every one of those strings fell through
+ * this function, fell through the resolver, and then resolved to the
+ * administrative parent "Gulshan-e-Iqbal Town" instead — 27 of 466 sampled
+ * points, silently filed under the wrong town at 100% confidence. Aliases are
+ * the registry's own record that two strings name one place; a rule that reads
+ * them in one position and not the other produces precisely this class of
+ * confident wrong answer.
  */
 export function extractSubAreaForTown(
   value: string,
   city: string,
   town: string,
 ): string | null {
-  const folded = foldName(value);
-  const foldedTown = foldName(town);
-  if (!foldedTown || folded === foldedTown) return null;
-  if (!folded.startsWith(foldedTown)) return null;
-  const remainder = folded.slice(foldedTown.length);
-  if (!remainder) return null;
+  const fromPrefix = extractSubAreaFromPrefix(value, city, town);
+  if (fromPrefix) return fromPrefix;
+
+  // Failing that, the string may BE the sub-area, with no town half at all —
+  // "Ancholi" for the entry this registry writes "Block 20 (Ancholi)", or
+  // "Shah Rasool" for "Shah Rasool Colony".
+  //
+  // Only reachable once the TOWN is settled, which is why it may use the loose
+  // variants: the caller has agreed on a parent by other means and the one
+  // question left is which rung below it was named. `matchesTownWithSubArea`
+  // deliberately does NOT come through here — letting this decide a parent is
+  // exactly the mistake `strictSubAreaVariants` documents.
+  const whole = subAreaVariants(value);
   return (
-    getSubAreasForTown(city, town).find(
-      (subArea) => foldName(subArea) === remainder,
+    getSubAreasForTown(city, town).find((subArea) =>
+      variantsIntersect(whole, subAreaVariants(subArea)),
     ) ?? null
   );
+}
+
+/** The "<Town> <SubArea>" form only. The half that may name a parent. */
+function extractSubAreaFromPrefix(
+  value: string,
+  city: string,
+  town: string,
+): string | null {
+  const subAreas = getSubAreasForTown(city, town);
+  for (const remainder of townRemainders(value, city, town)) {
+    const match = subAreas.find((subArea) =>
+      subAreaVariants(subArea).has(remainder),
+    );
+    if (match) return match;
+
+    // A bare unit token — "Nazimabad 4" — names the same thing the registry
+    // writes as "Block 4". The area's own `blockLabel` is what supplies the
+    // missing word, so the value returned is still the registry's spelling of
+    // a real entry, never a string this function invented.
+    if (isUnitShaped(remainder)) {
+      const labelled = foldName(`${getBlockLabel(city, town)} ${remainder}`);
+      const byLabel = subAreas.find(
+        (subArea) => foldName(subArea) === labelled,
+      );
+      if (byLabel) return byLabel;
+    }
+  }
+  return null;
+}
+
+/**
+ * Every leftover a "<Town-or-alias> <something>" string can produce for `town`,
+ * longest town-spelling first.
+ *
+ * Longest first so a town whose alias is a prefix of its canonical name (or
+ * vice versa) strips the most specific spelling available and leaves the
+ * smallest remainder to interpret.
+ */
+function townRemainders(value: string, city: string, town: string): string[] {
+  const folded = foldName(value);
+  if (!folded) return [];
+
+  const townNames = [town, ...(AREA_META[subAreaKey(city, town)]?.aliases ?? [])]
+    .map(foldName)
+    .filter((name) => name.length > 0)
+    .sort((a, b) => b.length - a.length);
+
+  const out: string[] = [];
+  for (const foldedTown of townNames) {
+    if (folded === foldedTown) continue;
+    if (!folded.startsWith(foldedTown)) continue;
+    const remainder = folded.slice(foldedTown.length);
+    if (remainder) out.push(remainder);
+  }
+  return out;
+}
+
+/**
+ * True when `value` names `town` followed by something unit-shaped that the
+ * registry does not list — "Shah Faisal Block 5" against a town whose sub-areas
+ * are written "Shah Faisal Colony 1..5".
+ *
+ * The town is certain here and only the block is unrecognised, so this resolves
+ * the TOWN and leaves the sub-area empty for the user to pick. Kept separate
+ * from `extractSubAreaForTown` because the two answer different questions, and
+ * only that function may ever produce a sub-area.
+ */
+function matchesTownWithUnknownUnit(
+  value: string,
+  city: string,
+  town: string,
+): boolean {
+  const subAreas = getSubAreasForTown(city, town);
+  return townRemainders(value, city, town).some((remainder) => {
+    if (!isUnitShaped(remainder)) return false;
+
+    // Where the registry ENUMERATES this kind of unit for this town, it is
+    // authoritative about which ones exist, and an unlisted one is evidence
+    // against the match rather than a gap in the data. "DHA Phase 99" stays
+    // refused for exactly this reason: DHA's sub-areas are its phases, all
+    // twelve of them, so a thirteenth is not a phase this file has yet to
+    // learn about.
+    //
+    // "Shah Faisal Block 5" is the opposite case and the reason this rule
+    // exists: that town's sub-areas are written "Shah Faisal Colony 1..5" and
+    // it enumerates no Blocks at all, so the registry has nothing to say about
+    // Block 5 and cannot be contradicting it.
+    const label =
+      remainder.match(/^[a-z]+/)?.[0] ?? foldName(getBlockLabel(city, town));
+    if (label && subAreas.some((sub) => foldName(sub).startsWith(label))) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Suffixes a geocoder drops from a sub-area name that the registry keeps.
+ *
+ * "Shah Rasool" for the registry's "Shah Rasool Colony", "Memon" for "Memon
+ * Society". Scoped to THIS function on purpose: `nameVariants` governs
+ * town-level matching across every city, and widening it there would let
+ * "Model" reach "Model Town" and "Model Colony" — two different Karachi places
+ * — turning a miss into an ambiguity at the rung where ambiguity is most
+ * expensive. Here the same strip is safe, because the result must still
+ * identify exactly one town before anything is returned.
+ */
+const SUB_AREA_SUFFIXES = ["colony", "society", "town", "area"];
+
+/**
+ * Every folded spelling a SUB-AREA name may legitimately arrive under.
+ *
+ * Three sources of disagreement, all observed in the sweep:
+ *
+ *  - dropped generic suffix — "Shah Rasool" for "Shah Rasool Colony";
+ *  - the parenthetical half of a dual-named block — the registry writes
+ *    "Block 20 (Ancholi)" because both halves are in daily use, and a geocoder
+ *    returns one half or the other, never the composite this file stores;
+ *  - punctuation and spacing, which `foldName` already removes.
+ */
+function subAreaVariants(value: string): Set<string> {
+  const out = new Set<string>();
+  const raw = (value || "").trim();
+  if (!raw) return out;
+
+  const forms = [raw];
+  // "Block 20 (Ancholi)" is filed under "block20ancholi", "block20" and
+  // "ancholi" — the composite plus each half a geocoder might answer with.
+  const parenthetical = raw.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+  if (parenthetical) {
+    forms.push(parenthetical[1], parenthetical[2]);
+  }
+
+  for (const form of forms) {
+    const folded = foldName(form);
+    if (!folded) continue;
+    out.add(folded);
+    for (const suffix of SUB_AREA_SUFFIXES) {
+      if (!folded.endsWith(suffix)) continue;
+      const stripped = folded.slice(0, -suffix.length);
+      // Floored so "Colony" alone cannot fold to "" and match everything.
+      if (stripped.length >= 3) out.add(stripped);
+    }
+  }
+  return out;
+}
+
+/**
+ * True when a leftover fragment is SHAPED like a numbered subdivision unit —
+ * "block5", "phase3", "sector11c", "4", "13d".
+ *
+ * This is what lets a "<Town> <Block>" string resolve its TOWN when the block
+ * itself is not in the registry: "Shah Faisal Block 5" names a real town whose
+ * sub-area list happens to be written "Shah Faisal Colony 1..5", so the town is
+ * certain and only the block is unrecognised. Refusing the whole string there
+ * throws away the half we are sure of — 42 of 466 sampled points.
+ *
+ * The shape test is what keeps this inside the existing "DHA Marina yields
+ * nothing" rule: "marina" is not unit-shaped, so that string is still refused
+ * rather than folded down onto its prefix. A remainder only earns the town when
+ * it is the kind of token that could not be a different PLACE.
+ */
+const UNIT_TOKEN = /^(block|phase|sector|precinct|scheme|street|sub|unit)?[0-9]+[a-z]?$/;
+
+function isUnitShaped(remainder: string): boolean {
+  return UNIT_TOKEN.test(remainder);
+}
+
+/**
+ * The single town in `city` that owns a sub-area named `value`, or null.
+ *
+ * Null whenever the answer is not unique. That is the whole safety property:
+ * numbered blocks and sectors repeat across most of Karachi, so they are
+ * refused automatically without needing a list of them, and only distinctive
+ * names — "Shah Rasool Colony", "Zamzama", "Ancholi" — can ever identify a
+ * parent this way.
+ *
+ * Returns the TOWN. The sub-area itself is recovered separately by
+ * `extractSubAreaForTown`, which the callers already run.
+ */
+function resolveTownBySubAreaName(value: string, city: string): string | null {
+  const needle = strictSubAreaVariants(value);
+  if (needle.size === 0) return null;
+
+  let found: string | null = null;
+  for (const town of getTownsForCity(city)) {
+    // A town that cannot be pre-selected anyway is not worth an ambiguity.
+    if (isDeprecatedTown(city, town)) continue;
+    const owns = getSubAreasForTown(city, town).some((subArea) =>
+      variantsIntersect(needle, strictSubAreaVariants(subArea)),
+    );
+    if (!owns) continue;
+    if (found && found !== town) return null;
+    found = town;
+  }
+  return found;
+}
+
+/**
+ * `subAreaVariants` minus the inferred half — exact fold and the registry's own
+ * parenthetical equivalences, with NO generic-suffix stripping.
+ *
+ * The split exists because the two rules have different standing. A
+ * parenthetical is the registry asserting, in its own text, that "Block 20" and
+ * "Ancholi" name one place. Dropping "Colony" off the end is this file
+ * GUESSING that two names mean one place, and inferring a PARENT from a guess
+ * is how "Shah Rasool" pulled 12 DHA-labelled pins into Clifton: the registry
+ * files "Shah Rasool Colony" under Clifton, the geocoder's bare "Shah Rasool"
+ * is a boundary name, and the strip silently turned a disagreement into a
+ * confident answer, costing Clifton 39 points of precision in one rule.
+ *
+ * The strip is still applied by `extractSubAreaForTown`, where the town has
+ * already been agreed by other means and the only open question is which rung
+ * below it was named. Weak evidence is fine for choosing a sub-area; it is not
+ * fine for choosing a parent.
+ */
+function strictSubAreaVariants(value: string): Set<string> {
+  const out = new Set<string>();
+  const raw = (value || "").trim();
+  if (!raw) return out;
+
+  const folded = foldName(raw);
+  if (folded) out.add(folded);
+
+  const parenthetical = raw.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+  if (parenthetical) {
+    for (const half of [parenthetical[1], parenthetical[2]]) {
+      const f = foldName(half);
+      if (f) out.add(f);
+    }
+  }
+  return out;
 }
 
 export function resolveGeocodedName(
@@ -1628,7 +1969,29 @@ export function resolveGeocodedName(
       // shares a prefix with another town's block can never be shadowed.
       if (matchesTownWithSubArea(value, candidateCity, town)) {
         matches.set(key, town);
+        continue;
       }
+      // Same shape, one rung weaker: the town is named and the trailing unit is
+      // real but unlisted. Still a certain TOWN — see `matchesTownWithUnknownUnit`.
+      if (matchesTownWithUnknownUnit(value, candidateCity, town)) {
+        matches.set(key, town);
+      }
+    }
+  }
+
+  // Later still, and only when nothing above matched at all: the geocoder named
+  // a sub-area on its OWN, with no town attached — "Shah Rasool" for a Clifton
+  // pin, where the registry's entry is the sub-area "Shah Rasool Colony".
+  //
+  // Deliberately not folded into the loop above. It is the weakest evidence
+  // here, so it must never compete with a whole-name or town-plus-block match,
+  // and it is refused outright unless the name identifies ONE town — which
+  // rules out every numbered block by construction ("Block 5" is a sub-area of
+  // eleven Karachi towns, so it resolves to none of them).
+  if (matches.size === 0) {
+    for (const candidateCity of candidateCities) {
+      const byName = resolveTownBySubAreaName(value, candidateCity);
+      if (byName) matches.set(subAreaKey(candidateCity, byName), byName);
     }
   }
 

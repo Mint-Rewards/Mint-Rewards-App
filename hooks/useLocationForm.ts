@@ -24,6 +24,7 @@ import {
 } from "@/utils/locationForm";
 import {
   getBlockLabel,
+  getPrefillConfidence,
   getProvinceForCity,
   isCanonicalTown,
   getHouseNoField,
@@ -223,6 +224,33 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
   const derivedRef = useRef({ town: false, subArea: false });
 
   /**
+   * Whether the town currently in the field is a GUESS the user should check.
+   *
+   * True only where both halves hold: a pin derived this town (rather than the
+   * user choosing it), and the registry rates that area `provisional` rather
+   * than `measured` — see `getPrefillConfidence`. `measured` areas are shown
+   * exactly as they always were, because they carry a >=85% figure and a note
+   * on every one of them would train people to ignore the note.
+   *
+   * Computed at render rather than stored, and deliberately so. The obvious
+   * alternative — a state flag written beside every `derivedRef.current.town`
+   * write — cannot be made correct here: `applyPinPrefill` decides `town` and
+   * `derived.town` INSIDE a `setValues` updater, which React runs lazily at
+   * render time. The existing code gets away with it only because it hands the
+   * updater an object and re-reads that same reference later; a boolean or a
+   * string captured the same way is still empty when the line after
+   * `setValues` runs. Deriving here sidesteps the ordering entirely: by the
+   * time this body executes, the queue has been drained.
+   *
+   * Reading a ref during render is the read half of that rule, not the write
+   * half — and every transition that changes this also changes `values`, so
+   * there is no state this can be stale against.
+   */
+  const townPrefillIsGuess =
+    derivedRef.current.town &&
+    getPrefillConfidence(values.city, values.town) === "provisional";
+
+  /**
    * A town edit held back until the user says which kind of edit it is.
    *
    * Null whenever nothing is being asked, which is the overwhelming majority of
@@ -372,6 +400,9 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
    * coordinate it did not describe.
    */
   const applyTownChange = useCallback((change: PendingTownChange) => {
+    // Clearing `derivedRef.current.town` is also what drops the guess note:
+    // the user just answered the question themselves, so whatever they picked
+    // is their own answer. See `townPrefillIsGuess`.
     derivedRef.current = { town: false, subArea: false };
     setSubAreaIsOther(false);
     if (change.kind === "select") {
@@ -684,6 +715,7 @@ export function useLocationForm(initial?: Partial<LocationFormValues>) {
     townIsCustom,
     subAreaIsOther,
     showSubArea,
+    townPrefillIsGuess,
 
     provinceOptions,
     cityOptions,

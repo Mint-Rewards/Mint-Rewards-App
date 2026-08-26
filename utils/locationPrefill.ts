@@ -212,6 +212,22 @@ export interface LocationPrefill {
   town: string;
   subArea: string;
   street: string;
+  /**
+   * Where `town` came from. `"geocoder"` covers BOTH resolution passes — the
+   * one the server did and the second one `resolveFromUnmatched` does here.
+   *
+   * The distinction the callers need is provenance, not which pass found it:
+   * a town the PIN produced behaves differently from one the user typed at
+   * signup. It suppresses the Issue 9 "did you move?" prompt (correcting a
+   * geocoder mistake is the whole purpose of that screen) and it is what marks
+   * a `provisional` area as a guess in the UI.
+   *
+   * The modal used to infer this by comparing `town` to `geo.areaName`, which
+   * silently answered "saved" for every second-pass hit — and the second pass
+   * is where most of Karachi's resolutions come from. Reported explicitly so
+   * the two cannot drift apart again.
+   */
+  townSource: "geocoder" | "saved" | "none";
 }
 
 /** Only the saved fields this mapper reads. Keeps the tests honest. */
@@ -262,6 +278,7 @@ export function buildPrefill(
     town: savedTown,
     subArea: savedSubArea,
     street: savedStreet,
+    townSource: savedTown ? "saved" : "none",
   };
 
   if (!geo) return saved;
@@ -287,10 +304,11 @@ export function buildPrefill(
   // it is worth no more than the user's own answer.
   const city = geoCity && getProvinceForCity(geoCity) !== null ? geoCity : savedCity;
 
-  const town =
+  const geoTown =
     geoArea && isCanonicalTown(city, geoArea) && shouldPrefillArea(city, geoArea)
       ? geoArea
-      : secondPass.town || savedTown;
+      : secondPass.town;
+  const town = geoTown || savedTown;
 
   // The geocoder never supplies a sub-area — `blockHint` is explicitly not one
   // — so this field only ever carries the user's own saved value forward. It
@@ -321,5 +339,9 @@ export function buildPrefill(
     // saved street because it is derived from the pin the user just placed,
     // which is fresher than a string typed at signup.
     street: clean(geo.blockHint) || savedStreet,
+    // Last, after the address fields: this is provenance, not part of the
+    // address. Both passes count as "geocoder" — each derived the town from
+    // the pin the user just placed, which is the property every caller acts on.
+    townSource: geoTown ? "geocoder" : town ? "saved" : "none",
   };
 }

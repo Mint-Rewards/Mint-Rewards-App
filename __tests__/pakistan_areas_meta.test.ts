@@ -19,6 +19,7 @@ import {
   getAreaCentroid,
   getAreaMeta,
   getBlockLabel,
+  getPrefillConfidence,
   getHouseNoField,
   shouldPrefillArea,
   getCityCentroid,
@@ -92,7 +93,15 @@ describe("getBlockLabel", () => {
 // >=85% precision figure recorded next to its AREA_META entry and in
 // scripts/geocode-spike/P0.6-REPORT.md. Nothing else may be promoted without
 // the same evidence — see the "defaults to false" test below.
-const PROMOTED_PREFILL_AREAS = ["Karachi::Korangi", "Karachi::DHA"];
+const PROMOTED_PREFILL_AREAS = [
+  "Karachi::Korangi",
+  "Karachi::DHA",
+  // Added 2026-08-26. Both were held back by SAMPLE SIZE, not precision, and
+  // both crossed n>=20 when the alias-aware sub-area stripping landed — see
+  // their AREA_META comments and `scripts/measure-karachi-prefill.ts`.
+  "Karachi::PECHS",
+  "Karachi::Gulistan-e-Jauhar",
+];
 
 describe("geocodePrefill", () => {
   // Promotion is evidence-only (P0.1c). Shipping any other `true` before the
@@ -109,9 +118,10 @@ describe("geocodePrefill", () => {
   });
 
   // 2026-08-25: n=55, 98% (Korangi) and n=24, 100% (DHA, after correcting
-  // the Darussalam Society truth-label error — see P0.6-REPORT.md). The
-  // only two areas measured over the n>=20 / >=85% gate.
-  it("promotes exactly Korangi and DHA, and only them, on the recorded evidence", () => {
+  // the Darussalam Society truth-label error — see P0.6-REPORT.md).
+  // 2026-08-26: n=20, 100% (PECHS) and n=21, 90% (Gulistan-e-Jauhar).
+  // The only four areas measured over the n>=20 / >=85% gate.
+  it("promotes exactly the four measured areas, and only them, on the recorded evidence", () => {
     const promoted = Object.entries(AREA_META)
       .filter(([, meta]) => meta.geocodePrefill)
       .map(([key]) => key);
@@ -996,9 +1006,24 @@ describe("never prefill a consumer user into a non-residential area", () => {
   });
 
   it("still refuses a residential area that has not cleared precision", () => {
-    // The residential rule is additional, not a replacement.
-    expect(shouldPrefillArea("Karachi", "Clifton")).toBe(false);
+    // The residential rule is additional, not a replacement. Asserted in
+    // Lahore, which is NOT a broad-prefill city, so the evidence-only default
+    // is the only rule in play there — the same assertion Karachi's Clifton
+    // carried until the 2026-08-26 widening.
+    expect(shouldPrefillArea("Lahore", "Johar Town")).toBe(false);
     expect(shouldPrefillArea("Nowhere", "Nothing")).toBe(false);
+  });
+
+  it("offers an unmeasured KARACHI area as a flagged guess instead", () => {
+    // The 2026-08-26 owner decision, asserted where it is easiest to find: in
+    // a broad-prefill city an unmeasured residential area IS pre-selected, and
+    // what stops it being presented as an answer is the tier, not a blank.
+    expect(shouldPrefillArea("Karachi", "Clifton")).toBe(true);
+    expect(getPrefillConfidence("Karachi", "Clifton")).toBe("provisional");
+    expect(getPrefillConfidence("Karachi", "DHA")).toBe("measured");
+    // The veto still outranks the tier at every level.
+    expect(getPrefillConfidence("Karachi", "West Wharf")).toBe("none");
+    expect(getPrefillConfidence("Lahore", "Johar Town")).toBe("none");
   });
 });
 

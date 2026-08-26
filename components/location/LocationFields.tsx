@@ -270,6 +270,25 @@ export function LocationFields({
         />
 
         {errors.town ? <Text style={styles.errorText}>{errors.town}</Text> : null}
+
+        {/*
+          The town was guessed from the pin, and the registry rates that area
+          `provisional` rather than `measured` — see `getPrefillConfidence`.
+          Said out loud because the alternative is presenting an unmeasured
+          guess in the same voice as a >=85%-precision one, and a user who taps
+          through a silent pre-selection keeps whatever it happened to say.
+          Suppressed for `measured` areas on purpose: a note on every prefill
+          is a note nobody reads.
+        */}
+        {form.townPrefillIsGuess && !errors.town ? (
+          <View style={styles.guessNote}>
+            <Ionicons name="help-circle-outline" size={15} color="#8A5A00" />
+            <Text style={styles.guessNoteText}>
+              We guessed this from your pin — please check it&apos;s right.
+            </Text>
+          </View>
+        ) : null}
+
         <Text style={styles.hint}>
           {form.townIsCustom
             ? "Tap the list icon to choose from available towns instead"
@@ -395,6 +414,22 @@ const styles = StyleSheet.create({
   },
   errorText: { color: "#e53e3e", fontSize: 14, marginTop: 4 },
   hint: { fontSize: 13, color: "#718096", marginTop: 6 },
+  // Amber, not red: this is a "check this" and not an error. It has to read as
+  // a different kind of thing from `errorText` directly above it, which is why
+  // it carries its own icon and tint rather than reusing the hint style.
+  guessNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#F3D9A4",
+    backgroundColor: "#FFF8E8",
+  },
+  guessNoteText: { flex: 1, fontSize: 13, color: "#8A5A00" },
   suggestionBox: {
     marginTop: 10,
     borderRadius: 12,
