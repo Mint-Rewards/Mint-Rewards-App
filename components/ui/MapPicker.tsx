@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
-import { resolveSelectionViewport } from "@/utils/locationForm";
+import { isFixWithinCity, resolveSelectionViewport } from "@/utils/locationForm";
 import {
   FlowStep,
   trackFlowAbandoned,
@@ -144,6 +144,26 @@ export default function MapPicker({
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
       };
+
+      // A fix that is nowhere near the city the user picked must NOT move the
+      // camera. This used to be unconditional, and was right when it was
+      // written: with no centroids the alternative was the whole of Pakistan,
+      // which a fix anywhere on earth improved on. Now the map has already
+      // opened on the selected city, and a distant fix makes it worse — it
+      // describes where the phone is, not where the address being entered is.
+      // The case that surfaced it is the everyday one: an iOS Simulator
+      // reports Apple HQ, so the camera flew from Karachi to California on
+      // every open. A relative's address or a trip does the same thing to a
+      // real user.
+      //
+      // Rejected here rather than in the reducer because it is a VIEWPORT
+      // judgement, and the reducer deliberately knows nothing about cities.
+      if (!isFixWithinCity(coords.latitude, coords.longitude, city)) {
+        // Reported as the centroid, not `device_gps` — the camera is showing
+        // the centroid, and the funnel must say what is on screen.
+        return false;
+      }
+
       // GPS is viewport only: it may recenter the camera, it must never
       // place or move the pin. `gps_fix` is a documented no-op.
       dispatch({ type: "gps_fix" });

@@ -1449,6 +1449,63 @@ function variantsIntersect(a: Set<string>, b: Set<string>): boolean {
   return false;
 }
 
+/**
+ * True when `value` names a SUB-AREA of `town` prefixed by the town itself —
+ * "DHA Phase 8", "Gulshan-e-Iqbal Block 13".
+ *
+ * Geocoders routinely answer at one rung finer than this registry stores. OSM's
+ * `neighbourhood` for a DHA pin is "DHA Phase 8"; the registry has the town
+ * "DHA" with "Phase 8" as a sub-area beneath it, and no pass above this one can
+ * bridge them — an exact match fails, no alias covers eight phases, and the
+ * affix-tolerant pass will not fold a whole extra word away.
+ *
+ * The constraint that makes this safe is that the remainder must be a REAL
+ * sub-area OF THAT TOWN. "DHA Phase 8" resolves only because DHA actually has a
+ * Phase 8; a string like "DHA Marina" matches nothing and stays unresolved,
+ * rather than being folded down to "DHA" on the strength of a shared prefix.
+ *
+ * Returns the TOWN, not the sub-area. The sub-area is a second answer this
+ * function has no way to return, and one the user picks for themselves.
+ */
+function matchesTownWithSubArea(
+  value: string,
+  city: string,
+  town: string,
+): boolean {
+  return extractSubAreaForTown(value, city, town) !== null;
+}
+
+/**
+ * The CANONICAL sub-area encoded in a "<Town> <SubArea>" string, or null.
+ *
+ * "DHA Phase 8" in Karachi/DHA -> "Phase 8". The town half is stripped and the
+ * remainder must fold-match an entry in that town's own sub-area list, so the
+ * value returned is always a registry string — never the geocoder's. That
+ * distinction is what keeps this inside the rule that a raw geocoder string is
+ * never written into a canonical field: nothing raw survives the match, only
+ * the registry's own spelling of the thing it matched.
+ *
+ * Returns null when the remainder is not a real sub-area of that town, so
+ * "DHA Marina" yields nothing rather than being forced onto the nearest entry.
+ */
+export function extractSubAreaForTown(
+  value: string,
+  city: string,
+  town: string,
+): string | null {
+  const folded = foldName(value);
+  const foldedTown = foldName(town);
+  if (!foldedTown || folded === foldedTown) return null;
+  if (!folded.startsWith(foldedTown)) return null;
+  const remainder = folded.slice(foldedTown.length);
+  if (!remainder) return null;
+  return (
+    getSubAreasForTown(city, town).find(
+      (subArea) => foldName(subArea) === remainder,
+    ) ?? null
+  );
+}
+
 export function resolveGeocodedName(
   raw: string,
   city?: string,
@@ -1494,6 +1551,13 @@ export function resolveGeocodedName(
         continue;
       }
       if (aliases?.some((alias) => variantsIntersect(needleVariants, nameVariants(alias)))) {
+        matches.set(key, town);
+        continue;
+      }
+      // Last of all: the geocoder named a block inside this town rather than
+      // the town. Runs after every whole-name pass so a town that genuinely
+      // shares a prefix with another town's block can never be shadowed.
+      if (matchesTownWithSubArea(value, candidateCity, town)) {
         matches.set(key, town);
       }
     }

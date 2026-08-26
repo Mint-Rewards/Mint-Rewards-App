@@ -79,6 +79,128 @@ describe("buildPrefill — the geocoder is an enhancement, not a precondition", 
     expect(result.town).toBe("Gulshan-e-Iqbal");
   });
 
+  it("resolves a block the SERVER could not place — the DHA Phase 8 case", () => {
+    // What the backend actually returns for most DHA pins: it has no sub-area
+    // lists, so "DHA Phase 8" is unresolvable there and comes back unmatched
+    // with resolved:false. The full registry here knows Phase 8 is a block
+    // inside DHA, and DHA is one of the two areas cleared for prefill.
+    const result = buildPrefill(
+      {
+        ...EMPTY_GEOCODE_RESULT,
+        unmatched: ["Karachi District", "DHA Phase 8"],
+      },
+      { city: "Karachi", town: "", subArea: "", address: "" },
+    );
+    expect(result.town).toBe("DHA");
+    expect(result.city).toBe("Karachi");
+  });
+
+  it("takes the PHASE out of the same string as the town", () => {
+    // "DHA Phase 8" names both rungs. Resolving only the town leaves the user
+    // re-entering a required field the geocoder already answered.
+    const result = buildPrefill(
+      { ...EMPTY_GEOCODE_RESULT, unmatched: ["DHA Phase 8"] },
+      { city: "Karachi", town: "", subArea: "", address: "" },
+    );
+    expect(result.town).toBe("DHA");
+    expect(result.subArea).toBe("Phase 8");
+  });
+
+  it("returns the REGISTRY spelling of the sub-area, not the geocoder's", () => {
+    const result = buildPrefill(
+      { ...EMPTY_GEOCODE_RESULT, unmatched: ["dha  phase-2 extension"] },
+      { city: "Karachi", town: "", subArea: "", address: "" },
+    );
+    expect(result.subArea).toBe("Phase 2 Extension");
+  });
+
+  it("drops the WHOLE candidate when it names a block that does not exist", () => {
+    const result = buildPrefill(
+      { ...EMPTY_GEOCODE_RESULT, unmatched: ["DHA Phase 99"] },
+      { city: "Karachi", town: "", subArea: "", address: "" },
+    );
+    // Not just the phase — the town goes too, and that is deliberate. The
+    // prefix is only evidence of the town BECAUSE the remainder is a real
+    // sub-area of it; take that away and "DHA Phase 99" is an unrecognised
+    // string that merely starts with three familiar letters. Folding it down
+    // to "DHA" would be exactly the confident guess this resolver refuses to
+    // make — the same reason "DHA Marina" resolves to nothing.
+    expect(result.town).toBe("");
+    expect(result.subArea).toBe("");
+  });
+
+  it("finds the phase in blockHint when the SERVER already resolved the town", () => {
+    // The other half of the same problem: with the town resolved server-side
+    // nothing is left in `unmatched`, and the phase survives only in the hint.
+    const result = buildPrefill(
+      {
+        ...EMPTY_GEOCODE_RESULT,
+        resolved: true,
+        cityName: "Karachi",
+        areaName: "DHA",
+        blockHint: "DHA Phase 6",
+      },
+      { city: "Karachi", town: "", subArea: "", address: "" },
+    );
+    expect(result.town).toBe("DHA");
+    expect(result.subArea).toBe("Phase 6");
+  });
+
+  it("never lets a raw hint reach the sub-area field unmatched", () => {
+    const result = buildPrefill(
+      {
+        ...EMPTY_GEOCODE_RESULT,
+        resolved: true,
+        cityName: "Karachi",
+        areaName: "DHA",
+        blockHint: "Some Street Nobody Curated",
+      },
+      { city: "Karachi", town: "", subArea: "", address: "" },
+    );
+    expect(result.subArea).toBe("");
+    // It is still allowed to reach the free-text street line, and only there.
+    expect(result.street).toBe("Some Street Nobody Curated");
+  });
+
+  it("still refuses an unmatched candidate its area is not cleared for", () => {
+    // Gulshan-e-Iqbal is geocodePrefill:false — it never cleared the accuracy
+    // gate. Widening WHICH strings resolve must not widen what may be
+    // pre-selected.
+    const result = buildPrefill(
+      {
+        ...EMPTY_GEOCODE_RESULT,
+        unmatched: ["Gulshan-e-Iqbal Block 13"],
+      },
+      { city: "Karachi", town: "", subArea: "", address: "" },
+    );
+    expect(result.town).toBe("");
+  });
+
+  it("refuses an unmatched candidate from a different city", () => {
+    const result = buildPrefill(
+      { ...EMPTY_GEOCODE_RESULT, unmatched: ["DHA Phase 8"] },
+      { city: "Lahore", town: "", subArea: "", address: "" },
+    );
+    expect(result.town).toBe("");
+  });
+
+  it("outranks a saved town, exactly as a first-pass answer does", () => {
+    const result = buildPrefill(
+      { ...EMPTY_GEOCODE_RESULT, unmatched: ["DHA Phase 8"] },
+      { city: "Karachi", town: "Clifton", subArea: "", address: "" },
+    );
+    // Consistency with the trusted path, which already prefers a permitted
+    // geocoder answer to the saved value: it is derived from the pin just
+    // placed, which is fresher than a string typed at signup. The second pass
+    // is if anything the more constrained of the two — it must ALSO be
+    // canonical for the user's own city and cleared by `shouldPrefillArea`.
+    //
+    // Nothing is lost by this: the value is a pre-selection the user can change
+    // before saving, and the form-level guard (`applyPinPrefill`) separately
+    // refuses to overwrite a town the user has already answered in session.
+    expect(result.town).toBe("DHA");
+  });
+
   it("returns empty strings, never undefined, for an empty profile", () => {
     expect(buildPrefill(EMPTY_GEOCODE_RESULT, {})).toEqual({
       city: "",

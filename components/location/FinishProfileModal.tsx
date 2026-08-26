@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { MissingField } from "@/utils/locationGate";
+import type { ProfileFocusTarget } from "@/utils/profileFocus";
 
 /**
  * The checklist the user sees, which is NOT one row per missing field.
@@ -26,16 +27,27 @@ import type { MissingField } from "@/utils/locationGate";
  * Name and email come from signup, so they are normally already ticked, which is
  * what makes a fresh account read "2 of 5 complete".
  */
-const ROWS: { key: string; label: string; covers: MissingField[] }[] = [
-  { key: "userName", label: "Name", covers: ["userName"] },
-  { key: "email", label: "Email", covers: [] },
-  { key: "phone", label: "Phone Number", covers: ["phone"] },
+const ROWS: {
+  key: string;
+  label: string;
+  covers: MissingField[];
+  /**
+   * Where Edit Profile should jump to when this row is tapped. Null for rows
+   * that can never be outstanding, so they are never tappable.
+   */
+  focus: ProfileFocusTarget | null;
+}[] = [
+  { key: "userName", label: "Name", covers: ["userName"], focus: "userName" },
+  // Read-only on the form and set at signup: it has no gap to route to.
+  { key: "email", label: "Email", covers: [], focus: null },
+  { key: "phone", label: "Phone Number", covers: ["phone"], focus: "phone" },
   {
     key: "address",
     label: "Pickup address",
     covers: ["city", "town", "subArea", "houseNo"],
+    focus: "address",
   },
-  { key: "pin", label: "Map pin", covers: ["pin"] },
+  { key: "pin", label: "Map pin", covers: ["pin"], focus: "pin" },
 ];
 
 interface Props {
@@ -44,6 +56,11 @@ interface Props {
   /** Whether a skip is offered. False under a "hard" gate. */
   dismissible: boolean;
   onContinue: () => void;
+  /**
+   * An outstanding row was tapped. Same destination as Continue, but says which
+   * gap the user pointed at so the form can open on it.
+   */
+  onSelectRow: (focus: ProfileFocusTarget) => void;
   onDismiss: () => void;
 }
 
@@ -52,6 +69,7 @@ export function FinishProfileModal({
   missing,
   dismissible,
   onContinue,
+  onSelectRow,
   onDismiss,
 }: Props) {
   const rows = ROWS.map((row) => ({
@@ -89,22 +107,37 @@ export function FinishProfileModal({
           </Text>
 
           <View style={styles.rows}>
-            {rows.map((row) => (
-              <View
-                key={row.key}
-                style={[styles.row, row.done && styles.rowDone]}
-              >
-                {row.done ? (
-                  <Ionicons name="checkmark" size={18} color="#9FD8C8" />
-                ) : null}
-                <Text style={[styles.rowLabel, row.done && styles.rowLabelDone]}>
-                  {row.label}
-                </Text>
-                {row.done ? null : (
-                  <Ionicons name="chevron-forward" size={18} color="#CFE9E2" />
-                )}
-              </View>
-            ))}
+            {rows.map((row) => {
+              // An outstanding row is a button; a finished one is not. The
+              // chevron already promised this — it rendered on exactly the
+              // outstanding rows while nothing was listening for a tap.
+              const target = row.done ? null : row.focus;
+              const Row = target ? TouchableOpacity : View;
+              return (
+                <Row
+                  key={row.key}
+                  style={[styles.row, row.done && styles.rowDone]}
+                  {...(target
+                    ? {
+                        onPress: () => onSelectRow(target),
+                        activeOpacity: 0.85,
+                        accessibilityRole: "button" as const,
+                        accessibilityLabel: `${row.label}, not filled in. Opens your profile to complete it.`,
+                      }
+                    : {})}
+                >
+                  {row.done ? (
+                    <Ionicons name="checkmark" size={18} color="#9FD8C8" />
+                  ) : null}
+                  <Text style={[styles.rowLabel, row.done && styles.rowLabelDone]}>
+                    {row.label}
+                  </Text>
+                  {target ? (
+                    <Ionicons name="chevron-forward" size={18} color="#CFE9E2" />
+                  ) : null}
+                </Row>
+              );
+            })}
           </View>
 
           <TouchableOpacity

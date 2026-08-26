@@ -18,9 +18,11 @@
 
 import { authenticatedFetch, apiUrl } from "@/utils/api";
 import {
+  extractSubAreaForTown,
   getProvinceForCity,
   getSubAreasForTown,
   isCanonicalTown,
+  resolveGeocodedName,
   shouldPrefillArea,
 } from "@/utils/pakistan_areas";
 import type { UserProfile } from "@/store/store";
@@ -142,6 +144,68 @@ export async function reverseGeocode(
   }
 }
 
+/**
+ * Second-pass resolution of the candidates the SERVER could not place.
+ *
+ * The server ships a trimmed registry — towns, aliases and coarse admin units,
+ * no sub-area lists — so it cannot tell that "DHA Phase 8" names a block inside
+ * the town "DHA". That is not a rare shape: OSM's `neighbourhood` for most of
+ * DHA is the phase, so the town never prefilled anywhere in it. Everything the
+ * server tried and failed on comes back in `unmatched`, and this module has the
+ * complete registry, so the finer pass runs here.
+ *
+ * Scoped to `city` — the city the USER chose, which is a better answer than the
+ * geocoder's own, and the thing that makes a bare block name unambiguous.
+ *
+ * Every rule the first pass obeys still applies: the result must be canonical
+ * for the city and must pass `shouldPrefillArea`, so this can widen WHICH
+ * strings resolve without widening what is allowed to be pre-selected.
+ */
+function resolveFromUnmatched(
+  geo: ReverseGeocodeResult,
+  city: string,
+): { town: string; subArea: string } {
+  const none = { town: "", subArea: "" };
+  if (!city) return none;
+  for (const raw of geo.unmatched) {
+    const candidate = clean(raw);
+    const resolved = resolveGeocodedName(candidate, city);
+    if (resolved && isCanonicalTown(city, resolved) && shouldPrefillArea(city, resolved)) {
+      return {
+        town: resolved,
+        // The same string named both rungs — "DHA Phase 8" is the town AND the
+        // phase — so throwing the second half away asks the user to re-enter
+        // something the geocoder already told us.
+        subArea: extractSubAreaForTown(candidate, city, resolved) ?? "",
+      };
+    }
+  }
+  return none;
+}
+
+/**
+ * The sub-area a geocoder named for a town it has already agreed on.
+ *
+ * Covers the case `resolveFromUnmatched` cannot: the SERVER resolved the town
+ * (so nothing is left in `unmatched`), but the phase still only exists inside
+ * the raw `blockHint` — which for a DHA pin is the whole "DHA Phase 8" string.
+ *
+ * `blockHint` may not be WRITTEN to a canonical field, and this does not write
+ * it: it is used only as something to match against, and the value returned is
+ * the registry's own spelling of whichever sub-area it matched exactly. A hint
+ * that matches nothing yields "".
+ */
+function subAreaFromHint(
+  geo: ReverseGeocodeResult,
+  city: string,
+  town: string,
+): string {
+  if (!city || !town) return "";
+  const hint = clean(geo.blockHint);
+  if (!hint) return "";
+  return extractSubAreaForTown(hint, city, town) ?? "";
+}
+
 /** What the confirm modal opens with. "" means "unknown", never `undefined`. */
 export interface LocationPrefill {
   city: string;
@@ -200,10 +264,24 @@ export function buildPrefill(
     street: savedStreet,
   };
 
-  if (!geo || !geo.resolved) return saved;
+  if (!geo) return saved;
 
-  const geoCity = clean(geo.cityName);
-  const geoArea = clean(geo.areaName);
+  // `resolved: false` means the server placed nothing, and its `cityName` /
+  // `areaName` must then be ignored outright — a caller must never write a
+  // stale guess from a payload that says it failed.
+  //
+  // `unmatched` is different, and is the ONLY thing read from an unresolved
+  // payload. It holds the raw candidates the server tried, and the server
+  // cannot always place them: its registry copy
+  // (`lib/data/locationRegistry.json`) carries towns, aliases and coarse admin
+  // units but NOT sub-area lists, so an answer naming a block — "DHA Phase 8",
+  // which is how OSM labels most of DHA — is unresolvable there by
+  // construction. Those strings are re-resolved here, through the full
+  // registry and against the user's own city, under exactly the same rules the
+  // trusted path obeys. See `resolveFromUnmatched`.
+  const geoCity = geo.resolved ? clean(geo.cityName) : "";
+  const geoArea = geo.resolved ? clean(geo.areaName) : "";
+  const secondPass = resolveFromUnmatched(geo, geoCity || savedCity);
 
   // A city the registry does not know scopes every later lookup to nothing, so
   // it is worth no more than the user's own answer.
@@ -212,7 +290,7 @@ export function buildPrefill(
   const town =
     geoArea && isCanonicalTown(city, geoArea) && shouldPrefillArea(city, geoArea)
       ? geoArea
-      : savedTown;
+      : secondPass.town || savedTown;
 
   // The geocoder never supplies a sub-area — `blockHint` is explicitly not one
   // — so this field only ever carries the user's own saved value forward. It
@@ -220,10 +298,20 @@ export function buildPrefill(
   // and is dropped once the geocoder has moved the town unless it is still
   // canonical there: showing a block from a different area as though the user
   // had picked it there is worse than showing nothing.
+  // A sub-area derived from the geocoder's own string, where it gave one. It
+  // must belong to the town that was actually chosen above — a phase from a
+  // town the second pass proposed but which lost to a saved value is not an
+  // answer about this address.
+  const geoSubArea =
+    (town === secondPass.town ? secondPass.subArea : "") ||
+    subAreaFromHint(geo, city, town);
+
   const subArea =
-    town === savedTown || getSubAreasForTown(city, town).includes(savedSubArea)
-      ? savedSubArea
-      : "";
+    geoSubArea && getSubAreasForTown(city, town).includes(geoSubArea)
+      ? geoSubArea
+      : town === savedTown || getSubAreasForTown(city, town).includes(savedSubArea)
+        ? savedSubArea
+        : "";
 
   return {
     city,

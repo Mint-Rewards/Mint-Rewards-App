@@ -468,7 +468,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   dismissLocationPrompt: () => set({ locationPromptShown: true }),
 
-  setLocationEvaluation: (evaluation) => set({ locationEvaluation: evaluation }),
+  /**
+   * Stores the server's location verdict, and stamps the user's
+   * `locationVersion` from it.
+   *
+   * The stamp is the point. `resolveLocationGate` decides whether to re-prompt
+   * by reading `user.locationVersion`, and the PATCH that completes a location
+   * bumps it SERVER-side — after `updateProfile`'s `getProfile()` has already
+   * refetched the user. Without this write the store keeps the pre-bump value
+   * until some later refetch, so a user who just finished their profile is
+   * asked again on their next visit to Home.
+   *
+   * `currentVersion`, never `version`. `version` is the constant naming which
+   * questionnaire is current and comes back to EVERY caller, complete or not;
+   * writing it would mark the entire userbase complete and switch the gate off
+   * for good. `currentVersion` is this user's own stamp, which the backend
+   * deliberately synthesizes post-bump so a completing PATCH already reports
+   * the new value.
+   */
+  setLocationEvaluation: (evaluation) =>
+    set((state) => ({
+      locationEvaluation: evaluation,
+      user:
+        state.user && evaluation
+          ? { ...state.user, locationVersion: evaluation.currentVersion }
+          : state.user,
+    })),
 
   setUserData: (userData) =>
     set((state) => ({

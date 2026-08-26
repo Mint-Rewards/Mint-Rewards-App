@@ -23,9 +23,32 @@ interface Props {
   clearError: (field: string) => void;
   /** Renders the pin row and its error. Hosts that show their own map pass false. */
   showPinRow?: boolean;
+  /**
+   * Renders the province filter above the city picker.
+   *
+   * True everywhere today, including the confirm modal (owner request,
+   * 2026-08-26). It was briefly false there on the reasoning that the sheet
+   * arrives with a city already resolved from the pin — but a resolved city can
+   * be the WRONG city, and correcting it in a 58-entry list without the filter
+   * is the harder half of the job, not the easier one.
+   *
+   * The prop stays because the sheet is space-constrained and a future host may
+   * want the leaner form.
+   */
+  showProvince?: boolean;
   onOpenMap?: () => void;
   /** Street address is optional; a host with no room for it can hide it. */
   showStreet?: boolean;
+  /**
+   * Anchor for the pin row, so a host that scrolls can bring it into view.
+   *
+   * The pin is the one checklist destination with nothing focusable in it — it
+   * is a button, not an input — so a host cannot reach it with `.focus()` the
+   * way it can the name or phone fields. Handing out the ref is the smallest
+   * thing that lets the host scroll to it without this component learning
+   * anything about scrolling.
+   */
+  pinRef?: React.RefObject<View | null>;
 }
 
 export function LocationFields({
@@ -33,8 +56,10 @@ export function LocationFields({
   errors,
   clearError,
   showPinRow = true,
+  showProvince = true,
   onOpenMap,
   showStreet = true,
+  pinRef,
 }: Props) {
   const { values } = form;
 
@@ -60,6 +85,27 @@ export function LocationFields({
 
   return (
     <View>
+      {/* ── Province — a FILTER, never a saved answer ────────────────────────
+          It narrows a 58-entry city list to something scannable. The province
+          that is SAVED is derived from the chosen city in
+          `buildLocationPayload`, which is what keeps an impossible pair like
+          Karachi/Punjab off the server. Optional on purpose: leaving it blank
+          offers every city, so nobody is trapped behind it. */}
+      {showProvince ? (
+      <LocationPicker
+        label="Province"
+        placeholder="All provinces"
+        options={form.provinceOptions}
+        value={values.province}
+        onChange={(province) => {
+          form.selectProvince(province);
+          clearError("city");
+          clearError("town");
+        }}
+        testID="province-picker"
+      />
+      ) : null}
+
       <LocationPicker
         label="City"
         required
@@ -75,6 +121,57 @@ export function LocationFields({
         error={errors.city}
         testID="city-picker"
       />
+
+      {/* ── Pin — placed BEFORE the fields it fills in ──────────────────────
+          Third in the order, and that position is the design: the map has a
+          city to open on (`getSelectionRegion` aims at the city centroid), and
+          the pin then supplies the town, sub-area and street below it via
+          `applyPinPrefill`. Placing it after those fields would ask the user
+          for the same answers twice — and placing it FIRST would leave the map
+          opening on the whole country, since there would be no city to aim at.
+
+          The fields below stay editable, and stay answerable by hand: a
+          geocoder that resolves nothing (the state whenever the server has no
+          LOCATIONIQ_API_KEY) leaves them exactly as the user left them. */}
+      {showPinRow ? (
+        <View style={styles.group} ref={pinRef}>
+          <Text style={styles.label}>
+            Exact Location (Pin)<Text style={styles.asterisk}> *</Text>
+          </Text>
+          <TouchableOpacity
+            style={styles.pinBtn}
+            onPress={onOpenMap}
+            activeOpacity={0.8}
+            disabled={!values.city}
+          >
+            <Ionicons
+              name={values.latitude ? "location" : "location-outline"}
+              size={20}
+              color={values.city ? "#00528A" : "#a0aec0"}
+            />
+            <Text style={[styles.pinText, !values.city && styles.pinTextDisabled]}>
+              {values.latitude && values.longitude
+                ? `${parseFloat(values.latitude).toFixed(5)}, ${parseFloat(values.longitude).toFixed(5)}`
+                : values.city
+                  ? "Set location on map"
+                  : "Select city first"}
+            </Text>
+            {values.latitude ? (
+              <TouchableOpacity
+                onPress={form.clearPin}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close-circle" size={18} color="#a0aec0" />
+              </TouchableOpacity>
+            ) : (
+              <Ionicons name="chevron-forward" size={18} color="#a0aec0" />
+            )}
+          </TouchableOpacity>
+          {errors.location ? (
+            <Text style={styles.errorText}>{errors.location}</Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* ── Town ─────────────────────────────────────────────────────────── */}
       <View style={styles.group}>
@@ -219,38 +316,6 @@ export function LocationFields({
         </View>
       ) : null}
 
-      {showPinRow ? (
-        <View style={styles.group}>
-          <Text style={styles.label}>
-            Exact Location (Pin)<Text style={styles.asterisk}> *</Text>
-          </Text>
-          <TouchableOpacity style={styles.pinBtn} onPress={onOpenMap} activeOpacity={0.8}>
-            <Ionicons
-              name={values.latitude ? "location" : "location-outline"}
-              size={20}
-              color="#00528A"
-            />
-            <Text style={styles.pinText}>
-              {values.latitude && values.longitude
-                ? `${parseFloat(values.latitude).toFixed(5)}, ${parseFloat(values.longitude).toFixed(5)}`
-                : "Set location on map"}
-            </Text>
-            {values.latitude ? (
-              <TouchableOpacity
-                onPress={form.clearPin}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="close-circle" size={18} color="#a0aec0" />
-              </TouchableOpacity>
-            ) : (
-              <Ionicons name="chevron-forward" size={18} color="#a0aec0" />
-            )}
-          </TouchableOpacity>
-          {errors.location ? (
-            <Text style={styles.errorText}>{errors.location}</Text>
-          ) : null}
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -258,6 +323,7 @@ export function LocationFields({
 const styles = StyleSheet.create({
   group: { marginBottom: 20 },
   noGap: { marginBottom: 0 },
+  pinTextDisabled: { color: "#a0aec0" },
   label: { fontSize: 16, fontWeight: "600", color: "#2d3748", marginBottom: 8 },
   asterisk: { color: "#e53e3e", fontWeight: "700" },
   input: {

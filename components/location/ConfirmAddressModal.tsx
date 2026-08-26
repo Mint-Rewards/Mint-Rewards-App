@@ -125,6 +125,57 @@ export function ConfirmAddressModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Re-derives the town and sub-area after "Adjust pin".
+   *
+   * The mount effect above prefills from the SAVED coordinate; this is the same
+   * question asked again about a coordinate the user has just moved. Without it
+   * the modal keeps describing the old pin — which is the more misleading half
+   * of the two, since this modal's entire claim is "here is where we think you
+   * are, confirm it".
+   *
+   * `suggestedAreaRef` is updated in step, and only when the prefill actually
+   * applied. It is what `area_overridden` measures prefill accuracy against, so
+   * leaving it pointing at a suggestion made for a superseded pin would report
+   * overrides nobody performed. A new pin that resolves to nothing clears it:
+   * no suggestion was made, so no override is possible.
+   */
+  const prefillFromAdjustedPin = async (
+    latitude: string,
+    longitude: string,
+    seq: number,
+  ) => {
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    try {
+      const geo = await reverseGeocode(lat, lng, token || user?.token);
+      if (cancelledRef.current) return;
+      const prefill = buildPrefill(geo, {
+        // Scoped to the city on the form — the user's own answer, and the one
+        // thing that makes a bare block name unambiguous. Saved town/sub-area
+        // are deliberately not passed: this asks what the NEW pin says, and
+        // `applyPinPrefill` decides what may be replaced.
+        city: form.values.city,
+        town: "",
+        subArea: "",
+        address: "",
+      });
+      const applied = form.applyPinPrefill(
+        {
+          town: prefill.town,
+          subArea: prefill.subArea,
+          street: prefill.street,
+        },
+        seq,
+      );
+      if (applied) suggestedAreaRef.current = prefill.town || null;
+    } catch {
+      // reverseGeocode swallows its own failures; this guarantees an adjusted
+      // pin is never lost to a prefill that went wrong.
+    }
+  };
+
   const handleSave = async () => {
     const result = validateLocationValues(form.values, {
       requireSubArea:
@@ -242,8 +293,9 @@ export function ConfirmAddressModal({
         city={form.values.city}
         town={form.values.town}
         onConfirm={(lat, lng, placement) => {
-          form.confirmPin(lat, lng, placement);
-          setErrors((p) => ({ ...p, location: "" }));
+          const seq = form.confirmPin(lat, lng, placement);
+          setErrors((p) => ({ ...p, location: "", town: "", subArea: "" }));
+          prefillFromAdjustedPin(lat, lng, seq);
         }}
         onClose={() => setMapVisible(false)}
       />

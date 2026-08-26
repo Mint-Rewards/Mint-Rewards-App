@@ -13,6 +13,7 @@
 import {
   PAKISTAN_LOCATIONS,
   getAreaCentroid,
+  getCitiesForProvince,
   getCityCentroid,
   getProvinceForCity,
   getSelectableTownsForCity,
@@ -39,6 +40,39 @@ export const ALL_CITIES: string[] = Object.values(PAKISTAN_LOCATIONS.cities)
 /** Every city in the registry, province-independent. */
 export function getAllCities(): string[] {
   return ALL_CITIES;
+}
+
+/**
+ * Every province in the registry, sorted.
+ *
+ * Province is a FILTER over the city list, not a saved answer. It was removed
+ * as a field in P2.1 because an independently-chosen province lets someone
+ * store Karachi/Punjab — a pair the registry says cannot exist — and that
+ * remains true: `buildLocationPayload` still derives the saved `province` from
+ * the chosen city via `resolveProvinceForPayload`, and never reads this. What
+ * comes back here only narrows which cities are offered.
+ */
+export const ALL_PROVINCES: string[] = Object.keys(PAKISTAN_LOCATIONS.cities).sort(
+  (a, b) => a.localeCompare(b),
+);
+
+export function getAllProvinces(): string[] {
+  return ALL_PROVINCES;
+}
+
+/**
+ * The cities to offer, narrowed to a province when one is chosen.
+ *
+ * An empty or unknown province returns EVERY city rather than none. The picker
+ * must never be empty: province is a convenience for finding your city in a
+ * list of 58, so a province the registry does not recognise has to degrade to
+ * "no filter applied", not to a dead end the user cannot get out of.
+ */
+export function getCitiesForPicker(province: string | undefined): string[] {
+  const trimmed = (province || "").trim();
+  if (!trimmed) return ALL_CITIES;
+  const scoped = getCitiesForProvince(trimmed);
+  return scoped.length > 0 ? [...scoped].sort((a, b) => a.localeCompare(b)) : ALL_CITIES;
 }
 
 /**
@@ -140,6 +174,61 @@ export function getSelectionRegion(
   town: string | undefined,
 ): MapRegion | null {
   return resolveSelectionViewport(city, town)?.region ?? null;
+}
+
+/**
+ * How far a GPS fix may sit from the selected city's centroid and still be
+ * treated as "the user is here", in km.
+ *
+ * 60km is drawn around Karachi, the widest city in the registry at roughly 40km
+ * from centre to edge — the same figure the centroid sweep uses to decide
+ * whether an area belongs to its city. Generous on purpose: the cost of
+ * accepting a fix that is actually just outside the city is a viewport a few km
+ * off, while the cost of rejecting a real one is sending someone back to a
+ * city-wide view when the map could have opened on their street.
+ */
+const FIX_WITHIN_CITY_KM = 60;
+
+/** Great-circle distance in km. Haversine; the earth is close enough here. */
+function distanceKm(
+  [lngA, latA]: readonly [number, number],
+  [lngB, latB]: readonly [number, number],
+): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(latB - latA);
+  const dLng = toRad(lngB - lngA);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(latA)) * Math.cos(toRad(latB)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/**
+ * Whether a device fix is plausibly inside the city the user selected.
+ *
+ * A GPS fix is the best viewport there is FOR SOMEONE STANDING AT THE ADDRESS
+ * THEY ARE ENTERING, and a worse one than the city centroid for anybody else —
+ * someone entering a relative's address, someone travelling, or anyone on a
+ * simulator, whose default fix is in California. Before centroids existed the
+ * fallback was the whole of Pakistan, so a fix was always an improvement and
+ * was always taken; now there is a real alternative and it can be compared
+ * against.
+ *
+ * Returns TRUE when there is nothing to judge against — no city, or a city the
+ * sweep never confirmed. That keeps the old behaviour exactly where the new
+ * data cannot improve on it: with no centroid the only other option is the
+ * country view, and a fix beats that wherever it is.
+ */
+export function isFixWithinCity(
+  latitude: number,
+  longitude: number,
+  city: string | undefined,
+): boolean {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+  const centroid = getCityCentroid((city || "").trim());
+  if (!centroid) return true;
+  return distanceKm([longitude, latitude], centroid) <= FIX_WITHIN_CITY_KM;
 }
 
 /**

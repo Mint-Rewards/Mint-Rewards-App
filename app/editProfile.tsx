@@ -18,12 +18,14 @@ import {
 } from "@/utils/locationSave";
 import { logError } from "@/utils/logger";
 import { getSubAreasForTown, isCanonicalTown } from "@/utils/pakistan_areas";
+import { buildPrefill, reverseGeocode } from "@/utils/locationPrefill";
 import { needsLocationUpdate } from "@/utils/profile";
+import { parseProfileFocus } from "@/utils/profileFocus";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -45,6 +47,15 @@ interface IdentityFields {
   phone: string;
 }
 
+/** Breathing room above a focused field, so it is not flush against the navbar. */
+const FOCUS_SCROLL_MARGIN = 24;
+
+/**
+ * How long to wait before measuring. One frame is enough for the anchors to
+ * have been laid out; measuring in the same tick as mount returns zeroes.
+ */
+const FOCUS_SETTLE_MS = 350;
+
 const EditProfile = () => {
   const {
     user,
@@ -65,6 +76,67 @@ const EditProfile = () => {
   const [mapVisible, setMapVisible] = useState(false);
 
   const form = useLocationForm();
+
+  // ── Deep-focus from the gate's checklist ─────────────────────────────────
+  // The "Finish your profile" modal names a gap and routes here with it. Its
+  // value is untrusted route input — see `parseProfileFocus`, which degrades
+  // anything unrecognised to null so a stale link just opens the form normally.
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
+  const focusTarget = parseProfileFocus(focus);
+
+  const scrollRef = useRef<ScrollView>(null);
+  const contentRef = useRef<View>(null);
+  const userNameRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+  const addressRef = useRef<View>(null);
+  const pinRef = useRef<View>(null);
+
+  /**
+   * Brings a target into view, and puts the cursor in it where there is one.
+   *
+   * Two different jobs, because the checklist's rows are not all the same kind
+   * of thing. Name and phone are text inputs, so focusing them is literal and
+   * also raises the keyboard ready to type. "Pickup address" is a stack of
+   * pickers and "Map pin" is a button — neither can hold a cursor, so the most
+   * that can be done is to scroll them under the user's eyes. Scrolling happens
+   * for all four either way: on a form this long, a focused field the user
+   * cannot see is no better than no focus at all.
+   *
+   * Runs once, after layout. Everything is optional-chained and the failure
+   * callback is a no-op: a measurement that cannot be taken must leave the user
+   * on a perfectly usable form, never break the screen.
+   */
+  useEffect(() => {
+    if (!focusTarget) return;
+    const inputs: Partial<Record<string, React.RefObject<TextInput | null>>> = {
+      userName: userNameRef,
+      phone: phoneRef,
+    };
+    const anchors: Record<string, React.RefObject<View | TextInput | null>> = {
+      userName: userNameRef,
+      phone: phoneRef,
+      address: addressRef,
+      pin: pinRef,
+    };
+    // One frame's delay so the anchors have been laid out and can be measured.
+    const timer = setTimeout(() => {
+      const anchor = anchors[focusTarget]?.current;
+      const content = contentRef.current;
+      if (anchor && content) {
+        anchor.measureLayout(
+          content,
+          (_x, y) =>
+            scrollRef.current?.scrollTo({
+              y: Math.max(0, y - FOCUS_SCROLL_MARGIN),
+              animated: true,
+            }),
+          () => {},
+        );
+      }
+      inputs[focusTarget]?.current?.focus();
+    }, FOCUS_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [focusTarget]);
 
   useEffect(() => {
     if (user) {
@@ -166,6 +238,58 @@ const EditProfile = () => {
   };
 
   /** Identity plus the normalized location — the shape `update-profile` wants. */
+  /**
+   * Fills the town, sub-area and street from a freshly placed pin.
+   *
+   * Fire-and-forget, and silent on failure. The geocoder is an ENHANCEMENT here
+   * exactly as it is in the confirm modal: the server answers `resolved: false`
+   * to every request while it has no `LOCATIONIQ_API_KEY`, which is the
+   * expected production state today, so "nothing happens" is the common path
+   * and the form has to remain completable by hand. Nothing is disabled and no
+   * spinner blocks anything.
+   *
+   * A NEW pin replaces the town and sub-area its predecessor produced — the
+   * address moved, so answers derived from the old position no longer describe
+   * it. A slow reply cannot cause that by accident: `seq` names the pin the
+   * answer is about, and one about a superseded pin is dropped.
+   */
+  const prefillFromPin = async (
+    latitude: string,
+    longitude: string,
+    seq: number,
+  ) => {
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    try {
+      const geo = await reverseGeocode(lat, lng, token || user?.token);
+      const prefill = buildPrefill(geo, {
+        // The user's chosen city scopes the lookup. It is passed as the SAVED
+        // value so `buildPrefill` keeps it when the geocoder resolves nothing,
+        // and `applyPinPrefill` ignores the city it returns either way — see
+        // its comment for why a picked city is never overwritten by a pin.
+        city: form.values.city,
+        town: "",
+        subArea: "",
+        address: "",
+      });
+      form.applyPinPrefill(
+        {
+          town: prefill.town,
+          subArea: prefill.subArea,
+          street: prefill.street,
+        },
+        // Identifies the pin this answer is about. A reply that arrives after
+        // the user has moved the pin again is discarded rather than applied to
+        // a coordinate it never described.
+        seq,
+      );
+    } catch {
+      // reverseGeocode already swallows its own failures; this is belt and
+      // braces so a prefill can never break a pin the user did place.
+    }
+  };
+
   const buildPayload = (): Partial<UserProfile> => ({
     ...identity,
     ...buildLocationPayload(form.values),
@@ -262,12 +386,15 @@ const EditProfile = () => {
     label: string,
     placeholder: string,
     keyboardType: "default" | "email-address" | "phone-pad" = "default",
+    // Present only for the fields the gate's checklist can route to.
+    inputRef?: React.RefObject<TextInput | null>,
   ) => (
     <View style={styles.inputContainer}>
       <Text style={styles.label}>
         {label}<Text style={styles.asterisk}> *</Text>
       </Text>
       <TextInput
+        ref={inputRef}
         style={[
           styles.input,
           errors[field] && styles.inputError,
@@ -297,13 +424,14 @@ const EditProfile = () => {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
+          ref={scrollRef}
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-        <View style={styles.formContainer}>
+        <View style={styles.formContainer} ref={contentRef}>
           <View style={styles.profileIconContainer}>
             <LinearGradient
               colors={["#f8f9fa", "#e9ecef"]}
@@ -314,16 +442,34 @@ const EditProfile = () => {
           </View>
 
           <View style={styles.formSection}>
-            {renderInput("userName", "Username", "Enter your username")}
+            {renderInput(
+              "userName",
+              "Username",
+              "Enter your username",
+              "default",
+              userNameRef,
+            )}
             {renderInput("email", "Email", "Enter your email", "email-address")}
-            {renderInput("phone", "Phone Number", "Enter your phone number", "phone-pad")}
+            {renderInput(
+              "phone",
+              "Phone Number",
+              "Enter your phone number",
+              "phone-pad",
+              phoneRef,
+            )}
 
-            <LocationFields
-              form={form}
-              errors={errors}
-              clearError={clearError}
-              onOpenMap={() => setMapVisible(true)}
-            />
+            {/* Anchor for the checklist's "Pickup address" row: the whole
+                city/town/sub-area/house-number block is one question to a
+                user, so the scroll target is its top, not any one input. */}
+            <View ref={addressRef}>
+              <LocationFields
+                form={form}
+                errors={errors}
+                clearError={clearError}
+                onOpenMap={() => setMapVisible(true)}
+                pinRef={pinRef}
+              />
+            </View>
           </View>
 
           <MapPicker
@@ -333,8 +479,11 @@ const EditProfile = () => {
             city={form.values.city}
             town={form.values.town}
             onConfirm={(lat, lng, placement) => {
-              form.confirmPin(lat, lng, placement);
+              const seq = form.confirmPin(lat, lng, placement);
               clearError("location");
+              clearError("town");
+              clearError("subArea");
+              prefillFromPin(lat, lng, seq);
             }}
             onClose={() => setMapVisible(false)}
           />
