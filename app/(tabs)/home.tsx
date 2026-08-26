@@ -16,7 +16,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
 import { mergeBrandsWithDeals } from "@/utils/deals";
 import { logEvent } from "@/utils/logger";
-import { isProfileComplete } from "@/utils/profile";
+import {
+  isAreaAnswered,
+  isDeliveryPointSet,
+  isProfileComplete,
+  needsLocationUpdate,
+} from "@/utils/profile";
 import { Constants } from "../../utils/constants";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -193,9 +198,18 @@ export default function HomeScreen() {
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
   // absolutely positioned, so the scroll has to clear it by its full height.
   const tabBarOverflow = useBottomTabOverflow();
-  const hasLocation = !!(user?.latitude && user?.longitude);
-  const hasAddress = !!user?.address;
+  // One rule, asked two ways. `profileComplete` GATES; the two halves below only
+  // ever choose words — see utils/profile.ts.
+  const hasDeliveryPoint = isDeliveryPointSet(user);
+  const areaAnswered = isAreaAnswered(user);
   const profileComplete = isProfileComplete(user);
+
+  // Location-specific prompt takes precedence over the generic incomplete
+  // banner: these users ARE incomplete — either their saved town is no longer
+  // canonical, or (for those with a still-canonical town) their sub-area was
+  // never collected — and the generic "complete your profile" copy would tell
+  // them nothing about what actually changed.
+  const locationUpdateNeeded = needsLocationUpdate(user);
 
   // Demo-only: allowlisted accounts see the mock upcoming-collections teaser
   // instead of the static "Warming Up!" card. Everyone else is unaffected.
@@ -288,8 +302,10 @@ export default function HomeScreen() {
   // The brand cards are only ever tappable for a complete profile with a set
   // location — showing them greyed out just repeated the prompt banner behind
   // them, so they are hidden entirely until the user can actually use them.
-  const showBrandCards =
-    profileComplete && hasLocation && hasAddress;
+  // `profileComplete` now implies a saved coordinate and a house number (owner
+  // ruling — see isProfileComplete; street address is no longer part of it),
+  // so the location terms that used to be ANDed here would be restating it.
+  const showBrandCards = profileComplete && !locationUpdateNeeded;
   const canOpenCollections = !!booked || !!(showDemoCollections && nextCollection && nextSlot);
 
   return (
@@ -331,7 +347,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Upcoming Collections</Text>
-            {hasLocation && (
+            {hasDeliveryPoint && (
               <TouchableOpacity
                 onPress={() =>
                   navigateOnce(() =>
@@ -348,7 +364,7 @@ export default function HomeScreen() {
             )}
           </View>
 
-          {(hasLocation && hasAddress) ? (
+          {hasDeliveryPoint ? (
             <Pressable
               style={({ pressed }) => [
                 styles.collectionCard,
@@ -445,31 +461,38 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {!profileComplete && (
+          {/* One prompt, two wordings. Which half is missing decides the words;
+              `profileComplete` alone decides whether the prompt shows at all, so
+              the gate stays single-sourced. */}
+          {!profileComplete && !locationUpdateNeeded && (
             <TouchableOpacity
               style={styles.profilePromptCard}
               onPress={() => navigateOnce(() => router.push("/editProfile"))}
               activeOpacity={0.8}
             >
-              <Ionicons name="person-circle-outline" size={22} color="#449EB2" />
+              <Ionicons
+                name={areaAnswered ? "location-outline" : "person-circle-outline"}
+                size={22}
+                color="#449EB2"
+              />
               <Text style={styles.profilePromptText}>
-                Complete your profile to unlock deals
+                {areaAnswered
+                  ? "Set your location to unlock deals"
+                  : "Complete your profile to unlock deals"}
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#449EB2" />
             </TouchableOpacity>
           )}
 
-          {/* Profile can be "complete" while the exact location is still
-              missing; without this the section would be empty. */}
-          {profileComplete && !(hasLocation && hasAddress) && (
+          {locationUpdateNeeded && (
             <TouchableOpacity
               style={styles.profilePromptCard}
-              onPress={() => router.push("/editProfile")}
+              onPress={() => navigateOnce(() => router.push("/editProfile"))}
               activeOpacity={0.8}
             >
               <Ionicons name="location-outline" size={22} color="#449EB2" />
               <Text style={styles.profilePromptText}>
-                Set your location to unlock deals
+                We're working on bringing collections to your area. Update your location to see available deals.
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#449EB2" />
             </TouchableOpacity>
@@ -500,7 +523,6 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
-
     </View>
   );
 }

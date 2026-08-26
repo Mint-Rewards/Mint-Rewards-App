@@ -5,13 +5,22 @@ import type { User } from "@/store/store";
 const base = (over: Partial<User>): User =>
   ({ city: "Islamabad", ...over }) as User;
 
-// isProfileComplete also gates phone/province/city, so the "true" cases below
-// need those populated as well as the location fields under test.
+// isProfileComplete also gates phone/province/city, the saved coordinate
+// (owner ruling: no pin = incomplete) and the house number (owner ruling,
+// 2026-08-25: no house number = incomplete), so the "true" cases below need
+// all of them populated as well as the location fields under test. Street
+// `address` is included too even though it is no longer required by either
+// function, so these fixtures keep exercising the "still true with an address
+// present" case alongside the address-optional tests added below.
 const completeBase = (over: Partial<User>): User =>
   ({
     phone: "03001234567",
     province: "Islamabad Capital Territory",
     city: "Islamabad",
+    latitude: "33.7294",
+    longitude: "73.0931",
+    address: "12 Street 7",
+    structuredAddress: { houseNo: "12" },
     ...over,
   }) as User;
 
@@ -54,6 +63,87 @@ describe("needsLocationUpdate", () => {
     expect(needsLocationUpdate(base({ city: "Sialkot", town: "Cantt" }))).toBe(
       false,
     );
+  });
+
+  // Owner ruling, 2026-08-25: a user with no saved coordinate has an incomplete
+  // profile and is in the same category as a new user. Before this, the rule
+  // lived in two screens' hand-rolled expressions that disagreed with each
+  // other; these tests are what stop it drifting back out of this function.
+  it("is false when the coordinate is missing entirely", () => {
+    expect(
+      isProfileComplete(
+        completeBase({ town: "Sector E-7", subArea: "E-7/1", latitude: "", longitude: "" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("is false when only one half of the coordinate is present", () => {
+    for (const half of [{ latitude: "" }, { longitude: "" }]) {
+      expect(
+        isProfileComplete(
+          completeBase({ town: "Sector E-7", subArea: "E-7/1", ...half }),
+        ),
+      ).toBe(false);
+    }
+  });
+
+  // Owner ruling, 2026-08-25: street address is no longer required — the
+  // coordinate is what a route actually needs, and demanding a street string
+  // on top of it stranded valid pins with no answerable street name.
+  it("is true when the street address is missing but the house number is set", () => {
+    expect(
+      isProfileComplete(
+        completeBase({ town: "Sector E-7", subArea: "E-7/1", address: "   " }),
+      ),
+    ).toBe(true);
+  });
+
+  // Owner ruling, 2026-08-25 (same pass): the house number is required in its
+  // place — it is what the client and backend now agree defines a complete
+  // profile, and unlike a free-text street it is a value the app can route a
+  // collection to.
+  it("is false when the house number is missing", () => {
+    expect(
+      isProfileComplete(
+        completeBase({
+          town: "Sector E-7",
+          subArea: "E-7/1",
+          structuredAddress: { houseNo: "" },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("is false when the house number is whitespace-only", () => {
+    expect(
+      isProfileComplete(
+        completeBase({
+          town: "Sector E-7",
+          subArea: "E-7/1",
+          structuredAddress: { houseNo: "   " },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("is false when structuredAddress itself is absent", () => {
+    expect(
+      isProfileComplete(
+        completeBase({
+          town: "Sector E-7",
+          subArea: "E-7/1",
+          structuredAddress: undefined,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("treats a whitespace-only coordinate as absent", () => {
+    expect(
+      isProfileComplete(
+        completeBase({ town: "Sector E-7", subArea: "E-7/1", latitude: "  " }),
+      ),
+    ).toBe(false);
   });
 
   it("is false for a null user", () => {

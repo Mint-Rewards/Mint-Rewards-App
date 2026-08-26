@@ -49,12 +49,13 @@
       "extends": "production",
       "env": {
         "APP_VARIANT": "production",
-        "EXPO_PUBLIC_API_URL": "https://mint-rewards-backend-git-dev-mint-rewards-projects.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://mint-rewards-backend-dev.vercel.app"
       },
       "channel": "testflight-preview"
     }
   },
   "submit": {
-    "production": {}
+    "production": {},
+    "testflight-preview": {}
   }
 }

@@ -1,94 +1,144 @@
+import { LocationFields } from "@/components/location/LocationFields";
 import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
-import type { PinPlacement } from "@/utils/pinState";
-import {
-  PAKISTAN_LOCATIONS,
-  getSelectableTownsForCity,
-  getSubAreasForTown,
-  isCanonicalTown,
-  matchCanonicalNames,
-  requiresSubArea,
-} from "@/utils/pakistan_areas";
-import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useLocationForm } from "@/hooks/useLocationForm";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { alertOnce } from "@/utils/alert";
+import {
+  trackLocationPatchFailed,
+  trackLocationSaved,
+} from "@/utils/locationAnalytics";
+import {
+  buildLocationPatchPayload,
+  patchUserLocation,
+} from "@/utils/locationApi";
+import {
+  buildLocationPayload,
+  validateLocationValues,
+} from "@/utils/locationSave";
+import { logError } from "@/utils/logger";
+import { getSubAreasForTown, isCanonicalTown } from "@/utils/pakistan_areas";
+import { missingSentence } from "@/utils/locationEvaluation";
+import { buildPrefill, reverseGeocode } from "@/utils/locationPrefill";
 import { needsLocationUpdate } from "@/utils/profile";
+import { parseProfileFocus } from "@/utils/profileFocus";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  FlatList,
-  findNodeHandle,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  UIManager,
   View,
 } from "react-native";
 import { useAppStore, UserProfile } from "../store/store";
 import { isPhone, sanitizePhone } from "../utils/phone";
 
-type PickerField = "province" | "city" | "town" | "subArea";
+/** The fields this screen still owns. Everything below the phone number belongs
+ *  to `useLocationForm` / `LocationFields`. */
+interface IdentityFields {
+  userName: string;
+  email: string;
+  phone: string;
+}
+
+/** Breathing room above a focused field, so it is not flush against the navbar. */
+const FOCUS_SCROLL_MARGIN = 24;
 
 /**
- * Sentinel appended to the town and sub-area dropdowns. It is never persisted:
- * choosing it clears the canonical field and reveals a free-text input writing
- * to the paired `*Other` field, so `town` and `subArea` only ever hold values
- * from the canonical list.
+ * How long to wait before measuring. One frame is enough for the anchors to
+ * have been laid out; measuring in the same tick as mount returns zeroes.
  */
-const OTHER_OPTION = "Other";
-
-/** Matches the server-side cap on `townOther` / `subAreaOther`. */
-const OTHER_TEXT_MAX = 100;
+const FOCUS_SETTLE_MS = 350;
 
 const EditProfile = () => {
   const {
     user,
+    token,
     updateProfile,
+    setLocationEvaluation,
     isProfileLoading,
     profileError,
     setProfileError,
   } = useAppStore();
 
-  const [formData, setFormData] = useState<Partial<UserProfile>>({
+  const [identity, setIdentity] = useState<IdentityFields>({
     userName: "",
     email: "",
     phone: "",
-    province: "",
-    city: "",
-    town: "",
-    townOther: "",
-    subArea: "",
-    subAreaOther: "",
-    address: "",
-    latitude: "",
-    longitude: "",
   });
-
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
-  const scrollViewRef = useRef<ScrollView>(null);
-  const fieldRefs = useRef<{ [key: string]: View | null }>({});
   const [mapVisible, setMapVisible] = useState(false);
-  // How the current pin was set (device GPS never places it — see
-  // components/ui/MapPicker.tsx / utils/pinState.ts). Captured here so a
-  // future save can persist `location.source`; not sent to the server yet,
-  // so it doesn't need to drive a re-render — a ref is enough.
-  const pinPlacementRef = useRef<PinPlacement | null>(null);
-  const [townIsCustom, setTownIsCustom] = useState(false);
-  const [subAreaIsOther, setSubAreaIsOther] = useState(false);
-  const [pickerModal, setPickerModal] = useState<{
-    visible: boolean;
-    field: PickerField | null;
-    options: string[];
-    label: string;
-  }>({ visible: false, field: null, options: [], label: "" });
+
+  const form = useLocationForm();
+
+  // ── Deep-focus from the gate's checklist ─────────────────────────────────
+  // The "Finish your profile" modal names a gap and routes here with it. Its
+  // value is untrusted route input — see `parseProfileFocus`, which degrades
+  // anything unrecognised to null so a stale link just opens the form normally.
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
+  const focusTarget = parseProfileFocus(focus);
+
+  const scrollRef = useRef<ScrollView>(null);
+  const contentRef = useRef<View>(null);
+  const userNameRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+  const addressRef = useRef<View>(null);
+  const pinRef = useRef<View>(null);
+
+  /**
+   * Brings a target into view, and puts the cursor in it where there is one.
+   *
+   * Two different jobs, because the checklist's rows are not all the same kind
+   * of thing. Name and phone are text inputs, so focusing them is literal and
+   * also raises the keyboard ready to type. "Pickup address" is a stack of
+   * pickers and "Map pin" is a button — neither can hold a cursor, so the most
+   * that can be done is to scroll them under the user's eyes. Scrolling happens
+   * for all four either way: on a form this long, a focused field the user
+   * cannot see is no better than no focus at all.
+   *
+   * Runs once, after layout. Everything is optional-chained and the failure
+   * callback is a no-op: a measurement that cannot be taken must leave the user
+   * on a perfectly usable form, never break the screen.
+   */
+  useEffect(() => {
+    if (!focusTarget) return;
+    const inputs: Partial<Record<string, React.RefObject<TextInput | null>>> = {
+      userName: userNameRef,
+      phone: phoneRef,
+    };
+    const anchors: Record<string, React.RefObject<View | TextInput | null>> = {
+      userName: userNameRef,
+      phone: phoneRef,
+      address: addressRef,
+      pin: pinRef,
+    };
+    // One frame's delay so the anchors have been laid out and can be measured.
+    const timer = setTimeout(() => {
+      const anchor = anchors[focusTarget]?.current;
+      const content = contentRef.current;
+      if (anchor && content) {
+        anchor.measureLayout(
+          content,
+          (_x, y) =>
+            scrollRef.current?.scrollTo({
+              y: Math.max(0, y - FOCUS_SCROLL_MARGIN),
+              animated: true,
+            }),
+          () => {},
+        );
+      }
+      inputs[focusTarget]?.current?.focus();
+    }, FOCUS_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [focusTarget]);
 
   useEffect(() => {
     if (user) {
@@ -115,7 +165,6 @@ const EditProfile = () => {
         mustReselect || townIsCanonical
           ? ""
           : user.townOther || savedTown || "";
-      const isCustom = existingTownOther !== "";
 
       // Only rehydrate `subArea` if it is still canonical for this city/town.
       // A value can go stale if the data file drops or renames an entry, and we
@@ -126,22 +175,30 @@ const EditProfile = () => {
       const existingSubAreaOther =
         mustReselect || existingSubArea ? "" : user.subAreaOther || "";
 
-      setFormData({
+      setIdentity({
         userName: user.userName || "",
         email: user.email || "",
         phone: user.phone || "",
+      });
+
+      form.reset({
+        // Carried in so an off-registry city still lands with a province
+        // (Issue 8). `reset` prefers the registry whenever it recognises the
+        // city, so this only shows through when derivation finds nothing.
         province: user.province || "",
         city: existingCity,
         town: existingTown,
         townOther: existingTownOther,
         subArea: existingSubArea,
         subAreaOther: existingSubAreaOther,
+        // Lives nested on the server; flat in the form. `my-profile` returns the
+        // whole document, so a previously-saved value comes back and the user is
+        // not made to retype it on every edit.
+        houseNo: user.structuredAddress?.houseNo || "",
         address: user.address || "",
         latitude: user.latitude || "",
         longitude: user.longitude || "",
       });
-      setTownIsCustom(isCustom);
-      setSubAreaIsOther(existingSubAreaOther !== "");
     }
   }, []);
 
@@ -149,246 +206,235 @@ const EditProfile = () => {
     return () => { setProfileError(null); };
   }, []);
 
-  // ── Derived options ────────────────────────────────────────────────────────
-  const cityOptions = formData.province
-    ? (PAKISTAN_LOCATIONS.cities[formData.province] || [])
-    : [];
-
-  // The PICKER view, not the validation view: `getTownsForCity` still returns
-  // deprecated towns so existing profiles stay valid, while this hides them
-  // from new selections. Without this the deprecation is inert and users keep
-  // creating the very values it exists to retire.
-  const baseTownOptions = formData.city
-    ? getSelectableTownsForCity(formData.city)
-    : [];
-  const townOptions = [...baseTownOptions, OTHER_OPTION];
-
-  // The sub-area step exists only for towns that actually have canonical data.
-  // A free-text town never does — its value lives in `townOther`, leaving
-  // `town` empty — so the step is skipped and not required for those.
-  const showSubArea =
-    !townIsCustom && requiresSubArea(formData.city || "", formData.town || "");
-
-  const subAreaOptions = showSubArea
-    ? [...getSubAreasForTown(formData.city!, formData.town!), OTHER_OPTION]
-    : [];
-
-  // ── "Other" suggestions ────────────────────────────────────────────────────
-  // While someone types a free-text town or sub-area, offer canonical entries
-  // that look like what they wrote, so a near-miss spelling gets steered back
-  // onto the list instead of becoming another `*Other` row to review later.
-  // Debounced so the list settles rather than churning mid-word.
-  const debouncedTownOther = useDebouncedValue(formData.townOther || "");
-  const debouncedSubAreaOther = useDebouncedValue(formData.subAreaOther || "");
-
-  const townSuggestions = townIsCustom
-    ? matchCanonicalNames(baseTownOptions, debouncedTownOther)
-    : [];
-
-  const subAreaSuggestions =
-    showSubArea && subAreaIsOther
-      ? matchCanonicalNames(
-          getSubAreasForTown(formData.city!, formData.town!),
-          debouncedSubAreaOther,
-        )
-      : [];
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
   const clearError = (field: string) => {
     if (errors[field]) setErrors((p) => ({ ...p, [field]: "" }));
   };
 
-  const openPicker = (field: PickerField, options: string[], label: string) => {
-    setPickerModal({ visible: true, field, options, label });
-  };
-
-  /**
-   * Clears the sub-area answer state. Called whenever the town changes: the
-   * question is about the new town, so a previous "Other" must not carry over
-   * and satisfy the required rule by accident.
-   */
-  const resetSubAreaState = () => {
-    setSubAreaIsOther(false);
-  };
-
-  /** Commit a canonical town — from the dropdown or from a suggestion tap. */
-  const selectCanonicalTown = (value: string) => {
-    setFormData((p) => ({
-      ...p, town: value, townOther: "", subArea: "", subAreaOther: "",
-    }));
-    setTownIsCustom(false);
-    resetSubAreaState();
-    clearError("town");
-  };
-
-  /** Commit a canonical sub-area — from the dropdown or from a suggestion tap. */
-  const selectCanonicalSubArea = (value: string) => {
-    setFormData((p) => ({ ...p, subArea: value, subAreaOther: "" }));
-    resetSubAreaState();
-    clearError("subArea");
-  };
-
-  const handlePickerSelect = (value: string) => {
-    const field = pickerModal.field!;
-    setPickerModal({ visible: false, field: null, options: [], label: "" });
-
-    // Every level of the cascade clears the sub-area pair: a sub-area is only
-    // meaningful for the exact city/town it was chosen under.
-    if (field === "province") {
-      setFormData((p) => ({
-        ...p, province: value, city: "", town: "", townOther: "",
-        subArea: "", subAreaOther: "",
-      }));
-      setTownIsCustom(false);
-      resetSubAreaState();
-      setErrors((p) => ({ ...p, province: "", city: "", town: "" }));
-    } else if (field === "city") {
-      setFormData((p) => ({
-        ...p, city: value, town: "", townOther: "", subArea: "", subAreaOther: "",
-      }));
-      setTownIsCustom(false);
-      resetSubAreaState();
-      setErrors((p) => ({ ...p, city: "", town: "" }));
-    } else if (field === "town") {
-      // Mutual exclusivity: free text goes to `townOther`, never to `town`.
-      if (value === OTHER_OPTION) {
-        setFormData((p) => ({
-          ...p, town: "", townOther: "", subArea: "", subAreaOther: "",
-        }));
-        setTownIsCustom(true);
-        resetSubAreaState();
-        clearError("town");
-      } else {
-        selectCanonicalTown(value);
-      }
-    } else if (field === "subArea") {
-      // Mutual exclusivity: exactly one of the two fields can ever hold a value.
-      if (value === OTHER_OPTION) {
-        setFormData((p) => ({ ...p, subArea: "", subAreaOther: "" }));
-        setSubAreaIsOther(true);
-        clearError("subArea");
-      } else {
-        selectCanonicalSubArea(value);
-      }
-    }
-  };
-
   // ── Validation ─────────────────────────────────────────────────────────────
-  // Visual top-to-bottom order, used to jump to the first invalid field.
-  const FIELD_ORDER = [
-    "userName", "email", "phone", "province", "city", "town", "subArea", "address",
+  // Visual top-to-bottom order, used to jump to the first invalid field after a
+  // failed save. The location half reuses the same anchors the checklist's
+  // deep-focus uses: city / town / sub-area / house number are one block on
+  // screen, so the top of that block is the honest target for any of them.
+  const ERROR_FIELD_ORDER = [
+    "userName", "email", "phone",
+    "province", "city", "location", "town", "subArea", "houseNo",
   ];
 
   /** Scrolls the first field with an error into view. */
-  const scrollToField = (field: string) => {
-    const node = fieldRefs.current[field];
-    const scrollView = scrollViewRef.current;
-    const nodeHandle = findNodeHandle(node);
-    const scrollHandle = findNodeHandle(scrollView);
-    if (!nodeHandle || !scrollHandle) return;
-    UIManager.measureLayout(
-      nodeHandle,
-      scrollHandle,
+  const scrollToFirstError = (fieldErrors: { [key: string]: string }) => {
+    const field = ERROR_FIELD_ORDER.find((f) => fieldErrors[f]);
+    if (!field) return;
+    const anchors: Partial<Record<string, React.RefObject<View | TextInput | null>>> = {
+      userName: userNameRef,
+      email: emailRef,
+      phone: phoneRef,
+      location: pinRef,
+    };
+    const anchor = (anchors[field] ?? addressRef).current;
+    const content = contentRef.current;
+    // A measurement that cannot be taken must leave the user on a perfectly
+    // usable form, so every failure path here is a no-op.
+    if (!anchor || !content) return;
+    anchor.measureLayout(
+      content,
+      (_x, y) =>
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, y - FOCUS_SCROLL_MARGIN),
+          animated: true,
+        }),
       () => {},
-      (_x: number, y: number) => {
-        scrollView?.scrollTo({ y: Math.max(y - 20, 0), animated: true });
-      },
     );
   };
 
+  // Identity is this screen's; everything about the place is `locationSave`'s,
+  // so the confirm-address modal cannot end up enforcing a different rule.
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
-    if (!formData.userName?.trim())  newErrors.userName = "Username is required";
-    if (!formData.email?.trim())     newErrors.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = "Please enter a valid email";
-    if (!formData.phone?.trim())     newErrors.phone = "Phone number is required";
-    else if (!isPhone(formData.phone))
+    if (!identity.userName.trim())  newErrors.userName = "Username is required";
+    if (!identity.email.trim())     newErrors.email = "Email is required";
+    else if (!/\S+@\S+\.\S+/.test(identity.email)) newErrors.email = "Please enter a valid email";
+    if (!identity.phone.trim())     newErrors.phone = "Phone number is required";
+    else if (!isPhone(identity.phone))
       newErrors.phone = "Please enter a valid phone number in the format 03XXXXXXXXX";
-    if (!formData.province?.trim())  newErrors.province = "Province is required";
-    if (!formData.city?.trim())      newErrors.city = "City is required";
-    // Either a canonical town or free-text "Other" satisfies the requirement.
-    if (!formData.town?.trim() && !formData.townOther?.trim())
-      newErrors.town = "Town is required";
-    if (!formData.address?.trim())   newErrors.address = "Address is required";
-    // The map pin is required (see "Exact Location (Pin) *" label below) — a
-    // saved coordinate must be a parseable number, not just a non-empty string.
-    if (
-      !formData.latitude?.trim() ||
-      !formData.longitude?.trim() ||
-      isNaN(parseFloat(formData.latitude)) ||
-      isNaN(parseFloat(formData.longitude))
-    )
-      newErrors.location = "Please pin your exact location on the map";
-    // Required only where there is canonical data to choose from. Free-text
-    // towns and towns without sub-areas never render the field, so it must not
-    // gate their save.
-    if (
-      showSubArea &&
-      !formData.subArea?.trim() &&
-      !formData.subAreaOther?.trim()
-    )
-      newErrors.subArea = "Sub-area is required";
-    setErrors(newErrors);
 
-    const firstInvalidField = FIELD_ORDER.find((field) => newErrors[field]);
-    if (firstInvalidField) scrollToField(firstInvalidField);
+    const location = validateLocationValues(form.values, {
+      // Required only where there is canonical data to choose from. Free-text
+      // towns and towns without sub-areas never render the field, so it must
+      // not gate their save.
+      requireSubArea: form.showSubArea,
+      houseNoLabel: form.houseNoField.label,
+    });
 
-    return Object.keys(newErrors).length === 0;
+    const merged = { ...newErrors, ...location.errors };
+    setErrors(merged);
+    scrollToFirstError(merged);
+    return Object.keys(merged).length === 0;
   };
 
-  const handleUpdateField = (field: keyof UserProfile, value: string) => {
+  const handleUpdateField = (field: keyof IdentityFields, value: string) => {
     // `phone-pad` still offers *, #, + and ; and pasting bypasses the keyboard
     // entirely, so strip anything that is not a digit (or a leading +) here.
     const next = field === "phone" ? sanitizePhone(value) : value;
-    setFormData((p) => ({ ...p, [field]: next }));
-    clearError(field as string);
+    setIdentity((p) => ({ ...p, [field]: next }));
+    clearError(field);
   };
 
-  const trimCapped = (v?: string) => (v || "").trim().slice(0, OTHER_TEXT_MAX);
+  /** Identity plus the normalized location — the shape `update-profile` wants. */
+  /**
+   * Fills the town, sub-area and street from a freshly placed pin.
+   *
+   * Fire-and-forget, and silent on failure. The geocoder is an ENHANCEMENT here
+   * exactly as it is in the confirm modal: the server answers `resolved: false`
+   * to every request while it has no `LOCATIONIQ_API_KEY`, which is the
+   * expected production state today, so "nothing happens" is the common path
+   * and the form has to remain completable by hand. Nothing is disabled and no
+   * spinner blocks anything.
+   *
+   * A NEW pin replaces the town and sub-area its predecessor produced — the
+   * address moved, so answers derived from the old position no longer describe
+   * it. A slow reply cannot cause that by accident: `seq` names the pin the
+   * answer is about, and one about a superseded pin is dropped.
+   */
+  const prefillFromPin = async (
+    latitude: string,
+    longitude: string,
+    seq: number,
+  ) => {
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    try {
+      const geo = await reverseGeocode(lat, lng, token || user?.token);
+      const prefill = buildPrefill(geo, {
+        // The user's chosen city scopes the lookup. It is passed as the SAVED
+        // value so `buildPrefill` keeps it when the geocoder resolves nothing,
+        // and `applyPinPrefill` ignores the city it returns either way — see
+        // its comment for why a picked city is never overwritten by a pin.
+        city: form.values.city,
+        town: "",
+        subArea: "",
+        address: "",
+      });
+      form.applyPinPrefill(
+        {
+          town: prefill.town,
+          subArea: prefill.subArea,
+          street: prefill.street,
+        },
+        // Identifies the pin this answer is about. A reply that arrives after
+        // the user has moved the pin again is discarded rather than applied to
+        // a coordinate it never described.
+        seq,
+      );
+    } catch {
+      // reverseGeocode already swallows its own failures; this is belt and
+      // braces so a prefill can never break a pin the user did place.
+    }
+  };
 
   /**
-   * Normalises both canonical/free-text pairs before they leave the client.
-   * `town` and `subArea` are re-checked against the canonical lists here rather
-   * than trusted from form state, and at most one of each pair survives. Every
-   * field is always sent (as "" when unset) so clearing a previously-saved
-   * value actually reaches the server.
+   * What the server said was still outstanding on the last successful PATCH,
+   * or null. A ref rather than state: nothing renders from it, and it is read
+   * once, immediately, by the alert that follows the save that set it.
    */
-  const buildPayload = (): Partial<UserProfile> => {
-    const city = formData.city || "";
+  const incompleteRef = useRef<string | null>(null);
 
-    // Town: a non-canonical value is never allowed through as `town`; it
-    // degrades to `townOther` rather than being dropped, so nothing is lost.
-    const townIsCanonical = isCanonicalTown(city, formData.town || "");
-    const town = townIsCanonical ? formData.town! : "";
-    const townOther = townIsCanonical
-      ? ""
-      : trimCapped(formData.townOther || formData.town);
+  const buildPayload = (): Partial<UserProfile> => ({
+    ...identity,
+    ...buildLocationPayload(form.values),
+  });
 
-    // Sub-area: only meaningful under a canonical town, and only for towns that
-    // actually have sub-area data — one with none never offered "Other", so
-    // neither field can legitimately hold anything.
-    const canonicalSubAreas = town ? getSubAreasForTown(city, town) : [];
-    if (canonicalSubAreas.length === 0) {
-      return { ...formData, town, townOther, subArea: "", subAreaOther: "" };
+  /**
+   * Sends the STRUCTURED location after the legacy save has already landed.
+   *
+   * Non-blocking by design: `update-profile` has persisted the strings by the
+   * time this runs, so a failure here costs routing precision, not the user's
+   * save. It is logged and swallowed — never surfaced as an alert, and never
+   * allowed to turn a successful save into an error the user sees.
+   */
+  /** Returns true when the session died mid-save (see the 401 note below). */
+  const persistStructuredLocation = async (
+    payload: Partial<UserProfile>,
+  ): Promise<boolean> => {
+    try {
+      // `null` here means the map was never opened this session, which makes
+      // `buildLocationPatchPayload` omit `location` entirely rather than
+      // downgrade a precise stored pin to `legacy_string`/`unknown`.
+      const patch = buildLocationPatchPayload(payload, form.placementRef.current);
+
+      // Reported on the SAVE, not on this request's outcome. By the time we get
+      // here update-profile has already persisted the coordinate, so the user
+      // has saved a location whatever the PATCH below does; gating the event on
+      // it would under-count the funnel for a failure nobody experienced. The
+      // failure itself is logged separately.
+      if (patch.location) {
+        trackLocationSaved(patch.location.source, patch.location.precision);
+      }
+
+      const result = await patchUserLocation(patch, token || user?.token);
+
+      if (result.Status === "Success") {
+        // The server's verdict on whether this location is finished — the only
+        // authority on that, since it knows about fields this form does not yet
+        // collect.
+        setLocationEvaluation(result.evaluation ?? null);
+        // Carried back to the caller so the success alert can say it. NOT
+        // raised here: the save genuinely succeeded, and a second alert stacked
+        // on the success one would read as a failure.
+        incompleteRef.current = missingSentence(result.evaluation, {
+          city: payload.city,
+          town: payload.town,
+          hasCoordinate: !!payload.latitude?.trim(),
+        });
+        return false;
+      }
+
+      await logError("patchUserLocation failed", {
+        userId: user?.mintId,
+        route: "editProfile",
+        error: result.ErrorMessage,
+      });
+      // The user never sees this failure, so this event is the only place it
+      // becomes a number worth putting next to `location_saved`.
+      trackLocationPatchFailed(result.ErrorMessage);
+      return result.unauthorized === true;
+    } catch (error) {
+      await logError("patchUserLocation exception", {
+        userId: user?.mintId,
+        route: "editProfile",
+        error,
+      });
+      trackLocationPatchFailed(
+        error instanceof Error ? error.message : "unknown",
+      );
     }
-
-    const subArea =
-      formData.subArea && canonicalSubAreas.includes(formData.subArea)
-        ? formData.subArea
-        : "";
-    const subAreaOther = subArea ? "" : trimCapped(formData.subAreaOther);
-
-    return { ...formData, town, townOther, subArea, subAreaOther };
+    return false;
   };
 
   const submitProfile = async () => {
     if (!validateForm()) return;
+    incompleteRef.current = null;
     try {
-      const result = await updateProfile(buildPayload());
+      const payload = buildPayload();
+      const result = await updateProfile(payload);
       if (result.Status === "Success") {
-        alertOnce("Success", "Profile updated successfully!", [
-          { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
-        ]);
+        const signedOut = await persistStructuredLocation(payload);
+        // A 401 on that request means `authenticatedFetch` has already signed
+        // the user out and sent them to the login screen. Congratulating them
+        // on a save while they are being bounced is worse than saying nothing —
+        // the save itself did land, and their profile will show it next login.
+        if (signedOut) return;
+        // The server can accept the save and still not consider the address
+        // finished — it judges the structured record, this form judges its own
+        // fields. Saying so beats a bare "success" the user later discovers was
+        // not enough to book a pickup.
+        alertOnce(
+          "Success",
+          incompleteRef.current
+            ? `Profile updated. ${incompleteRef.current}`
+            : "Profile updated successfully!",
+          [{ text: "OK", onPress: () => router.replace("/(tabs)/profile") }],
+        );
       } else {
         alertOnce("Error", result.ErrorMessage || "Failed to update profile");
       }
@@ -401,244 +447,38 @@ const EditProfile = () => {
   // two taps in the same frame from firing two updateProfile calls.
   const { run: handleSubmit, inFlight: submitting } = useSingleFlight(submitProfile);
 
-  // ── Render helpers ─────────────────────────────────────────────────────────
   const renderInput = (
-    field: keyof UserProfile,
+    field: keyof IdentityFields,
     label: string,
     placeholder: string,
     keyboardType: "default" | "email-address" | "phone-pad" = "default",
-    multiline = false,
-    required = false,
+    // Present only for the fields the gate's checklist can route to.
+    inputRef?: React.RefObject<TextInput | null>,
   ) => (
-    <View
-      style={styles.inputContainer}
-      ref={(el) => { fieldRefs.current[field] = el; }}
-    >
+    <View style={styles.inputContainer}>
       <Text style={styles.label}>
-        {label}{required && <Text style={styles.asterisk}> *</Text>}
+        {label}<Text style={styles.asterisk}> *</Text>
       </Text>
       <TextInput
+        ref={inputRef}
         style={[
           styles.input,
           errors[field] && styles.inputError,
           { backgroundColor: field === "email" ? "#e2e8f0" : "#f8f9fa" },
-          multiline && styles.inputMultiline,
         ]}
-        value={formData[field] || ""}
+        value={identity[field]}
         onChangeText={(v) => handleUpdateField(field, v)}
         placeholder={placeholder}
         placeholderTextColor="#a0aec0"
         keyboardType={keyboardType}
         autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
         readOnly={field === "email"}
-        multiline={multiline}
         maxLength={field === "phone" ? 11 : undefined}
-        textAlignVertical={multiline ? "top" : "center"}
+        textAlignVertical="center"
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
     </View>
   );
-
-  const renderDropdown = (
-    field: PickerField,
-    label: string,
-    options: string[],
-    placeholder: string,
-    required = false,
-    disabled = false,
-  ) => (
-    <View
-      style={styles.inputContainer}
-      ref={(el) => { fieldRefs.current[field] = el; }}
-    >
-      <Text style={styles.label}>
-        {label}{required && <Text style={styles.asterisk}> *</Text>}
-      </Text>
-      <TouchableOpacity
-        style={[
-          styles.input,
-          styles.dropdownBtn,
-          errors[field] && styles.inputError,
-          disabled && styles.dropdownDisabled,
-        ]}
-        onPress={() => !disabled && openPicker(field, options, label)}
-        activeOpacity={disabled ? 1 : 0.7}
-      >
-        <Text style={[styles.dropdownText, !formData[field] && styles.placeholderText]}>
-          {formData[field] || placeholder}
-        </Text>
-        <Ionicons name="chevron-down" size={18} color={disabled ? "#d0d0d0" : "#a0aec0"} />
-      </TouchableOpacity>
-      {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
-    </View>
-  );
-
-  /**
-   * Canonical entries resembling what the user has typed into an "Other" field.
-   * Tapping one switches them onto the canonical value and clears the free text.
-   */
-  const renderSuggestions = (
-    suggestions: string[],
-    onPick: (value: string) => void,
-  ) => {
-    if (suggestions.length === 0) return null;
-
-    return (
-      <View style={styles.suggestionBox}>
-        <Text style={styles.suggestionHeading}>Did you mean</Text>
-        {suggestions.map((suggestion) => (
-          <TouchableOpacity
-            key={suggestion}
-            style={styles.suggestionRow}
-            onPress={() => onPick(suggestion)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-forward-circle-outline" size={16} color="#449EB2" />
-            <Text style={styles.suggestionText}>{suggestion}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  };
-
-  // Town field: dropdown or text input depending on townIsCustom
-  const renderTownField = () => (
-    <View
-      style={styles.inputContainer}
-      ref={(el) => { fieldRefs.current.town = el; }}
-    >
-      <Text style={styles.label}>
-        Town<Text style={styles.asterisk}> *</Text>
-      </Text>
-
-      {townIsCustom ? (
-        <View style={styles.customTownRow}>
-          <TextInput
-            style={[
-              styles.input,
-              styles.customTownInput,
-              errors.town && styles.inputError,
-            ]}
-            value={formData.townOther || ""}
-            // Writes to `townOther` but clears the `town` error — both fields
-            // satisfy the same "Town is required" rule.
-            onChangeText={(v) => {
-              setFormData((p) => ({ ...p, townOther: v }));
-              clearError("town");
-            }}
-            placeholder="Enter your town"
-            placeholderTextColor="#a0aec0"
-            autoCapitalize="words"
-            maxLength={OTHER_TEXT_MAX}
-            autoFocus
-          />
-          <TouchableOpacity
-            style={styles.townBackBtn}
-            onPress={() => {
-              setTownIsCustom(false);
-              setFormData((p) => ({
-                ...p, town: "", townOther: "", subArea: "", subAreaOther: "",
-              }));
-              resetSubAreaState();
-            }}
-          >
-            <Ionicons name="list" size={20} color="#00528A" />
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <TouchableOpacity
-          style={[
-            styles.input,
-            styles.dropdownBtn,
-            errors.town && styles.inputError,
-            !formData.city && styles.dropdownDisabled,
-          ]}
-          onPress={() => formData.city && openPicker("town", townOptions, "Town")}
-          activeOpacity={!formData.city ? 1 : 0.7}
-        >
-          <Text style={[styles.dropdownText, !formData.town && styles.placeholderText]}>
-            {formData.town || "Select town"}
-          </Text>
-          <Ionicons name="chevron-down" size={18} color={!formData.city ? "#d0d0d0" : "#a0aec0"} />
-        </TouchableOpacity>
-      )}
-
-      {renderSuggestions(townSuggestions, selectCanonicalTown)}
-
-      {errors.town && <Text style={styles.errorText}>{errors.town}</Text>}
-      <Text style={styles.fieldHint}>
-        {townIsCustom
-          ? 'Tap the list icon to choose from available towns instead'
-          : 'Select "Other" if your town isn\'t listed'}
-      </Text>
-    </View>
-  );
-
-  /**
-   * Sub-area (block / sector / phase). Renders only for towns with canonical
-   * data — towns without it skip the step entirely rather than showing an empty
-   * dropdown, and are not gated by the required rule.
-   */
-  const renderSubAreaField = () => {
-    if (!showSubArea) return null;
-
-    const answered = formData.subArea || subAreaIsOther;
-    const displayValue =
-      formData.subArea || (subAreaIsOther ? OTHER_OPTION : "Select sub-area");
-
-    return (
-      <View
-        style={styles.inputContainer}
-        ref={(el) => { fieldRefs.current.subArea = el; }}
-      >
-        <Text style={styles.label}>
-          Sub-area<Text style={styles.asterisk}> *</Text>
-        </Text>
-
-        <TouchableOpacity
-          style={[
-            styles.input,
-            styles.dropdownBtn,
-            errors.subArea && styles.inputError,
-          ]}
-          onPress={() => openPicker("subArea", subAreaOptions, "Sub-area")}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.dropdownText, !answered && styles.placeholderText]}>
-            {displayValue}
-          </Text>
-          <Ionicons name="chevron-down" size={18} color="#a0aec0" />
-        </TouchableOpacity>
-
-        {subAreaIsOther && (
-          <TextInput
-            style={[styles.input, styles.subAreaOtherInput]}
-            value={formData.subAreaOther || ""}
-            // Writes to `subAreaOther` but clears the `subArea` error — both
-            // fields satisfy the same required rule.
-            onChangeText={(v) => {
-              setFormData((p) => ({ ...p, subAreaOther: v }));
-              clearError("subArea");
-            }}
-            placeholder="Enter your block, sector or phase"
-            placeholderTextColor="#a0aec0"
-            autoCapitalize="words"
-            maxLength={OTHER_TEXT_MAX}
-            autoFocus
-          />
-        )}
-
-        {renderSuggestions(subAreaSuggestions, selectCanonicalSubArea)}
-
-        {errors.subArea && <Text style={styles.errorText}>{errors.subArea}</Text>}
-        <Text style={styles.fieldHint}>
-          {subAreaIsOther
-            ? "We'll review entries like yours and add common ones to the list"
-            : `Select "${OTHER_OPTION}" if yours isn't listed`}
-        </Text>
-      </View>
-    );
-  };
 
   return (
     <View style={styles.container}>
@@ -650,14 +490,14 @@ const EditProfile = () => {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
-          ref={scrollViewRef}
+          ref={scrollRef}
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-        <View style={styles.formContainer}>
+        <View style={styles.formContainer} ref={contentRef}>
           <View style={styles.profileIconContainer}>
             <LinearGradient
               colors={["#f8f9fa", "#e9ecef"]}
@@ -668,81 +508,55 @@ const EditProfile = () => {
           </View>
 
           <View style={styles.formSection}>
-            {renderInput("userName", "Username", "Enter your username", "default", false, true)}
-            {renderInput("email", "Email", "Enter your email", "email-address", false, true)}
-            {renderInput("phone", "Phone Number", "Enter your phone number", "phone-pad", false, true)}
-
-            {renderDropdown(
-              "province",
-              "Province",
-              PAKISTAN_LOCATIONS.provinces,
-              "Select province",
-              true,
+            {renderInput(
+              "userName",
+              "Username",
+              "Enter your username",
+              "default",
+              userNameRef,
+            )}
+            {renderInput(
+              "email",
+              "Email",
+              "Enter your email",
+              "email-address",
+              emailRef,
+            )}
+            {renderInput(
+              "phone",
+              "Phone Number",
+              "Enter your phone number",
+              "phone-pad",
+              phoneRef,
             )}
 
-            {renderDropdown(
-              "city",
-              "City",
-              cityOptions,
-              formData.province ? "Select city" : "Select province first",
-              true,
-              !formData.province,
-            )}
-
-            {renderTownField()}
-
-            {renderSubAreaField()}
-
-            {renderInput("address", "Street Address", "e.g. 12 Main Street, Suburb", "default", true, true)}
-
-            {/* Location Pin */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>
-                Exact Location (Pin)<Text style={styles.asterisk}> *</Text>
-              </Text>
-              <TouchableOpacity
-                style={styles.locationBtn}
-                onPress={() => setMapVisible(true)}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={formData.latitude ? "location" : "location-outline"}
-                  size={20}
-                  color="#00528A"
-                />
-                <Text style={styles.locationBtnText}>
-                  {formData.latitude && formData.longitude
-                    ? `${parseFloat(formData.latitude).toFixed(5)}, ${parseFloat(formData.longitude).toFixed(5)}`
-                    : "Set location on map"}
-                </Text>
-                {formData.latitude ? (
-                  <TouchableOpacity
-                    onPress={() => {
-                      setFormData((p) => ({ ...p, latitude: "", longitude: "" }));
-                      pinPlacementRef.current = null;
-                    }}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Ionicons name="close-circle" size={18} color="#a0aec0" />
-                  </TouchableOpacity>
-                ) : (
-                  <Ionicons name="chevron-forward" size={18} color="#a0aec0" />
-                )}
-              </TouchableOpacity>
-              {errors.location && (
-                <Text style={styles.errorText}>{errors.location}</Text>
-              )}
+            {/* Anchor for the checklist's "Pickup address" row: the whole
+                city/town/sub-area/house-number block is one question to a
+                user, so the scroll target is its top, not any one input. */}
+            <View ref={addressRef}>
+              <LocationFields
+                form={form}
+                errors={errors}
+                clearError={clearError}
+                onOpenMap={() => setMapVisible(true)}
+                pinRef={pinRef}
+              />
             </View>
           </View>
 
           <MapPicker
             visible={mapVisible}
-            initialLatitude={formData.latitude}
-            initialLongitude={formData.longitude}
+            initialLatitude={form.values.latitude}
+            initialLongitude={form.values.longitude}
+            city={form.values.city}
+            town={form.values.town}
+            province={form.values.province}
             onConfirm={(lat, lng, placement) => {
-              setFormData((p) => ({ ...p, latitude: lat, longitude: lng }));
-              pinPlacementRef.current = placement ?? null;
+              const seq = form.confirmPin(lat, lng, placement);
               clearError("location");
+              clearError("town");
+              clearError("subArea");
+              prefillFromPin(lat, lng, seq);
             }}
             onClose={() => setMapVisible(false)}
           />
@@ -788,56 +602,6 @@ const EditProfile = () => {
         </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* ── Picker Modal ── */}
-      <Modal
-        visible={pickerModal.visible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPickerModal({ visible: false, field: null, options: [], label: "" })}
-      >
-        <View style={styles.pickerOverlay}>
-          <View style={styles.pickerSheet}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>{pickerModal.label}</Text>
-              <TouchableOpacity
-                onPress={() => setPickerModal({ visible: false, field: null, options: [], label: "" })}
-              >
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              data={pickerModal.options}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.pickerItem,
-                    formData[pickerModal.field!] === item && styles.pickerItemSelected,
-                  ]}
-                  onPress={() => handlePickerSelect(item)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[
-                    styles.pickerItemText,
-                    formData[pickerModal.field!] === item && styles.pickerItemTextSelected,
-                    item === OTHER_OPTION && styles.pickerItemOther,
-                  ]}>
-                    {item}
-                  </Text>
-                  {formData[pickerModal.field!] === item && (
-                    <Ionicons name="checkmark" size={18} color="#00528A" />
-                  )}
-                </TouchableOpacity>
-              )}
-              ItemSeparatorComponent={() => <View style={styles.pickerSeparator} />}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 24 }}
-            />
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 };
@@ -876,76 +640,6 @@ const styles = StyleSheet.create({
     color: "#2d3748",
   },
   inputError: { borderColor: "#e53e3e", backgroundColor: "#fef5f5" },
-  inputMultiline: { height: 90, paddingTop: 14 },
-
-  // Dropdown
-  dropdownBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  dropdownText: { fontSize: 16, color: "#2d3748", flex: 1 },
-  placeholderText: { color: "#a0aec0" },
-  dropdownDisabled: { backgroundColor: "#f0f0f0", borderColor: "#e2e8f0" },
-
-  // Free-text sub-area, revealed under the dropdown when "Other" is picked
-  subAreaOtherInput: { marginTop: 8 },
-
-  // Canonical near-matches offered under an "Other" free-text input
-  suggestionBox: {
-    marginTop: 8,
-    padding: 10,
-    backgroundColor: "#f0f7f9",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#d5e8ee",
-    gap: 2,
-  },
-  suggestionHeading: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#5b7683",
-    marginBottom: 4,
-  },
-  suggestionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 7,
-  },
-  suggestionText: {
-    flex: 1,
-    fontSize: 14,
-    color: "#00528A",
-    fontWeight: "500",
-  },
-
-  // Custom town row
-  customTownRow: { flexDirection: "row", gap: 8 },
-  customTownInput: { flex: 1 },
-  townBackBtn: {
-    width: 50,
-    backgroundColor: "#f0f8ff",
-    borderWidth: 1,
-    borderColor: "#bee3f8",
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  fieldHint: { fontSize: 12, color: "#a0aec0", marginTop: 5 },
-
-  locationBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f8f9fa",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 10,
-  },
-  locationBtnText: { flex: 1, fontSize: 16, color: "#2d3748" },
   errorText: { color: "#e53e3e", fontSize: 14, marginTop: 4 },
   errorContainer: {
     flexDirection: "row",
@@ -990,42 +684,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   cancelButtonText: { color: "#00528A", fontSize: 16, fontWeight: "600" },
-
-  // Picker modal
-  pickerOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "flex-end",
-  },
-  pickerSheet: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "60%",
-    paddingTop: 8,
-  },
-  pickerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
-  },
-  pickerTitle: { fontSize: 17, fontWeight: "700", color: "#2d3748" },
-  pickerItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-  },
-  pickerItemSelected: { backgroundColor: "#f0f8ff" },
-  pickerItemText: { fontSize: 16, color: "#2d3748" },
-  pickerItemTextSelected: { color: "#00528A", fontWeight: "600" },
-  pickerItemOther: { color: "#718096", fontStyle: "italic" },
-  pickerSeparator: { height: 1, backgroundColor: "#f7f7f7", marginHorizontal: 20 },
 
   // Unused legacy styles kept for Navbar compatibility
   headerSection: { backgroundColor: "#00528A", paddingBottom: 20 },
