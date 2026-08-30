@@ -198,7 +198,6 @@ module.exports = () => ({
     // project.
     slug: "mint-rewards",
     version: "2.1.11",
-    orientation: "portrait",
     icon: isDev
       ? "./assets/images/icon-dev.png"
       : "./assets/images/logo-fixed.png",
