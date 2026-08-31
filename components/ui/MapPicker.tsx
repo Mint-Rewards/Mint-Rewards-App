@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isFixWithinCity, resolveSelectionViewport } from "@/utils/locationForm";
 import {
   FlowStep,
@@ -72,6 +73,7 @@ export default function MapPicker({
     action.type === "reset" ? initialPinState : pinReducer(state, action);
 
   const [state, dispatch] = useReducer(localPinReducer, initialPinState);
+  const insets = useSafeAreaInsets();
   const [locating, setLocating] = useState(false);
   // Tracks whether a GPS fix has centered the camera this session with no
   // pin placed yet, so the footer can nudge the user toward placing one.
@@ -295,7 +297,7 @@ export default function MapPicker({
         </View>
 
         {/* Footer */}
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
           {state.pin ? (
             <Text style={styles.coords}>
               {state.pin.latitude.toFixed(5)}, {state.pin.longitude.toFixed(5)}

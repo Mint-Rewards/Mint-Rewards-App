@@ -198,7 +198,6 @@ module.exports = () => ({
     // project.
     slug: "mint-rewards",
     version: "2.1.11",
-    orientation: "portrait",
     icon: isDev
       ? "./assets/images/icon-dev.png"
       : "./assets/images/logo-fixed.png",
@@ -310,6 +309,7 @@ module.exports = () => ({
             compileSdkVersion: 36,
             targetSdkVersion: 36,
             buildToolsVersion: "36.0.0",
+            enableProguardInReleaseBuilds: true,
           },
         },
       ],

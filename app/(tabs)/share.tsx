@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useState } from "react";
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -125,6 +126,7 @@ const ShareScreen = () => {
   };
 
   const handleEmailBlur = (id: string) => {
+    const ownEmail = user?.email?.trim().toLowerCase();
     setEmailFields((prev) =>
       prev.map((field) => {
         if (field.id !== id) return field;
@@ -133,6 +135,9 @@ const ShareScreen = () => {
         if (!validateEmail(trimmed)) {
           return { ...field, error: "Please enter a valid email" };
         }
+        if (ownEmail && trimmed.toLowerCase() === ownEmail) {
+          return { ...field, error: "You can't refer your own email address" };
+        }
         return field;
       }),
     );
@@ -140,15 +145,20 @@ const ShareScreen = () => {
 
   const validateAllEmails = (): boolean => {
     let hasErrors = false;
+    const ownEmail = user?.email?.trim().toLowerCase();
 
     setEmailFields((prev) =>
       prev.map((field) => {
         let error;
-        if (!field.email.trim()) {
+        const trimmed = field.email.trim();
+        if (!trimmed) {
           error = "Email is required";
           hasErrors = true;
-        } else if (!validateEmail(field.email)) {
+        } else if (!validateEmail(trimmed)) {
           error = "Please enter a valid email";
+          hasErrors = true;
+        } else if (ownEmail && trimmed.toLowerCase() === ownEmail) {
+          error = "You can't refer your own email address";
           hasErrors = true;
         }
         return { ...field, error };
@@ -252,6 +262,8 @@ const ShareScreen = () => {
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={Keyboard.dismiss}
           accessibilityLabel={`Email address ${index + 1}`}
         />
         {emailFields.length > 1 && (
