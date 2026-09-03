@@ -1,3 +1,9 @@
+> **ARCHIVED — superseded, kept for history.**
+> OTA rollout plan, self-marked SUPERSEDED when written. It assumed a `fingerprint` runtimeVersion policy and a `utils/otaUpdates.ts` that was never built. Shipped reality is `appVersion` policy plus `components/UpdateGate.tsx` + `utils/versionGate.ts` — see HANDOFF.md §7 and §8.
+> Current documentation: [`docs/HANDOFF.md`](../HANDOFF.md).
+
+---
+
 # Expo Updates (OTA) Rollout Implementation Plan
 
 > **SUPERSEDED** by the UpdateGate implementation (`components/UpdateGate.tsx`, `utils/versionGate.ts`, backend `/api/app-config`). Do not execute this plan: `utils/otaUpdates.ts` was never built and will not be, and the plan is stale on config facts — `app.config.js` now has a live `updates` block and `runtimeVersion` is `appVersion`, not `fingerprint`. Kept for history only.

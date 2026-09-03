@@ -1,3 +1,9 @@
+> **ARCHIVED — superseded, kept for history.**
+> The design behind the plan above. Same caveat: it describes a `fingerprint` policy that was never enabled.
+> Current documentation: [`docs/HANDOFF.md`](../HANDOFF.md).
+
+---
+
 # Expo Updates (OTA) Rollout — Design
 
 > **SUPERSEDED** by the UpdateGate implementation (`components/UpdateGate.tsx`, `utils/versionGate.ts`, backend `/api/app-config`). The planned `utils/otaUpdates.ts` was never built and will not be; this document is also stale on config facts — `app.config.js` now has a live `updates` block and `runtimeVersion` is `appVersion`, not `fingerprint`. Kept for history only.

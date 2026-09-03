@@ -1,7 +1,7 @@
 ---
 name: expo-react-native-reference
 description: >
-  Domain-theory knowledge pack for the Mint Rewards App: Expo SDK 54 / React Native 0.81
+  Domain-theory knowledge pack for the Mint Rewards App: Expo SDK 56 / React Native 0.85.3
   platform concepts as they apply to THIS repo. Use when you need to understand or explain
   prebuild / CNG (why android/ and ios/ are gitignored), Expo Go vs development build vs
   release build, EAS build profiles in eas.json, EXPO_PUBLIC_ env vars, expo-router v6
@@ -17,23 +17,27 @@ description: >
 
 Platform concepts a web developer or an AI model needs before touching this repo. Every
 concept below lands on a concrete file or command in this repository. Repo facts verified
-against the working tree (as of 2026-07-08). General Expo/RN platform statements come from
-model knowledge; anything version-sensitive is labeled "(verify against Expo SDK 54 docs)".
+against the working tree (as of 2026-09-03). General Expo/RN platform statements come from
+model knowledge; anything version-sensitive is labeled "(verify against Expo SDK 56 docs)".
 
-Baseline (as of 2026-07-08): Expo SDK `~54.0.25`, React Native `0.81.5`, React `19.1.0`,
-expo-router `~6.0.15`, TypeScript `~5.9.2` — all pinned in `package.json`.
+Native config lives in **`app.config.js`** (a dynamic JS config; the former `app.json` was
+removed). It selects a dev or production variant from `APP_VARIANT` and reads required env
+vars at config-resolution time. Anything below that says "edit the config" means this file.
+
+Baseline (as of 2026-09-03): Expo SDK `~56.0.20`, React Native `0.85.3`, React `19.2.3`,
+expo-router `~56.2.19`, TypeScript `~6.0.3` — all pinned in `package.json`.
 
 ---
 
 ## 1. Continuous Native Generation (CNG) / prebuild
 
 **Definition.** In a CNG workflow, the `android/` and `ios/` native projects are *build
-artifacts*, not source. `npx expo prebuild` generates them from `app.json` (plus config
-plugins). You never hand-edit native files; you edit `app.json` and regenerate.
+artifacts*, not source. `npx expo prebuild` generates them from `app.config.js` (plus config
+plugins). You never hand-edit native files; you edit `app.config.js` and regenerate.
 
 **Here.** `android/` and `ios/` exist on disk but are gitignored — commit `fe5294d`
 ("ignore generated native directories and .expo") added `android` and `ios` to `.gitignore`
-(lines 9–10). All native configuration lives in `app.json`: bundle IDs
+(lines 9–10). All native configuration lives in `app.config.js`: bundle IDs
 (`ios.bundleIdentifier: com.mintrewards.app`, `android.package: com.mintrewards.appp` —
 note the triple-p on Android, it is intentional and must not be "fixed"), Info.plist keys
 (`ios.infoPlist`), Android permissions, the Google Maps API key
@@ -42,18 +46,18 @@ note the triple-p on Android, it is intentional and must not be "fixed"), Info.p
 **Rules for this repo:**
 
 - NEVER hand-edit files under `android/` or `ios/`. Changes there are silently lost on the
-  next prebuild and never reach CI/EAS (which prebuilds from `app.json`).
-- Native config change → edit `app.json` (or add a config plugin) → regenerate.
+  next prebuild and never reach CI/EAS (which prebuilds from `app.config.js`).
+- Native config change → edit `app.config.js` (or add a config plugin) → regenerate.
 
 **Proof / commands:**
 
 ```bash
 git check-ignore -v android ios        # shows .gitignore:9 and :10
 git show --stat fe5294d                # the commit that gitignored them
-npx expo prebuild --clean              # regenerate native projects from app.json
+npx expo prebuild --clean              # regenerate native projects from app.config.js
 ```
 
-`--clean` deletes and regenerates `android/` + `ios/`; run it after any `app.json` plugin
+`--clean` deletes and regenerates `android/` + `ios/`; run it after any `app.config.js` plugin
 or native-config change, then rebuild with `npx expo run:ios` / `run:android`.
 
 ---
@@ -71,9 +75,9 @@ are not part of Expo Go's runtime:
 | Dependency (`package.json`) | Why it forces a dev build |
 | --- | --- |
 | `@react-native-google-signin/google-signin` `^16.1.2` | Third-party native module + config plugin; not in Expo Go |
-| `react-native-maps` `1.20.1` | Needs the Google Maps API key compiled in via `app.json` `android.config.googleMaps` |
-| `expo-dev-client` `~6.0.21` | Its presence in deps declares this a dev-client project |
-| `expo-apple-authentication` `~8.0.8` | Requires the Sign in with Apple entitlement in your own binary |
+| `react-native-maps` `1.27.2` | Needs the Google Maps API key compiled in via `app.config.js` `android.config.googleMaps` |
+| `expo-dev-client` `~56.0.25` | Its presence in deps declares this a dev-client project |
+| `expo-apple-authentication` `~56.0.4` | Requires the Sign in with Apple entitlement in your own binary |
 
 `expo-print` / `expo-sharing` are Expo-SDK modules, but in practice this repo treats them
 as build-fragile too — see the lazy-require pattern below.
@@ -110,14 +114,16 @@ is why gitignoring `android/`/`ios/` is safe). Profiles live in `eas.json`.
 | Key | Value | Meaning |
 | --- | --- | --- |
 | `cli.version` | `>= 14.7.1` | Minimum eas-cli version allowed to build this project |
-| `cli.appVersionSource` | `remote` | EAS's servers own the build number; `ios.buildNumber` in app.json is NOT the source of truth — EAS increments and stores versions remotely |
+| `cli.appVersionSource` | `remote` | EAS's servers own the build number. There is no `ios.buildNumber` or `android.versionCode` in `app.config.js` at all — EAS increments and stores both remotely. Only `version` (`2.2.1`) is edited locally |
 | `build.development` | `developmentClient: true`, `distribution: internal` | Dev client for physical devices, ad-hoc/internal install |
 | `build.simulator` | `ios.simulator: true`, `developmentClient: true` | Dev client compiled for the iOS Simulator (a device build won't install on a sim) |
 | `build.preview` | `distribution: internal` | Release-mode binary (JS embedded) distributed internally, not to stores |
 | `build.production` | `autoIncrement: true` | Store build; bumps the remote build number automatically each build |
-| `submit.production` | `{}` | Placeholder for `eas submit` store credentials/config |
+| `build.preview` env | `APP_VARIANT: preview` | **Gotcha:** `app.config.js` treats anything that isn't `"development"` as production, so a `preview` build gets the PRODUCTION bundle ID, package, name and icon. Not a crash — `extra.appVariant` is normalised — but it installs over a user's production app |
+| `build.testflight-preview` | `extends: production`, `EXPO_PUBLIC_API_URL` pinned to the dev backend | A store-shaped iOS binary talking to dev data. Never promote one to the App Store |
+| `submit.production` / `submit.testflight-preview` | `{}` | Empty: credentials come from EAS-stored credentials or an interactive prompt |
 
-**Project identity:** `app.json` → `owner: "mint-rewards"`, `slug: "mint-rewards"`,
+**Project identity:** `app.config.js` → `owner: "mint-rewards"`, `slug: "mint-rewards"`,
 `extra.eas.projectId: 7a49df03-9e0f-4272-acfc-5bcb7fd8e30a`. These three bind the repo to
 the EAS project; do not change them.
 
@@ -139,11 +145,11 @@ until you restart the bundler with cache cleared (`npx expo start -c`) for dev, 
 **rebuild the binary** for preview/production builds (the value is frozen into the
 embedded bundle).
 
-**This repo's vars** (`.env` is untracked/gitignored — keys as of 2026-07-08):
+**This repo's vars** (`.env` is untracked/gitignored — keys as of 2026-09-03):
 
 | Var | Consumer | Behavior |
 | --- | --- | --- |
-| `EXPO_PUBLIC_API_URL` | `utils/constants.ts:13` (`API_BASE_URL`, trailing slash stripped) and `utils/logger.ts:10` | Falls back to `https://mint-rewards-backend.vercel.app` when unset |
+| `EXPO_PUBLIC_API_URL` | `config/env.ts` — the ONLY module allowed to read `extra`/`process.env`; everything else imports `ENV`/`API_BASE_URL` from it | **No fallback.** `config/env.ts` throws at import time listing every missing key. The old silent fallback to a production URL in `utils/constants.ts` was removed precisely because it let a build quietly talk to the wrong backend |
 | `APPLE_BUNDLE_ID` | No `process.env` consumer in app code (no `EXPO_PUBLIC_` prefix, so it would not be inlined anyway) — build/tooling side only | — |
 
 Note `utils/constants.ts` and `utils/logger.ts` read the env var *independently*; keep
@@ -178,7 +184,7 @@ router IS the app entry.
 | `app/{login,register,forgot-password,otp-screen,change-password,editProfile,discounts,redeem,collections,notifications}.tsx` | Stack screens |
 | `app/+not-found.tsx` | Catch-all for unmatched routes |
 
-**Typed routes:** `app.json` `experiments.typedRoutes: true` generates route-string types
+**Typed routes:** `app.config.js` `experiments.typedRoutes: true` generates route-string types
 into `.expo/types` (referenced via `expo-env.d.ts`), so `router.push("/tpyo")` is a
 TypeScript error. Types regenerate when Metro runs.
 
@@ -186,7 +192,7 @@ TypeScript error. Types regenerate when Metro runs.
 entry) — used for auth transitions so users can't back-swipe into a stale state:
 `app/_layout.tsx:30-42` (login vs home redirect), `app/login.tsx:382`,
 `app/register.tsx:91`. `router.push` stacks a screen the user should return from:
-`app/discounts.tsx:113` (`/editProfile` when profile-gated),
+`app/(tabs)/redeem.tsx` (`/editProfile` when profile-gated),
 `app/forgot-password.tsx:35` (`/otp-screen?email=...` — query params become
 `useLocalSearchParams()` in the target). Preserve this distinction; using `push` for auth
 redirects reintroduces back-navigation bugs.
@@ -221,9 +227,9 @@ is the canonical "feature doesn't exist on this platform" stub.
 native calls (TurboModules) and the Fabric renderer. The React Compiler auto-memoizes
 components at build time (no manual `useMemo`/`useCallback` needed for most cases).
 
-**Here.** `app.json`: `newArchEnabled: true` and `experiments.reactCompiler: true`;
-`package.json`: `react: 19.1.0`. On SDK 54 / RN 0.81 the New Architecture is the standard
-path (verify against Expo SDK 54 docs for exact default behavior).
+**Here.** `app.config.js`: `newArchEnabled: true` and `experiments.reactCompiler: true`;
+`package.json`: `react: 19.2.3`. On SDK 56 / RN 0.85.3 the New Architecture is the standard
+path (verify against Expo SDK 56 docs for exact default behavior).
 
 **Practical implications for this repo:**
 
@@ -241,23 +247,23 @@ path (verify against Expo SDK 54 docs for exact default behavior).
 - Compiler assumes the Rules of React. Mutating objects held in state or reading refs
   during render can miscompile into stale UI. Zustand selectors (below) are compatible.
 - `react-native-reanimated ~4.1.1` + `react-native-worklets 0.5.1` are the new-arch
-  compatible pairing on SDK 54 (worklets split out of reanimated) — keep their versions
-  moving together (verify against Expo SDK 54 docs).
+  compatible pairing on SDK 56 (worklets split out of reanimated) — keep their versions
+  moving together (verify against Expo SDK 56 docs).
 
 ---
 
 ## 8. Key native modules in this repo
 
-One line each + the gotcha that bites (all versions from `package.json`, as of 2026-07-08):
+One line each + the gotcha that bites (all versions from `package.json`, as of 2026-09-03):
 
 | Module | Role here | Gotcha |
 | --- | --- | --- |
 | `expo-secure-store` | Auth persistence: `userToken`, `userEmail`, `userName`, `userPoints` in iOS Keychain / Android Keystore (`store/store.ts:330-333`, cleared at `:469-472`; read at app boot in `app/_layout.tsx:23`) | ~2KB value size limit — store tokens/small strings only, never JSON blobs of profile data; values survive app reinstall on iOS (stale-token path handled at `app/_layout.tsx:32-34`) |
 | `expo-print` | HTML string → PDF file for coupon downloads (`hooks/useCouponDownload.ts`, `printToFileAsync`) | Loaded via dynamic `import()` inside the hook, not top-level — keep it that way (missing native binary must not crash startup) |
 | `expo-sharing` | OS share sheet for the generated coupon PDF (`useCouponDownload.ts`, `shareAsync`) | Same lazy-import rule; no-op on web |
-| `expo-location` + `react-native-maps` | Address pinning for waste pickup (`components/ui/LocationPicker.tsx`, `MapPicker.tsx`) | Permission strings live in `app.json` (iOS `infoPlist.NSLocation*`, plugin `locationWhenInUsePermission`, Android `permissions` array); Maps needs the API key in `android.config.googleMaps.apiKey` — all require prebuild + rebuild to take effect |
+| `expo-location` + `react-native-maps` | Address pinning for waste pickup (`components/ui/LocationPicker.tsx`, `MapPicker.tsx`) | Permission strings live in `app.config.js` (iOS `infoPlist.NSLocation*`, plugin `locationWhenInUsePermission`, Android `permissions` array); Maps needs the API key in `android.config.googleMaps.apiKey` — all require prebuild + rebuild to take effect |
 | `expo-apple-authentication` | Sign in with Apple (`components/AppleSignInButton.ios.tsx`) | iOS-only — Android gets the `return null` stub via file resolution; needs the entitlement, hence no Expo Go |
-| `@react-native-google-signin/google-signin` | Google Sign-In (`utils/googleAuth.ts`; configured at boot in `app/_layout.tsx:46`) | Historically the costliest setup failure in this repo. Config plugin in `app.json` carries `iosUrlScheme` (reversed iOS client ID); `configureGoogleSignIn()` hardcodes `iosClientId` + `webClientId` — the `webClientId` is a DIFFERENT OAuth client than the iOS one and must match the backend's verifier. Any change → prebuild + rebuild. Deep-dive: **mint-rewards-auth-and-identity** |
+| `@react-native-google-signin/google-signin` | Google Sign-In (`utils/googleAuth.ts`; configured at boot in `app/_layout.tsx:46`) | Historically the costliest setup failure in this repo. Config plugin in `app.config.js` carries `iosUrlScheme` (reversed iOS client ID); `configureGoogleSignIn()` hardcodes `iosClientId` + `webClientId` — the `webClientId` is a DIFFERENT OAuth client than the iOS one and must match the backend's verifier. Any change → prebuild + rebuild. Deep-dive: **mint-rewards-auth-and-identity** |
 | `react-native-reanimated` / `react-native-worklets` | Animation runtime; `import "react-native-reanimated"` side-effect import at the very top of `app/_layout.tsx:8` | That import must stay first-ish in the root layout; babel/worklets misconfig shows up as "native part of reanimated doesn't seem to be initialized" |
 | `zustand` `^5.0.8` | The state library (JS-only, not Expo) | See mental model below |
 
@@ -278,20 +284,20 @@ do not create parallel stores.
 
 **Definition.** Each Expo SDK pins a known-good version for every Expo/RN package (that is
 what the `~` ranges in `package.json` encode, e.g. `expo: ~54.0.25`,
-`expo-router: ~6.0.15`). Installing an arbitrary version with plain `npm install <pkg>`
+`expo-router: ~56.2.19`). Installing an arbitrary version with plain `npm install <pkg>`
 breaks the matrix and produces native build failures or runtime crashes.
 
 **Rules:**
 
 ```bash
 npx expo install <pkg>          # ALWAYS use this for Expo-managed / RN deps — resolves the SDK-54-correct version
-npx expo install --check        # detect version drift vs SDK 54 expectations (read-only)
+npx expo install --check        # detect version drift vs SDK 56 expectations (read-only)
 npx expo install --fix          # apply the corrections --check found (this changes package.json → change control)
-npx expo-doctor                 # broader project health check (verify against Expo SDK 54 docs for flag names)
+npx expo-doctor                 # broader project health check (verify against Expo SDK 56 docs for flag names)
 ```
 
 Plain `npm install` is fine only for pure-JS libraries with no Expo pin (e.g. `formik`,
-`yup`, `zustand`). React (`19.1.0`) and React Native (`0.81.5`) are exact-pinned — never
+`yup`, `zustand`). React (`19.2.3`) and React Native (`0.85.3`) are exact-pinned — never
 bump them independently of an SDK upgrade, and an SDK upgrade is a
 **mint-rewards-change-control** event.
 
@@ -303,11 +309,11 @@ bump them independently of an SDK upgrade, and an SDK upgrade is a
 | --- | --- |
 | **Metro** | The React Native JS bundler/dev server. `npx expo start` runs it; it does the platform-suffix file resolution (§6) and inlines `EXPO_PUBLIC_` vars (§4). `-c` clears its cache. |
 | **Bundle** | The single compiled JS file Metro produces. Dev builds fetch it from Metro over the network; preview/production builds embed it in the binary — which is why env/JS changes need a rebuild there. |
-| **Config plugin** | A package (or function) that mutates the generated native projects during prebuild. This repo's `app.json` `plugins` array: expo-router, expo-splash-screen, expo-secure-store, expo-location, expo-web-browser, expo-apple-authentication, @react-native-google-signin (with `iosUrlScheme`). The only sanctioned way to change native config. |
+| **Config plugin** | A package (or function) that mutates the generated native projects during prebuild. This repo's `app.config.js` `plugins` array: expo-router, @react-native-firebase/app, expo-splash-screen, expo-secure-store, expo-location, expo-web-browser, expo-apple-authentication, @react-native-google-signin (with `iosUrlScheme`), expo-build-properties (iOS `useFrameworks: static` + modular headers for Firebase/Google Sign-In; Android compile/target SDK 36, ProGuard on in release), expo-font, expo-image, expo-sharing, expo-status-bar. Note there is NO Sentry plugin, so source-map/dSYM upload is not automated. The only sanctioned way to change native config. |
 | **Dev client** | This app's own binary compiled with `expo-dev-client` (`npx expo run:ios/android` or the EAS `development`/`simulator` profiles). Replaces Expo Go, which cannot run this app (§2). |
-| **OTA / EAS Update** | Shipping new JS bundles to installed apps without a store release. **Not configured here** (no `expo-updates` in `package.json`, no `updates`/`runtimeVersion` in `app.json`, as of 2026-07-08) — a candidate improvement, routed through change control; until then every JS fix to production requires a full store build. |
-| **Prebuild** | `npx expo prebuild [--clean]`: generates `android/`+`ios/` from `app.json` + plugins. The reason those dirs are gitignored (§1). |
-| **Scheme** | The deep-link URL scheme, `mint-rewards` in `app.json` (`mint-rewards://...` opens the app). Distinct from the `iosUrlScheme` inside the google-signin plugin, which is the reversed Google OAuth client ID used only for the sign-in redirect. |
+| **OTA / EAS Update** | Shipping new JS bundles to installed apps without a store release. **Configured and live.** `expo-updates ~56.0.25`; `app.config.js` sets `updates.url` to the EAS endpoint, `checkAutomatically: "ON_LOAD"`, `fallbackToCacheTimeout: 0`, and `runtimeVersion: { policy: "appVersion" }`. Channels: `development`, `preview`, `production`, `testflight-preview`. Because the policy is `appVersion`, a native change shipped without bumping `version` can be OTA'd onto an incompatible binary — see `docs/HANDOFF.md` §7. |
+| **Prebuild** | `npx expo prebuild [--clean]`: generates `android/`+`ios/` from `app.config.js` + plugins. The reason those dirs are gitignored (§1). |
+| **Scheme** | The deep-link URL scheme, `mint-rewards` in `app.config.js` (`mint-rewards://...` opens the app). Distinct from the `iosUrlScheme` inside the google-signin plugin, which is the reversed Google OAuth client ID used only for the sign-in redirect. |
 
 ---
 
@@ -328,17 +334,17 @@ bump them independently of an SDK upgrade, and an SDK upgrade is a
 | Testing/QA procedure | **mint-rewards-validation-and-qa** |
 
 This skill explains the platform; it does not authorize changes. Anything touching
-`app.json`, `eas.json`, `package.json` versions, or the plugins array goes through
+`app.config.js`, `eas.json`, `package.json` versions, or the plugins array goes through
 **mint-rewards-change-control**.
 
 ---
 
 ## Provenance and maintenance
 
-All repo facts verified against the working tree on 2026-07-08. Re-verify with:
+All repo facts verified against the working tree on 2026-09-03. Re-verify with:
 
 - Dependency/version claims (§2, §8, §9): `cat package.json`
-- Native config, plugins, experiments, projectId (§1, §3, §5, §7): `cat app.json`
+- Native config, plugins, experiments, projectId (§1, §3, §5, §7): `cat app.config.js`
 - EAS profiles (§3): `cat eas.json`
 - android/ios gitignored (§1): `git check-ignore -v android ios && git show --stat fe5294d`
 - Env var consumers (§4): `grep -rn "EXPO_PUBLIC" app components hooks utils store`

@@ -1,6 +1,6 @@
 ---
 name: mint-rewards-change-control
-description: Load BEFORE making, reviewing, or merging any change to the Mint Rewards app. Defines how changes are classified (docs-only, JS/TS-only, native-affecting, backend-contract-affecting, release-affecting), which gates each class must pass, the project's four non-negotiable rules with the historical incidents behind them, and what needs explicit owner sign-off. Triggers: "can I change/edit/add X", "is this safe to merge", "do I need a rebuild", "should I commit this", "who approves", "bump version", "edit app.json", "add a package", "touch the redeem flow", "commit the .env".
+description: Load BEFORE making, reviewing, or merging any change to the Mint Rewards app. Defines how changes are classified (docs-only, JS/TS-only, native-affecting, backend-contract-affecting, release-affecting), which gates each class must pass, the project's four non-negotiable rules with the historical incidents behind them, and what needs explicit owner sign-off. Triggers: "can I change/edit/add X", "is this safe to merge", "do I need a rebuild", "should I commit this", "who approves", "bump version", "edit app.config.js", "add a package", "touch the redeem flow", "commit the .env".
 ---
 
 # Mint Rewards Change Control
@@ -10,7 +10,7 @@ How changes are classified, gated, and reviewed in this repo. This is the client
 **Definitions used throughout** (defined once, used everywhere):
 
 - **Expo Go** — Expo's pre-built sandbox app from the app stores. Runs JS/TS-only changes instantly but contains only a fixed set of native modules. Anything needing custom native code will crash or no-op in it.
-- **Prebuild** — `npx expo prebuild`: Expo generates the `android/` and `ios/` native projects from `app.json`. In this repo those directories are **gitignored and disposable** (commit `fe5294d`).
+- **Prebuild** — `npx expo prebuild`: Expo generates the `android/` and `ios/` native projects from `app.config.js`. In this repo those directories are **gitignored and disposable** (commit `fe5294d`).
 - **Dev build (development build)** — a custom-compiled binary of THIS app (via `npx expo run:ios`, `npx expo run:android`, or EAS with `developmentClient: true`) that includes the project's native modules. Required to test native-affecting changes.
 - **EAS** — Expo Application Services, the cloud build/submit service configured in `eas.json`.
 
@@ -20,15 +20,15 @@ How changes are classified, gated, and reviewed in this repo. This is the client
 |---|---|---|
 | **1. Docs / skills only** | `.claude/skills/**`, README, comments-only edits | Verify claims against the repo (ground truth). No build or typecheck strictly required, but `npx tsc --noEmit` is cheap insurance if any `.ts` file was touched. |
 | **2. JS/TS only (no native impact)** | Screens in `app/`, `hooks/`, `store/store.ts`, `utils/`, `components/`, styles | `npx tsc --noEmit` clean + `npx expo lint` at-or-below baseline (see "Review discipline") + manual verification of the touched flow per **mint-rewards-validation-and-qa**. Testable in Expo Go or a dev build via `npx expo start`. |
-| **3. Native-affecting** | Any `app.json` edit under `plugins`, `ios`, `android` (permissions, keys, URL schemes); adding/upgrading an npm package that ships native code (most `expo-*` and `react-native-*` packages) | Everything in class 2, **plus a rebuild**: `npx expo run:ios` and/or `npx expo run:android` (or an EAS `development` build). **Cannot be tested in Expo Go** — Expo Go's binary is fixed. Never hand-edit `android/` or `ios/` (non-negotiable 3). Cross-ref **expo-react-native-reference** and **mint-rewards-build-and-env**. |
+| **3. Native-affecting** | Any `app.config.js` edit under `plugins`, `ios`, `android` (permissions, keys, URL schemes); adding/upgrading an npm package that ships native code (most `expo-*` and `react-native-*` packages) | Everything in class 2, **plus a rebuild**: `npx expo run:ios` and/or `npx expo run:android` (or an EAS `development` build). **Cannot be tested in Expo Go** — Expo Go's binary is fixed. Never hand-edit `android/` or `ios/` (non-negotiable 3). Cross-ref **expo-react-native-reference** and **mint-rewards-build-and-env**. |
 | **4. Backend-contract-affecting** | New/changed API calls, changed request/response shapes, auth header changes, new endpoints the client expects | This repo **cannot** change the backend. Confirm the endpoint exists and behaves as expected against **mint-rewards-backend-api-contract** first; coordinate any server change with the backend repo owner BEFORE writing client code that depends on it. Then class 2 (or 3) steps as applicable. |
-| **5. Release-affecting** | `app.json` `version` / `ios.buildNumber`, anything in `eas.json`, store submission config | Owner sign-off required. See "Versioning" below and **mint-rewards-release-and-positioning**. |
+| **5. Release-affecting** | `app.config.js` `version` / `ios.buildNumber`, anything in `eas.json`, store submission config | Owner sign-off required. See "Versioning" below and **mint-rewards-release-and-positioning**. |
 
 A change can be in multiple classes at once (e.g. a new coupon endpoint consumed via a new native PDF package = classes 3 + 4). Apply the union of the gates.
 
 ## Branch and merge conventions
 
-**Observed reality in history (as of 2026-07-08):**
+**Observed reality in history (as of 2026-09-03):**
 
 - `main` is the default branch. `dev` and `test/verify-cicd-pipeline` also exist (local and on origin).
 - Feature branches were used and merged via merge commits: `f6908f8` "Merge branch 'feature/location'", `ac8bcba` "Merge branch 'feature/discounts_page'", and one Dependabot PR merge `c66e6f0`.
@@ -43,56 +43,60 @@ Each rule below is a standing owner decision backed by a real incident. Do not r
 
 ### 1. No secrets in git — `.env` stays untracked
 
-**Rule:** never commit `.env`, `.env.local`, or any credential/key/URL-with-token. `.env` is gitignored today — verify with `git check-ignore .env` (must print `.env`, exit 0). Current `.env` holds `EXPO_PUBLIC_API_URL` and `APPLE_BUNDLE_ID` (as of 2026-07-08); never echo its values into logs, commits, or skills.
+**Rule:** never commit `.env`, `.env.local`, or any credential/key/URL-with-token. `.env` is gitignored today — verify with `git check-ignore .env` (must print `.env`, exit 0). Current `.env` holds `APP_VARIANT`, `EXPO_PUBLIC_API_URL`, `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_WEB_CLIENT_ID`, `ANDROID_GOOGLE_MAPS_API_KEY`, `POSTHOG_PROJECT_TOKEN`, `POSTHOG_HOST` (as of 2026-09-03); `.env.local` holds `SENTRY_AUTH_TOKEN`. Never echo their values into logs, commits, or skills. `.env.example` documents every key by name.
 
 **Why:** anything committed is in history forever unless history is rewritten; scrubbing costs a multi-commit cleanup and (for real credentials) rotation.
 
-**Incident (2026-04-30):** `.env.local` was actually committed and then scrubbed across five commits — `cee0f19` "env local" (added `.env.local`), `765bf15` "updated .env.local", `164fdcb` "remove .env.local" (+ gitignore fix), `be7ec79` and `e399a96` "updated igitignore" (gitignore churn finishing the cleanup). Mine it yourself: `git log --oneline --all -- .env.local .env`. The committed content was a (commented-out) API URL line rather than a credential, but it is treated as a full secret-hygiene incident — the process failure is identical.
+**Incident (2026-04-30):** `.env.local` was actually committed and then scrubbed across five commits — `cee0f19` "env local" (added `.env.local`), `765bf15` "updated .env.local", `164fdcb` "remove .env.local" (+ gitignore fix), `be7ec79` and `e399a96` "updated igitignore" (gitignore churn finishing the cleanup). Mine it yourself: `git log --oneline --all -- .env.local .env`. **Escalation (found 2026-09-03):** `cee0f19` added a `.env.local` containing a real `SENTRY_AUTH_TOKEN`. It is gitignored at HEAD but remains recoverable from history by anyone with repo access. **That token needs rotating in Sentry** — see `docs/HANDOFF.md` §12. This is a live credential exposure, not just a process failure.
 
-**Documented legacy exception — do not replicate:** `app.json` → `android.config.googleMaps.apiKey` contains a live Google Maps API key in a tracked file (added in `3a87f39`, 2026-05-08). It ships this way and is a known accepted legacy. **Do not add any new key, token, or secret to `app.json` or any tracked file citing this as precedent.**
+**Former legacy exception — now RESOLVED (2026-09-03).** `android.config.googleMaps.apiKey` used to hold a live Google Maps key in a tracked file (added `3a87f39`, 2026-05-08). It now reads `env.androidGoogleMapsApiKey`, sourced from `ANDROID_GOOGLE_MAPS_API_KEY` and documented in `.env.example`. **There is no longer any standing exception to this rule — do not add a key, token, or secret to any tracked file.**
 
 ### 2. Profile-completeness gating is a business rule
 
 **Rule:** coupons/discounts stay locked until the user has phone + province + city set. The gate is the expression
 `!!(user?.phone?.trim() && user?.province?.trim() && user?.city?.trim())`
-implemented as `isProfileComplete` in `app/(tabs)/home.tsx` (~line 121, as of 2026-07-08) and duplicated in `app/discounts.tsx` (~line 30). **Any change that weakens, bypasses, or narrows this gate needs explicit owner approval** — it is a business rule, not a UX preference. Note the duplication: a change to one site without the other silently forks the rule.
+now lives as a single shared `isProfileComplete` in `utils/profile.ts`, called from `app/(tabs)/home.tsx` and `app/(tabs)/deals.tsx`. **The old duplication was resolved — keep it that way.** The gate has since widened: it also covers the saved coordinate and house number (street address was dropped by owner ruling). Read `utils/profile.ts` for the current expression rather than trusting any inlined copy. **Any change that weakens, bypasses, or narrows this gate needs explicit owner approval** — it is a business rule, not a UX preference.
 
 **Evidence:** introduced deliberately in `2297728` "profile fields now mandatory post-signup" and `3129340` "locked coupons/discounts until profile is complete" (both 2026-05-09).
 
 ### 3. Never hand-edit `android/` or `ios/`
 
-**Rule:** the native directories are gitignored (`git check-ignore android ios` confirms) and regenerated by prebuild; all native configuration flows through `app.json` (plugins, permissions, bundle IDs, keys). Any edit made directly inside `android/` or `ios/` is invisible to git and destroyed on the next prebuild.
+**Rule:** the native directories are gitignored (`git check-ignore android ios` confirms) and regenerated by prebuild; all native configuration flows through `app.config.js` (plugins, permissions, bundle IDs, keys). Any edit made directly inside `android/` or `ios/` is invisible to git and destroyed on the next prebuild.
 
-**Evidence:** `fe5294d` (2026-05-18) "ignore generated native directories and .expo". Immutable identifiers living in `app.json`: Android package `com.mintrewards.appp` (triple p — shipped, immutable), iOS bundle `com.mintrewards.app`. See **expo-react-native-reference** for the full prebuild model.
+**Evidence:** `fe5294d` (2026-05-18) "ignore generated native directories and .expo". Immutable identifiers living in `app.config.js`: Android package `com.mintrewards.appp` (triple p — shipped, immutable), iOS bundle `com.mintrewards.app`. See **expo-react-native-reference** for the full prebuild model.
 
 ### 4. The coupon redeem flow is the highest-risk area
 
-**Rule:** `hooks/useCouponDownload.ts` and `app/redeem.tsx` (and `app/discounts.tsx` where the hook is invoked) get the strictest treatment in the repo. The flow, verified in code (as of 2026-07-08): Step 1 issues `PATCH /api/coupons/:id/redeem` which **marks the coupon used on the backend**, THEN Step 2 generates the PDF with `expo-print`'s `printToFileAsync`. A PDF failure after a successful redeem **burns the coupon** — the code explicitly says "Coupon is already marked used at this point — do not retry the redeem call" and alerts the user to screenshot the code. This ordering is the project's hardest live reliability problem.
+**Rule:** `hooks/useCouponDownload.ts` and `app/(tabs)/redeem.tsx` get the strictest treatment in the repo. The flow, verified in code (2026-09-03): Step 1 calls `useAppStore.getState().redeemDeal(dealId)` — i.e. `POST /api/users/deals/:dealId/redeem`, which **claims the code on the backend** (the old `PATCH /api/coupons/:id/redeem` is gone) — THEN Step 2 generates the PDF with `expo-print`'s `printToFileAsync`. A PDF failure after a successful redeem **burns the coupon** — the code explicitly says "Coupon is already marked used at this point — do not retry the redeem call" and alerts the user to screenshot the code. This ordering is the project's hardest live reliability problem.
 
 **Requirements for any change here:** follow **mint-rewards-coupon-reliability-campaign** for the design constraints, and validate per **mint-rewards-validation-and-qa** on a real dev build (the hook dynamically imports `expo-print`/`expo-sharing`, which do not exist in Expo Go). Owner sign-off before merge.
 
 **Evidence of past pain:** `a5b7c30` (2026-04-30) "removed markDiscountUsed for now" — the used-state feature was ripped out under pressure and later rebuilt around the redeem endpoint (`bd2178c` "redeem page used-coupon fix", `16cd4a5` coupon download feature).
 
-## Review discipline (there are NO automated tests on main)
+## Review discipline
 
-Because main has no tests and no CI (as of 2026-07-08), the pre-merge gate is manual and mandatory:
+There is a real test suite now, but still **no CI** — nothing runs automatically on a PR.
+The pre-merge gate is therefore manual and mandatory:
 
 1. **Typecheck:** `npx tsc --noEmit` — must exit 0.
-   **Verified baseline (2026-07-08): main typechecks clean — zero errors, exit code 0.** So any tsc error you see was introduced by your change. (Note: `node_modules/` may be absent on a fresh clone; run `npm ci` first, or `npx tsc` resolves to a placeholder package and prints "This is not the tsc command you are looking for".)
-2. **Lint:** `npx expo lint`.
-   **Verified baseline (2026-07-08): exits 1 with 17 problems — 2 pre-existing errors (`app/(tabs)/home.tsx:47` react/display-name; `components/ui/MaintenanceBanner.tsx:10` react/no-unescaped-entities) and 15 warnings** (unused vars, react-hooks/exhaustive-deps). The honest gate is therefore: **no NEW errors or warnings relative to this baseline**, not "exit 0". Fixing the two baseline errors is a welcome class-2 change but do not let their existence excuse new ones.
-3. **Manual flow verification:** exercise the actual touched flow on a device/simulator per the checklist in **mint-rewards-validation-and-qa**. Typecheck + lint prove almost nothing about runtime behavior in this codebase.
-4. For class 3: rebuild and re-verify on the rebuilt binary, both platforms if the change touches platform config for both.
+   **Verified baseline (2026-09-03, commit `f8d8551`): typechecks clean — zero errors, exit code 0.** So any tsc error you see was introduced by your change. (Note: `node_modules/` may be absent on a fresh clone; run `npm ci` first, or `npx tsc` resolves to a placeholder package and prints "This is not the tsc command you are looking for".)
+2. **Tests:** `npm test`.
+   **Verified baseline (2026-09-03, commit `f8d8551`): 44 suites, 728 tests, all passing.** A failing test is a blocker.
+3. **Lint:** `npm run lint`.
+   **Verified baseline (2026-09-03, commit `f8d8551`): exits 1 with 29 problems — 10 errors and 19 warnings**, concentrated in `components/location/` (`react-hooks/exhaustive-deps`, `react-hooks/immutability`). The honest gate is: **no NEW errors or warnings relative to this baseline**, not "exit 0". Some of these are deliberate; do not mass-fix them as a side quest.
+4. **Manual flow verification:** exercise the actual touched flow on a device/simulator per the checklist in **mint-rewards-validation-and-qa**. Typecheck + lint prove almost nothing about runtime behavior in this codebase.
+5. For class 3: rebuild and re-verify on the rebuilt binary, both platforms if the change touches platform config for both.
 
-Scripts available on main are only `start`, `reset-project`, `android`, `ios`, `web`, `lint` (see `package.json`) — there is **no** `test` or `typecheck` script on main; those exist only on the unmerged `test/verify-cicd-pipeline` branch. Use the raw `npx` commands above.
+`package.json` now provides `test` (jest) and `lint` (expo lint). There is still no `typecheck` script — use `npx tsc --noEmit`. And there is still no CI: the `test/verify-cicd-pipeline` work was never merged and `.github/` does not exist.
 
 ## Versioning — who bumps what
 
-(As of 2026-07-08.) Cross-ref **mint-rewards-release-and-positioning** for the release process itself.
+(As of 2026-09-03.) Cross-ref **mint-rewards-release-and-positioning** for the release process itself.
 
-- `app.json`: `version: "2.1.5"`, `ios.buildNumber: "14"`. Android has no versionCode in `app.json`.
-- `eas.json`: `cli.appVersionSource: "remote"` + `production.autoIncrement: true`. **Interaction:** with `appVersionSource: "remote"`, EAS stores the authoritative build numbers on its servers and auto-increments them for `production` builds — so the local `ios.buildNumber` in `app.json` is NOT the source of truth for EAS production builds and can drift from what EAS actually stamps. The user-facing `version` (2.1.5) is still bumped by hand in `app.json`.
-- **Who:** version/buildNumber bumps and any `eas.json` edit are class 5 — owner decision, owner sign-off. Sessions do not bump versions autonomously. Historical precedent: version bumps are their own commits ("updated version", "dada322 updated app version").
+- `app.config.js`: `version: "2.2.1"`. There is **no** `ios.buildNumber` and **no** `android.versionCode` anywhere in the repo — verified by resolving the config, which reports both as `null`.
+- `eas.json`: `cli.appVersionSource: "remote"` + `autoIncrement: true` on `preview`, `production` and `testflight-preview`. EAS owns both counters server-side and advances them per build. Read them with `npx eas-cli build:version:get --platform ios|android`.
+- **`runtimeVersion` policy is `appVersion`.** This makes the version bump safety-critical, not cosmetic: a native change shipped without bumping `version` can be OTA'd onto an incompatible binary and crash it. See `docs/HANDOFF.md` §7.
+- **Who:** `version` bumps and any `eas.json` edit are class 5 — owner decision, owner sign-off. Sessions do not bump versions autonomously. Historical precedent: version bumps are their own commits ("updated version", "dada322 updated app version").
 
 ## Owner sign-off vs autonomous
 
@@ -104,7 +108,7 @@ Scripts available on main are only `start`, `reset-project`, `android`, `ios`, `
 **Explicit owner sign-off required BEFORE merge:**
 - Anything weakening profile-completeness gating (non-negotiable 2).
 - Any change to `hooks/useCouponDownload.ts` / `app/redeem.tsx` redeem semantics (non-negotiable 4).
-- Class 3 native-affecting changes (new native packages, `app.json` plugin/permission/key changes).
+- Class 3 native-affecting changes (new native packages, `app.config.js` plugin/permission/key changes).
 - Class 4 anything requiring a backend change (owner coordinates the backend repo).
 - Class 5 releases: version bumps, `eas.json`, store submission.
 - Adding any tracked-file key/secret (answer is no; see non-negotiable 1).
@@ -133,16 +137,18 @@ Every drift-prone fact above, with its re-verification command (all read-only):
 | `.env` is gitignored | `git check-ignore .env` (prints `.env`, exit 0) |
 | `.env.local` incident commits | `git log --oneline --all -- .env.local .env` |
 | Gitignore covers `android`/`ios` | `git check-ignore android ios` and `git show fe5294d --stat` |
-| Maps API key legacy exception | `grep -A3 googleMaps app.json` and `git show 3a87f39 --stat` |
-| Profile gate expression + locations | `grep -n "isProfileComplete" "app/(tabs)/home.tsx" app/discounts.tsx` |
+| Maps key now env-sourced (exception closed) | `grep -A3 googleMaps app.config.js` (expect `env.androidGoogleMapsApiKey`, not a literal) |
+| Sentry token still in history | `git show cee0f19 -- .env.local` |
+| Profile gate expression + call sites | `grep -rn "isProfileComplete" utils/profile.ts app/` |
 | Gating incident commits | `git show 2297728 --stat && git show 3129340 --stat` |
 | Redeem-before-PDF ordering | `grep -n "redeem\|printToFileAsync\|already marked used" hooks/useCouponDownload.ts` |
-| markDiscountUsed removal | `git show a5b7c30 --stat` |
+| markDiscountUsed fully gone | `grep -rn markDiscountUsed store/ app/ hooks/` (expect no hits) |
 | Typecheck baseline (clean, exit 0) | `npm ci && npx tsc --noEmit; echo $?` |
-| Lint baseline (exit 1; 2 errors, 15 warnings) | `npx expo lint; echo $?` |
-| Scripts on main (no test/typecheck) | `python3 -c "import json;print(json.load(open('package.json'))['scripts'])"` |
-| CI candidate branch contents | `git ls-tree -r test/verify-cicd-pipeline --name-only \| grep .github` and `git show test/verify-cicd-pipeline:package.json` |
+| Test baseline (44 suites / 728 tests) | `npm test` |
+| Lint baseline (exit 1; 10 errors, 19 warnings) | `npm run lint; echo $?` |
+| Scripts (test + lint exist; no typecheck) | `python3 -c "import json;print(json.load(open('package.json'))['scripts'])"` |
+| Still no CI | `ls .github` (expect: no such directory) |
 | Branch/merge norms | `git branch -a && git log --oneline --merges --all` |
-| version / buildNumber / bundle IDs | `grep -n "\"version\"\|buildNumber\|bundleIdentifier\|\"package\"" app.json` |
+| version / bundle IDs / no buildNumber | `npx expo config --type public --json` — read `version`, `runtimeVersion`, `ios.bundleIdentifier`, `android.package`; `ios.buildNumber` and `android.versionCode` must be `null` |
 | eas.json autoIncrement + remote source | `cat eas.json` |
 | 401 force-sign-out behavior | `sed -n '10,20p' utils/api.ts` |

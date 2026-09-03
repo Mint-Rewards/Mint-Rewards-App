@@ -18,24 +18,34 @@ description: >
 
 > **CAVEAT — this is a CLIENT-OBSERVED contract, not a backend spec.**
 > Every shape below is what THIS repo's code sends and reads, derived by reading
-> the client source (as of 2026-07-08). The backend is a separate repo deployed at
-> `https://mint-rewards-backend.vercel.app` and CANNOT be changed from here.
-> Fields the backend returns but the client never reads are not listed.
-> Rows marked **live-probed** had their status codes observed via unauthenticated
-> curl on 2026-07-08; everything else is **client-inferred**.
+> the client source (as of 2026-09-03). The backend is a separate repo and CANNOT
+> be changed from here. Fields the backend returns but the client never reads are
+> not listed.
+>
+> **Line-number stamps have been removed on purpose.** The previous version of
+> this skill carried `store/store.ts ~L871`-style references; every one of them
+> had drifted. Grep for the function name instead.
+>
+> **The backend is mid Mongo → Postgres migration.** Do not assume ID formats,
+> field ordering or nullability are stable during cutover — see
+> `Mint-Rewards-Backend/docs/plans/HANDOFF-2026-09-02-postgres-migration.md`.
 
 ## Base URL resolution
 
 Two places compute the base URL — keep them in sync when changing env handling:
 
-| File | Constant | Behavior |
-|---|---|---|
-| `utils/constants.ts` | `API_BASE_URL` | `process.env.EXPO_PUBLIC_API_URL ?? "https://mint-rewards-backend.vercel.app"`, **trailing slash stripped** (`.replace(/\/$/, "")`) |
-| `utils/logger.ts` | `API_URL` (duplicate!) | Same env var + default, **no trailing-slash strip**. A trailing slash in `.env` produces `//api/logs` only here. |
+**There is now exactly one.** `config/env.ts` is the only module allowed to read
+`Constants.expoConfig.extra` or `process.env`. It strips the trailing slash once,
+validates that the value is an absolute http(s) URL, and throws at import time if
+it is missing. `utils/constants.ts` re-exports it; `utils/logger.ts` does
+`const API_URL = ENV.apiUrl`.
 
-`store/store.ts` aliases `API_URL = API_BASE_URL` (imports from constants — fine).
-`EXPO_PUBLIC_API_URL` lives in untracked `.env` (never commit it — see
-`mint-rewards-config-and-flags` / `mint-rewards-build-and-env`).
+The old arrangement — a second base-URL definition in `utils/logger.ts` with no
+trailing-slash strip, posting to `//api/logs`, plus a silent fallback to a
+production URL when the env var was unset — is **fixed**. Do not reintroduce a
+second reader.
+
+`EXPO_PUBLIC_API_URL` lives in untracked `.env`; `.env.example` documents it.
 
 ## Auth header rule (non-obvious — verify before every change)
 
@@ -73,7 +83,7 @@ So when a screen checks `result.Status === "Success"`, that is usually the store
 wrapper; in `app/login.tsx` / `app/register.tsx` social-auth handlers it is the
 raw response body. A model editing these must keep the two straight.
 
-## Endpoint catalog (18 method+path entries, as of 2026-07-08)
+## Endpoint catalog (as of 2026-09-03)
 
 | # | Method | Path | Auth | Caller (file) | Wrapper |
 |---|---|---|---|---|---|
@@ -85,7 +95,7 @@ raw response body. A model editing these must keep the two straight.
 | 6 | POST | `/api/users/reset-password` | none | `store/store.ts` forgotPassword | plain fetch |
 | 7 | POST | `/api/users/verify-otp` | none | `store/store.ts` verifyOTP | plain fetch |
 | 8 | POST | `/api/users/set-password` | none | `store/store.ts` setPassword | plain fetch |
-| 9 | POST | `/api/users/referrals` | raw token | `store/store.ts` sendRefferal | authenticatedFetch |
+| 9 | POST | `/api/users/referrals` | raw token | `store/store.ts` sendReferral | authenticatedFetch |
 | 10 | GET | `/api/users/deals` | raw token | `store/store.ts` getDeals | authenticatedFetch |
 | 11 | POST | `/api/users/deals/:dealId/redeem` | raw token | `store/store.ts` redeemDeal, via `hooks/useCouponDownload.ts` | authenticatedFetch |
 | 17 | POST | `/api/auth/google` | none | `app/login.tsx`, `app/register.tsx` | plain fetch |
@@ -107,7 +117,7 @@ only the store actions above — no direct fetches. Verified by
 
 ---
 
-### 1. POST /api/users/login — `signIn` (store/store.ts ~L295)
+### 1. POST /api/users/login — `signIn`
 
 - **Auth:** none. **Timeout:** 15s (`fetchWithTimeout`).
 - **Sends:** `{ email: string, password: string }`
@@ -121,7 +131,7 @@ only the store actions above — no direct fetches. Verified by
   `userEmail`, `userName`, `userPoints`; logs LOGIN event. Returns store wrapper
   `{ Status: "Success", ...data }` to the screen.
 
-### 2. POST /api/users/signup — `signUp` (store/store.ts ~L369)
+### 2. POST /api/users/signup — `signUp`
 
 - **Auth:** none. **Timeout:** 15s.
 - **Sends:** `{ email, password, confirmPassword (= password), userName, phone,
@@ -134,7 +144,7 @@ only the store actions above — no direct fetches. Verified by
   fills them — never fake-populate. (UNVERIFIED whether backend echoes more.)
 - **Error keys:** `data.error || data.message`.
 
-### 3. GET /api/users/my-profile — `getProfile` (store/store.ts ~L266)
+### 3. GET /api/users/my-profile — `getProfile`
 
 - **Auth:** raw token required (throws client-side if none). Live-probed no-auth: 401.
 - **Sends:** no body.
@@ -143,7 +153,7 @@ only the store actions above — no direct fetches. Verified by
 - **Error keys:** `data.message` only. On failure sets `user: null`.
 - **Side effects:** 401 → global sign-out via authenticatedFetch.
 
-### 4. PUT /api/users/update-profile — `updateProfile` (store/store.ts ~L604)
+### 4. PUT /api/users/update-profile — `updateProfile`
 
 - **Auth:** raw token (header included only if token truthy).
 - **Sends:** `{ ...updates }` — any subset of `UserProfile` keys:
@@ -154,7 +164,7 @@ only the store actions above — no direct fetches. Verified by
 - **Side effects:** on success triggers `getProfile()`; logs PROFILE_UPDATE.
   This endpoint is what clears profile-completeness gating — treat with care.
 
-### 5. DELETE /api/users/delete-account — `deleteAccount` (store/store.ts ~L427)
+### 5. DELETE /api/users/delete-account — `deleteAccount`
 
 - **Auth:** raw token.
 - **Sends:** `{ email }` (current user's email) — a DELETE with a JSON body.
@@ -164,7 +174,7 @@ only the store actions above — no direct fetches. Verified by
   `` `Deletion failed (${response.status})` ``.
 - **Side effects:** logs ACCOUNT_DELETED. Caller must still `signOut()`.
 
-### 6. POST /api/users/reset-password — `forgotPassword` (store/store.ts ~L483)
+### 6. POST /api/users/reset-password — `forgotPassword`
 
 - **Auth:** none. **Sends:** `{ email }`.
 - **Reads:** NOTHING — the response is not checked at all (no `.ok`, no body).
@@ -172,85 +182,104 @@ only the store actions above — no direct fetches. Verified by
   throws (network error). A backend 4xx/5xx here is invisible to the user.
 - **Error keys:** n/a (wire errors swallowed).
 
-### 7. POST /api/users/verify-otp — `verifyOTP` (store/store.ts ~L510)
+### 7. POST /api/users/verify-otp — `verifyOTP`
 
 - **Auth:** none. **Sends:** `{ email, otp }` (otp as string).
 - **Reads on success:** nothing specific (spreads `data`).
 - **Error keys:** `data.message` only (`data.error` is NOT read here).
 
-### 8. POST /api/users/set-password — `setPassword` (store/store.ts ~L552)
+### 8. POST /api/users/set-password — `setPassword`
 
 - **Auth:** none (email-scoped — flagged risk; see
   `mint-rewards-auth-and-identity`). **Sends:** `{ email, password }`.
 - **Reads on success:** nothing specific. **Error keys:** `data.message` only.
 - Also used by `app/change-password.tsx` for logged-in password change.
 
-### 9. POST /api/users/referrals — `sendRefferal` (store/store.ts ~L656)
+### 9. POST /api/users/referrals — `sendReferral`
 
 - **Auth:** raw token. **Sends:** `{ emails: string[] }`.
 - **Reads on success:** nothing specific. **Error keys:** `data.error` only
   (`data.message` NOT read). Logs REFERRAL_SENT.
 
-### 10/11. GET /api/users/active-campaigns — `getBrands` AND `getCampaigns`
+### 10. GET /api/users/deals — `getDeals`
 
-- **Auth:** raw token (sent if present). Live-probed no-auth: 401.
-- **Sends:** no body. One endpoint, two callers reading DIFFERENT fields:
-  - `getBrands` (store/store.ts ~L722) reads `data.activeBrands` →
-    store `brands` (`BrandTheme[]`).
-  - `getCampaigns` (store/store.ts ~L823) reads `data.activeCampaigns` →
-    store `campaigns` (`Campaign[]`).
-- **Error keys:** `data.message`. Beware: the two callers' error branches set
-  each other's state slices (`getBrands` failure sets `campaignError`;
-  `getCampaigns` failure sets `brandError`) — existing quirk, do not "fix"
-  without change control.
+- **Auth:** raw token.
+- **Sends:** no body.
+- **Reads on success:** `data.deals` → store `deals` (`Deal[]`). Key fields the
+  client branches on: `soldOut`, `isAvailed`, `pointsRequired`, and the nested
+  `brand` object.
+- **Error keys:** `data.error`. Returns the previously-loaded list on failure
+  rather than blanking the screen.
+- Brand lists on home and `redeem.tsx` are **derived from this payload** via
+  `groupDealsByBrand` in `utils/deals.ts` — they are not fetched separately.
 
-### 12. GET /api/brands — `getBrandsWithCampaigns` (store/store.ts ~L770)
+### 11. POST /api/users/deals/:dealId/redeem — `redeemDeal`
 
-- **Auth:** raw token if present. Live-probed no-auth: **200** — this endpoint
-  is publicly readable (2026-07-08).
-- **Reads on success:** `data.brands` → store `brandsWithCampaigns`
-  (`(BrandTheme & { campaigns: Campaign[] })[]`).
-- **Error keys:** `data.message`.
+- **Auth:** raw token, via `authenticatedFetch`.
+- **Sends:** no body; `:dealId` is a `Deal._id`.
+- **Returns:** `{ code: string }` on success, `{ error: string }` otherwise.
+- **Side effects — CRITICAL:** a successful call claims the code
+  **irreversibly** on the backend BEFORE the PDF is generated in
+  `hooks/useCouponDownload.ts`. If PDF generation then fails, the code is
+  already burned — the hook deliberately does not retry the redeem and tells
+  the user to screenshot the code. This is the app's hardest reliability
+  problem; read the redeem-before-PDF invariant in
+  `mint-rewards-architecture-contract` before touching it.
 
-### 13. GET /api/users/my-discounts — `getDiscounts` (store/store.ts ~L871)
+### 12. GET /api/users/brands — `getBrands`
 
-- **Auth:** raw token. Live-probed no-auth: 401.
-- **Reads on success:** `data.discounts` (`DiscountItem[]`; key field
-  `isAvailed: boolean` drives used-coupon UI).
-- **Error keys:** `data.error` only. Returns `[]` on any failure.
+- **Auth:** raw token.
+- **Reads on success:** `data.brands` → store `brands` (`Deal["brand"][]`).
+- **Error keys:** `data.error`. On failure the previously-loaded list is left in
+  place — brands are the shell deals render into, so blanking it on a transient
+  failure would empty a screen that still has good deals to show.
 
-### 14. PATCH /api/users/my-discounts — `availDiscount` (store/store.ts ~L895)
+### 13. PATCH /api/users/location — `utils/locationApi.ts`
 
-- **Auth:** raw token. Live-probed no-auth: 401.
-- **Sends:** `{ discountId: string }`.
-- **Reads on success:** `data.code ?? data.discountCode ?? null` — dual-key
-  fallback; the returned string is the discount code shown/used by the UI.
-- **Error handling:** returns `null` on non-ok or exception; NO error key is
-  read and no message surfaces. Caller must handle `null`.
+- **Auth:** raw token, via `authenticatedFetch`.
+- **Sends:** the location fields collected by `hooks/useLocationForm.ts`
+  (province, city, town/area, house number, latitude/longitude).
+- Read `utils/locationApi.ts` and `utils/locationSave.ts` for the exact body —
+  it changes with `LOCATION_COMPLETION_VERSION`, which **must stay in step with
+  the backend's `lib/evaluateLocation.ts`**.
 
-### 15. PUT /api/users/my-discounts — `markDiscountUsed` (store/store.ts ~L918)
+### 14. POST /api/location/reverse-geocode
 
-- **Auth:** raw token. **Sends:** `{ discountId: string }`.
-- **Reads:** only `response.ok`; body ignored (UNVERIFIED shape).
-- **Side effects:** on ok, locally flips that discount's `isAvailed: true` in
-  the store. Best-effort: exceptions swallowed, state fixed on next refresh.
+- **Auth:** raw token.
+- **Sends:** `{ latitude, longitude }`.
+- Used to prefill the address form from a dropped pin. See
+  `utils/locationPrefill.ts`.
 
-### 16. PATCH /api/coupons/:id/redeem — `useCouponDownload` (hooks/useCouponDownload.ts ~L391)
+### 15. GET /api/app-config — `components/UpdateGate.tsx`, `utils/locationGateConfig.ts`
 
-- **Auth:** raw token (header only if token truthy). Plain fetch — a 401 here
-  does NOT global-sign-out. Live-probed no-auth: 401.
-- **Sends:** no body; `:id` is `DiscountItem._id`.
-- **Reads on success:** `data.couponCode ?? ""` and `data.referenceCode ?? ""`
-  (type `RedeemResponse` at top of the hook). NOTE: the `code ?? discountCode`
-  fallback belongs to endpoint #14, NOT this one — do not conflate.
-- **Error keys:** `data.error` only.
-- **Side effects — CRITICAL:** a successful PATCH marks the coupon used
-  **irreversibly** on the backend BEFORE the PDF is generated. If PDF
-  generation then fails, the code is already burned — the hook deliberately
-  does not retry the redeem. This is the app's hardest reliability problem;
-  see `mint-rewards-coupon-reliability-campaign` before touching.
+- **Auth:** NONE. It runs before login, deliberately — `UpdateGate` must stay
+  off the store's import graph.
+- **Wrapper:** a module-private `fetchWithTimeout` (8 s), not
+  `authenticatedFetch`.
+- **Reads:** `minSupportedVersion` (semver), `minSupportedBuildNumber.{ios,android}`
+  (integers), `iosStoreUrl`, `androidStoreUrl` (https only), `forceOTA` (bool).
+- **Parsing is defensive and FAILS OPEN.** `parseAppConfig` in
+  `utils/versionGate.ts` returns `null` for an unusable payload, and individual
+  bad fields degrade to inert defaults rather than discarding the whole config.
+  A false positive here locks users out of the app with no client-side recovery.
+- Changing this endpoint's shape can hard-block every user. Coordinate it.
 
-### 17. POST /api/auth/google — app/login.tsx ~L336, app/register.tsx ~L50
+### 16. POST /api/users/verify-email-otp and /api/users/resend-verification-otp
+
+- **Auth:** none. Callers: `verifyEmailOtp` / `resendVerificationOtp` in
+  `store/store.ts`, driving `app/verify-email.tsx`.
+- **Sends:** `{ email, otp }` and `{ email }` respectively.
+- **Returns:** the `{ Status }` wrapper; screens branch on it.
+
+> **REMOVED endpoints — do not wire new code to them.**
+> `GET /api/users/active-campaigns`, `GET /api/brands`,
+> `GET|PATCH|PUT /api/users/my-discounts`, `PATCH /api/coupons/:id/redeem`.
+> All served **campaign** documents dressed as offers. The client no longer
+> calls any of them, and `getCampaigns`, `getBrandsWithCampaigns`,
+> `getDiscounts`, `availDiscount` and `markDiscountUsed` no longer exist in the
+> store. They may still be live on the backend for un-updated clients.
+
+### 17. POST /api/auth/google — `app/login.tsx`, `app/register.tsx`
 
 - **Auth:** none. **Sends:** `{ idToken: string }` — ONLY the idToken (from
   `utils/googleAuth.ts` native sign-in result). No user object is sent.
@@ -265,7 +294,7 @@ only the store actions above — no direct fetches. Verified by
   keys as login, routes to `/(tabs)/home`. Google Sign-In setup is a documented
   costly failure — see `mint-rewards-failure-archaeology`.
 
-### 18. POST /api/auth/apple — app/login.tsx ~L411, app/register.tsx ~L119
+### 18. POST /api/auth/apple — `app/login.tsx`, `app/register.tsx`
 
 - **Auth:** none. **Sends:** `{ identityToken: string, fullName: object|null }`
   where `fullName` is Apple's `{ givenName, familyName, ... }`. Apple provides
@@ -279,7 +308,7 @@ only the store actions above — no direct fetches. Verified by
   only read when HTTP is ok but `Status !== 'Success'`.
 - **Side effects:** identical to Google (store, SecureStore, route to home).
 
-### 19. POST /api/logs — `sendLog` (utils/logger.ts ~L97)
+### 19. POST /api/logs — `sendLog`
 
 - **Auth:** none. Fire-and-forget; response never read; failures only
   `console.warn` ("never let logging break the app").
@@ -309,10 +338,10 @@ only the store actions above — no direct fetches. Verified by
 |---|---|
 | login, signup | `data.error \|\| data.message` |
 | delete-account | `data?.error \|\| data?.message \|\| "Deletion failed (status)"` |
-| my-profile, update-profile, verify-otp, set-password, active-campaigns, /api/brands | `data.message` only |
-| referrals, my-discounts GET, coupons redeem | `data.error` only |
-| my-discounts PATCH | none (returns null silently) |
-| my-discounts PUT, reset-password, /api/logs | none (response body ignored) |
+| my-profile, update-profile, verify-otp, set-password | `data.message` only |
+| referrals, deals GET, brands GET, deals redeem | `data.error` only |
+| reset-password, /api/logs | none (response body ignored) |
+| app-config | none — `parseAppConfig` normalises the body and fails open |
 | auth/google, auth/apple | `data.ErrorMessage` (wire wrapper; apple throws raw text on non-ok HTTP) |
 
 When adding a new call, read BOTH `data.error` and `data.message` defensively
@@ -334,14 +363,16 @@ needs a new endpoint, field, or behavior:
 ## Quick smoke-check (safe, unauthenticated)
 
 ```bash
-# Public endpoint should be 200:
-curl -s -o /dev/null -w "%{http_code}\n" https://mint-rewards-backend.vercel.app/api/brands
+BASE="$(grep '^EXPO_PUBLIC_API_URL=' .env | cut -d= -f2-)"
+# Unauthenticated, safe to read:
+curl -s -o /dev/null -w "app-config -> %{http_code}\n" "$BASE/api/app-config"
 # Authenticated endpoints should be 401 without a token:
-for ep in /api/users/my-profile /api/users/my-discounts /api/users/active-campaigns; do
-  curl -s -o /dev/null -w "$ep -> %{http_code}\n" "https://mint-rewards-backend.vercel.app$ep"; done
+for ep in /api/users/my-profile /api/users/deals /api/users/brands; do
+  curl -s -o /dev/null -w "$ep -> %{http_code}\n" "$BASE$ep"; done
 ```
 
-Expected (observed 2026-07-08): brands 200; the three user endpoints 401.
+Expected: app-config 200; the three user endpoints 401. Paths verified
+2026-09-03; status codes not re-probed.
 Full diagnostic scripts: see `mint-rewards-diagnostics-and-tooling`.
 Do NOT probe with real credentials or run write operations from scripts.
 

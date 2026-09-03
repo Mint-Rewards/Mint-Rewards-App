@@ -16,7 +16,7 @@ description: >
 
 Triage first (tables), stories second, discriminating experiments last. Every
 path, line number, endpoint, and commit hash below was verified against this
-repo on 2026-07-08. Line numbers drift — re-grep before trusting them.
+repo on 2026-09-03. Line numbers drift — re-grep before trusting them.
 
 Definitions used throughout:
 
@@ -28,8 +28,8 @@ Definitions used throughout:
   `package.json`). Built via `npx expo run:ios` / `npx expo run:android` or EAS
   `development` profile.
 - **Prebuild** — `npx expo prebuild` generates the `android/` and `ios/`
-  native projects from `app.json`. Both directories are gitignored (commit
-  `fe5294d`), so **native config truth lives in `app.json`**, not in `android/`
+  native projects from `app.config.js`. Both directories are gitignored (commit
+  `fe5294d`), so **native config truth lives in `app.config.js`**, not in `android/`
   or `ios/`.
 - **Raw token auth** — this backend expects `Authorization: <token>` with NO
   `Bearer ` prefix. Every store call passes the token raw (e.g.
@@ -48,7 +48,7 @@ Definitions used throughout:
 | 5 | Coupon marked used on backend but no PDF appeared | The burn window in `hooks/useCouponDownload.ts`: redeem `PATCH /api/coupons/:id/redeem` succeeds FIRST, PDF generation happens SECOND; a PDF failure leaves the coupon burned. Breadcrumb: `console.error("[useCouponDownload] PDF generation failed after successful redeem." ...couponId...)`. | Search device/Metro logs for `[useCouponDownload]`; then load **mint-rewards-coupon-reliability-campaign** |
 | 6 | App hits wrong backend / env change not taking effect | `EXPO_PUBLIC_*` vars are inlined into the JS bundle **at bundle time**. Default when unset: `https://mint-rewards-backend.vercel.app` (`utils/constants.ts` line 13; a second copy of the same fallback lives in `utils/logger.ts` lines 9–10). Changing `.env` requires a cache-cleared restart; release binaries need a full rebuild. | `npx expo start -c` |
 | 7 | Metro/bundler weirdness: phantom modules, "unable to resolve", stale code running | Stale Metro cache or corrupted `node_modules`. | `npx expo start -c`; if that fails: `rm -rf node_modules && npm install` |
-| 8 | Google Map blank/grey on Android (`components/ui/MapPicker.tsx`) | Android Maps API key lives at `app.json → android.config.googleMaps.apiKey` (added in commit `3a87f39`; known legacy exception to the no-secrets-in-git rule). Key invalid/restricted, or `android/` was built before the key existed. | `Read app.json` lines 40–44; then `npx expo prebuild --clean && npx expo run:android` |
+| 8 | Google Map blank/grey on Android (`components/ui/MapPicker.tsx`) | Android Maps key comes from `ANDROID_GOOGLE_MAPS_API_KEY` in `.env`, injected at `app.config.js → android.config.googleMaps.apiKey`. Missing from `.env`, invalid, restricted to the wrong package/SHA-1, or `android/` was built before the key was set. | `grep -A3 googleMaps app.config.js` and check `.env`; then `npx expo prebuild --clean && npx expo run:android` |
 | 9 | A request hangs forever (spinner never resolves) | `fetchWithTimeout` (15 s, AbortController — `store/store.ts` lines 9–21) is used **only** by `signIn` and `signUp`. Every other call — `getProfile`, `getDiscounts`, the coupon redeem PATCH in `useCouponDownload`, `authenticatedFetch` itself, the logger — uses plain `fetch` with **no timeout**. | `grep -n fetchWithTimeout store/store.ts` to confirm; reproduce with curl + `--max-time 15` |
 
 ---
@@ -64,7 +64,7 @@ the entire dead implementation is still commented out at the **top of
 approach is the native `@react-native-google-signin/google-signin` module:
 
 - `34786ba` — "added Sign in with Google button" (added the native package,
-  `utils/googleAuth.ts`, app.json plugin entry)
+  `utils/googleAuth.ts`, app.config.js plugin entry)
 - `2a8b134` — "Sign in w Google works"
 - `d73ef9e` — "Signup w Google works"
 
@@ -77,7 +77,7 @@ Consequences that still bite today:
 - Client IDs are hardcoded in `configureGoogleSignIn()`:
   `iosClientId: 490896222696-4jtrnrbi9uhn98q2ukjb68f2cd45dq2v...`,
   `webClientId: 490896222696-3umgevhg0eqtkg03cfs7saa19i0g8qir...`.
-  The iOS URL scheme is configured via the plugin in `app.json`
+  The iOS URL scheme is configured via the plugin in `app.config.js`
   (`iosUrlScheme: com.googleusercontent.apps.490896222696-4jtr...`). If you
   change any of these, prebuild + rebuild — JS reload is not enough.
 - `signInWithGoogle()` explicitly handles only `statusCodes.SIGN_IN_CANCELLED`
@@ -102,8 +102,8 @@ Deep-dive on the auth flows lives in **mint-rewards-auth-and-identity**.
 Chronology (all verified via `git show`):
 
 1. Originally, copying a discount code called `markDiscountUsed` (a `PUT
-   /api/users/my-discounts` store action — still present at
-   `store/store.ts` line ~915).
+   /api/users/my-discounts` store action). **It no longer exists** — the whole
+   discount slice was deleted in the move to deals (verified 2026-09-03).
 2. `a5b7c30` (2026-04-30) — "removed markDiscountUsed for now": the call in
    `app/discounts.tsx` `handleCopy` was simply **commented out**
    (`// if (modal.item) await markDiscountUsed(modal.item._id);`), so for
@@ -118,9 +118,11 @@ Chronology (all verified via `git show`):
    cards, and refreshes `getBrandsWithCampaigns()` after a successful
    download so the card flips to "Used" immediately.
 
-Lesson: used-state has THREE historical mechanisms (`markDiscountUsed` PUT,
-`availDiscount` PATCH to `/api/users/my-discounts`, and the coupon redeem
-PATCH). Only the redeem PATCH is the live mechanism for coupon downloads. If
+Lesson: used-state has had FOUR mechanisms over time (`markDiscountUsed` PUT,
+`availDiscount` PATCH to `/api/users/my-discounts`, the `PATCH
+/api/coupons/:id/redeem` flow, and — today — `POST
+/api/users/deals/:dealId/redeem` via `redeemDeal`). **Only the last is live**;
+the first three are gone from the client. If
 used-state looks wrong, first establish *which* mechanism the screen you're
 debugging goes through. The reliability campaign for the burn window is
 **mint-rewards-coupon-reliability-campaign**.
@@ -131,13 +133,17 @@ debugging goes through. The reliability campaign for the burn window is
 ("remove .env.local") deleted it and fixed `.gitignore`. The hashes remain in
 history — treat anything that was in that file as exposed. Rule ever since:
 `.env` stays untracked (`.gitignore` line 1). Current `.env` keys:
-`EXPO_PUBLIC_API_URL`, `APPLE_BUNDLE_ID` (as of 2026-07-08). The Android Maps
-key in `app.json` is the known legacy exception.
+`APP_VARIANT`, `EXPO_PUBLIC_API_URL`, `GOOGLE_IOS_CLIENT_ID`,
+`GOOGLE_WEB_CLIENT_ID`, `ANDROID_GOOGLE_MAPS_API_KEY`, `POSTHOG_PROJECT_TOKEN`,
+`POSTHOG_HOST` (as of 2026-09-03); `.env.local` holds `SENTRY_AUTH_TOKEN`.
+`config/env.ts` validates all required keys at import time and throws listing
+every missing one — if you see that error, it is telling you what to fill in.
+There is no longer a silent fallback to a production URL.
 
 ### 2.4 Profile-completeness gating is load-bearing
 
 Coupons/discounts are locked until phone + province + city are set:
-`app/discounts.tsx` line 30 (`isProfileComplete = !!(user?.phone?.trim() &&
+`utils/profile.ts` (`isProfileComplete`, shared helper) (`!!(user?.phone?.trim() &&
 user?.province?.trim() && user?.city?.trim())`) and `app/(tabs)/home.tsx`
 line ~121. Introduced in `2297728` ("profile fields now mandatory
 post-signup") and `3129340` ("locked coupons/discounts until profile is
@@ -186,19 +192,19 @@ Interpretation:
 ### 3.2 Expo Go vs dev build (which native modules need a rebuild?)
 
 Modules in `package.json` that this repo treats as requiring a development
-build (each has a runtime guard or an `app.json` config plugin):
+build (each has a runtime guard or an `app.config.js` config plugin):
 
 | Module | Evidence in repo | Failure mode in wrong environment |
 |---|---|---|
-| `@react-native-google-signin/google-signin` | try/catch require in `utils/googleAuth.ts`; config plugin in `app.json` | console warn + "not available on this build" alert |
-| `expo-print`, `expo-sharing` | dynamic `import()` inside `downloadCoupon` in `hooks/useCouponDownload.ts` | "PDF Generation Failed" alert **after the coupon is already burned** — never demo coupon download in Expo Go. (UNVERIFIED whether Expo Go SDK 54 bundles these two; the code deliberately assumes it may not.) |
-| `react-native-maps` | `components/ui/MapPicker.tsx`; API key in `app.json` | blank map / crash (UNVERIFIED in Expo Go SDK 54 — verify on device before relying on this) |
-| `expo-apple-authentication` | plugin in `app.json`; used in `app/login.tsx` | Apple button unavailable |
+| `@react-native-google-signin/google-signin` | try/catch require in `utils/googleAuth.ts`; config plugin in `app.config.js` | console warn + "not available on this build" alert |
+| `expo-print`, `expo-sharing` | dynamic `import()` inside `downloadCoupon` in `hooks/useCouponDownload.ts` | "PDF Generation Failed" alert **after the coupon is already burned** — never demo coupon download in Expo Go. (the code deliberately assumes Expo Go may not bundle these; don't rely on it either way.) |
+| `react-native-maps` | `components/ui/MapPicker.tsx`; API key in `app.config.js` | blank map / crash — verify on a real dev build, never in Expo Go |
+| `expo-apple-authentication` | plugin in `app.config.js`; used in `app/login.tsx` | Apple button unavailable |
 
 Discriminating experiment: if a "native module" error reproduces in Expo Go
 but disappears in a build from `npx expo run:ios` / `npx expo run:android`,
 it is an environment problem, not a code bug. If it persists in a fresh dev
-build, suspect `app.json` plugin config, then run `npx expo prebuild --clean`
+build, suspect `app.config.js` plugin config, then run `npx expo prebuild --clean`
 and rebuild.
 
 ### 3.3 Token validity (grab the exact token the app is using)
@@ -271,7 +277,7 @@ production in `eas.json`) — see **mint-rewards-build-and-env**.
 
 ## Provenance and maintenance
 
-All facts verified against this repo on 2026-07-08. One command per
+All facts verified against this repo on 2026-09-03. One command per
 drift-prone fact — re-run before relying on it:
 
 - 401 force-signout: `grep -n "401" utils/api.ts`
@@ -281,14 +287,14 @@ drift-prone fact — re-run before relying on it:
 - Burn window order (redeem PATCH before PDF): `grep -n "redeem\|printToFileAsync" hooks/useCouponDownload.ts`
 - PDF-failure breadcrumb: `grep -n "PDF generation failed" hooks/useCouponDownload.ts`
 - Native-module guards: `grep -n "require('@react-native-google-signin" utils/googleAuth.ts && grep -n "import(\"expo-print\")" hooks/useCouponDownload.ts`
-- Google client IDs + iosUrlScheme: `grep -n "ClientId\|iosUrlScheme" utils/googleAuth.ts app.json`
+- Google client IDs + iosUrlScheme: `grep -n "ClientId\|iosUrlScheme" utils/googleAuth.ts app.config.js`
 - statusCodes handled: `grep -n "SIGN_IN_CANCELLED\|IN_PROGRESS" utils/googleAuth.ts`
-- Android package (three p's) vs iOS bundle: `grep -n "com.mintrewards" app.json`
-- Maps key location: `grep -n -A2 "googleMaps" app.json`
+- Android package (three p's) vs iOS bundle: `grep -n "com.mintrewards" app.config.js`
+- Maps key location: `grep -n -A2 "googleMaps" app.config.js`
 - API base URL fallback (both copies): `grep -rn "mint-rewards-backend.vercel.app" utils/`
 - checkAuth flow: `grep -n "userToken\|getProfile\|router.replace" app/_layout.tsx`
 - "Loading your experience" screen: `grep -rn "Loading your experience" app/`
-- Profile gating: `grep -n "isProfileComplete" app/discounts.tsx "app/(tabs)/home.tsx"`
+- Profile gating: `grep -rn "isProfileComplete" utils/profile.ts app/`
 - Commit hashes cited: `git show --stat 34786ba 2a8b134 d73ef9e a5b7c30 bd2178c cee0f19 765bf15 164fdcb fe5294d 3a87f39 2297728 3129340 | grep -E "^commit|\|" | head -40`
 - Native dirs gitignored / .env untracked: `git check-ignore -v .env android ios`
 - eas.json profiles: `grep -n '"development"\|"simulator"\|"preview"\|"production"' eas.json`

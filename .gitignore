@@ -28,5 +28,4 @@ MintRewards.app
 .specify/
 .vscode/
 graphify-out/
-docs/
 .env.local

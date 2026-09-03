@@ -16,11 +16,11 @@ description: >
 
 # Mint Rewards Architecture Contract
 
-This is the contract for the Mint Rewards client repo (Expo SDK 54 / React
-Native 0.81.5 / React 19.1, expo-router v6, single Zustand store, TypeScript).
+This is the contract for the Mint Rewards client repo (Expo SDK 56 / React
+Native 0.85.3 / React 19.2, expo-router v6, single Zustand store, TypeScript).
 The backend is a SEPARATE repo served at `https://mint-rewards-backend.vercel.app`
 (client override: `EXPO_PUBLIC_API_URL` in the untracked `.env`). Everything
-below is verified against the code as of 2026-07-08; line numbers are stamped
+below is verified against the code as of 2026-09-03; line numbers are stamped
 the same and may drift — re-verify with the commands in "Provenance and
 maintenance" before relying on an exact line.
 
@@ -48,6 +48,14 @@ registers every screen (all `headerShown: false` except `+not-found`), with
 | `/forgot-password` | `app/forgot-password.tsx` | Password reset request |
 | `/otp-screen` | `app/otp-screen.tsx` | OTP verification |
 | `/change-password` | `app/change-password.tsx` | Set new password |
+| `/verify-email` | `app/verify-email.tsx` | Email-verification OTP entry |
+| `/editProfile` | `app/editProfile.tsx` | Profile editing |
+| `+not-found` | `app/+not-found.tsx` | Fallback |
+
+Tab routes, all under `app/(tabs)/`: `home.tsx`, `collections.tsx`, `deals.tsx`,
+`redeem.tsx`, `store.tsx`, `share.tsx`, `notifications.tsx`, `profile.tsx`.
+**There are no root-level `redeem`/`deals`/`collections`/`notifications` routes** —
+older documents that list them predate the move into the tab group.
 | `/redeem` | `app/redeem.tsx` | Brand campaign detail + coupon download (takes `brandId` search param) |
 | `/deals` | `app/deals.tsx` | User's Deal list ("My Deals") + claim + coupon download |
 | `/editProfile` | `app/editProfile.tsx` | Profile editing (this is where users complete phone/province/city) |
@@ -85,14 +93,22 @@ SecureStore).
 
 | Slice | State | Actions |
 |---|---|---|
-| `UserSlice` | `user`, `token`, `isLoading`, `error` | `setUserData`, `getProfile`, `signIn`, `signUp`, `signOut`, `forgotPassword`, `verifyOTP`, `setPassword`, `deleteAccount`, `wasteToCo2`, loading/error setters |
-| `ProfileSlice` | `profile`, `isProfileLoading`, `profileError` | `updateProfile`, `sendRefferal` (sic — misspelled in code), setters |
-| `CampaignSlice` | `campaigns`/`brands`/`brandsWithCampaigns` + per-collection loading/error triples | `getCampaigns`, `getBrands`, `getBrandsWithCampaigns` |
-| `DiscountSlice` | `discounts`, `isDiscountsLoading`, `discountsError` | `getDiscounts`, `availDiscount`, `markDiscountUsed` |
+| `UserSlice` (~L485) | `user`, `token`, `isLoading`, `error`, location-prompt + evaluation state | `setUserData`, `getProfile`, `signIn`, `signUp`, `signOut`, `verifyEmailOtp`, `resendVerificationOtp`, `forgotPassword`, `verifyOTP`, `setPassword`, `deleteAccount`, `dismissLocationPrompt`, `setLocationEvaluation`, loading/error setters |
+| `ProfileSlice` (~L992) | `isProfileLoading`, `profileError` | `updateProfile`, `sendReferral` (the old `sendRefferal` misspelling was fixed), setters |
+| `DealSlice` (~L1131) | `deals`, `brands` + loading/error pairs | `getDeals`, `getBrands`, `redeemDeal` |
+| `DemoCollectionsSlice` (~L1261) | scheduled-collection mock state | `scheduleCollection`, `loadScheduledCollection` |
+
+**The `CampaignSlice` and `DiscountSlice` are gone.** They were replaced by the
+Deal slice: `/api/users/my-discounts` and `/api/users/active-campaigns` both
+served *campaign* documents dressed as offers, and a Campaign is a recycling
+programme, not an incentive. `getCampaigns`, `getBrandsWithCampaigns`,
+`getDiscounts`, `availDiscount` and `markDiscountUsed` no longer exist.
 
 All store actions return `{ Status: "Success" | "Error", Message?, ErrorMessage? }`
-shaped results (screens branch on `Status`), except the discount getters which
-return arrays/nulls.
+shaped results (screens branch on `Status`), except the deal getters which
+return arrays and `redeemDeal`, which returns `{ code } | { error }`.
+
+Line numbers are approximate and drift — grep for the slice banner comments.
 
 ### 1.3 Utils layer
 
@@ -137,11 +153,14 @@ Three components use this in this repo:
 - **Why**: the backend invalidates tokens; without a single 401 chokepoint the
   app limps along with a dead token, every screen fails differently, and the
   user is stuck. One wrapper = one recovery behavior.
-- **Where enforced**: `utils/api.ts` lines 9–21. Callers: every authed action
-  in `store/store.ts` (`getProfile`, `deleteAccount`, `updateProfile`,
-  `sendRefferal`, `getBrands`, `getBrandsWithCampaigns`, `getCampaigns`,
-  `getDiscounts`, `availDiscount`, `markDiscountUsed`).
-- **Current raw-`fetch(` exceptions** (verified by grep, as of 2026-07-08) and
+- **Where enforced**: `utils/api.ts`. Callers: every authed action in
+  `store/store.ts` (`getProfile`, `deleteAccount`, `updateProfile`,
+  `sendReferral`, `getDeals`, `getBrands`, `redeemDeal`) plus the location
+  layer in `utils/locationApi.ts`.
+- It also emits Sentry breadcrumbs recording whether the `Authorization` header
+  was attached at all — the diagnostic that resolved the sign-in bounce bug.
+  The token itself is never recorded, and neither is its length.
+- **Current raw-`fetch(` exceptions** (verified by grep, as of 2026-09-03) and
   whether they are deliberate:
   - `store/store.ts` `signIn`/`signUp` → `fetchWithTimeout` (15 s AbortController
     wrapper, store lines 9–21). **Deliberate**: pre-auth, and a 401 during login
@@ -229,15 +248,15 @@ Three components use this in this repo:
   2297728, 3129340 per project owner, 2026-07-07).
 - **Why**: pickups are dispatched geographically; a redeeming user without
   contact + location data breaks the operational loop with brands.
-- **Where enforced — TWO independent copies, currently identical field sets**
-  (verified 2026-07-08):
-  - `app/(tabs)/home.tsx` lines 121–124:
-    `!!(user?.phone?.trim() && user?.province?.trim() && user?.city?.trim())`
-    — gates the coupon stack and shows the "complete your profile" banner.
-  - `app/deals.tsx` line 30: the same expression on one line — gates
-    download buttons on the discounts screen.
-- **Known-weak point (WP-8)**: the fields do NOT currently diverge, but the
-  logic is duplicated with no shared helper, so nothing stops them diverging.
+- **Where enforced — now a single shared helper** (verified 2026-09-03):
+  `isProfileComplete` in `utils/profile.ts`, called from `app/(tabs)/home.tsx`
+  and `app/(tabs)/deals.tsx`. The old duplicated inline expressions are gone;
+  the previously-recorded WP-8 (duplication with no shared helper) is
+  **resolved**. Keep it that way.
+- The gate has widened since it was first written: it now also covers the saved
+  coordinate and house number, and street address was dropped by owner ruling.
+  Read `utils/profile.ts` for the current expression rather than trusting any
+  quoted copy — including this one.
   If you must change the field set, change BOTH, or (through change control)
   extract one helper and use it in both places. `app/redeem.tsx` does NOT
   re-check completeness itself (users reach it from the gated home stack) —
@@ -290,20 +309,26 @@ Three components use this in this repo:
 
 ---
 
-## 3. Known-weak points (all OPEN as of 2026-07-08 — do not fix silently)
+## 3. Known-weak points (re-audited 2026-09-03 — do not fix silently)
+
+Six of the ten weak points recorded on 2026-07-08 have since been resolved. They
+are kept here, marked, so nobody "rediscovers" a fixed problem or reintroduces
+the pattern.
 
 | # | Weakness | Evidence | Impact | Status |
 |---|---|---|---|---|
-| WP-1 | Auth token printed to console | `store/store.ts` line 870: `console.log("[getDiscounts] token:", token);` (response bodies also logged at ~879 and in `availDiscount` ~904) | Token appears in device logs / `adb logcat` / crash tooling; anyone with log access can impersonate the user until token expiry | Open |
-| WP-2 | Google Maps API key committed | `app.json` lines 41–42: `"googleMaps": { "apiKey": "AIzaSy..." }` | Billable key in a public-ish repo; violates the owner's "no secrets in git" non-negotiable. (The Google OAuth client IDs hardcoded in `utils/googleAuth.ts` ~59–60 are NOT secret-class — client IDs are public by design) | Open — rotating/restricting the key is a change-control item |
-| WP-3 | Inconsistent backend error keys | `signIn` reads `data.error \|\| data.message` (store ~344); `verifyOTP`/`updateProfile` read only `data.message` (~531, ~632); `sendRefferal`/`getDiscounts` read only `data.error` (~682, ~884); `useCouponDownload` reads `data.error` (~404) | When the backend uses the other key, users see the generic fallback instead of the real reason; debugging support tickets is slower | Open — real fix is a shared response-parsing helper (see `mint-rewards-backend-api-contract`) |
-| WP-4 | Copy-paste bug: campaign/brand error states crossed | `getCampaigns` error branches set `brandError` + `isBrandLoading` (store ~838, ~848); mirror bug in `getBrands`, whose error branches set `campaignError` + `isCampaignLoading` (~737, ~747) | A failed campaigns fetch leaves `isCampaignLoading: true` forever (spinner never stops) and puts the message on the wrong error field; ditto reversed for brands | Open |
-| WP-5 | `any` types on user arrays | `store/store.ts` lines 45, 48: `referrals?: any[]`, `pickupHistory?: any[]` | Zero type safety on referral and pickup rendering; backend shape changes surface as runtime crashes, not compile errors | Open |
-| WP-6 | logger.ts duplicates API_URL | `utils/logger.ts` lines 9–10 redefine the base URL (no trailing-slash strip; commented-out LAN IP nearby) | Violates INV-3; logs can silently go to a different backend than the app during env changes | Open |
-| WP-7 | useCouponDownload bypasses authenticatedFetch | `hooks/useCouponDownload.ts` ~391 raw `fetch` with Authorization header | 401 on redeem shows "Cannot Download" instead of the global sign-out; user retries forever with a dead token. Appears unintentional (no comment claims otherwise) | Open — fix belongs to `mint-rewards-coupon-reliability-campaign` |
-| WP-8 | Duplicated isProfileComplete | `app/(tabs)/home.tsx` 121–124 and `app/deals.tsx` 30 (identical today: phone/province/city) | Divergence risk on the owner's #2 non-negotiable; one-sided edits split the gate | Open |
-| WP-9 | Always-true conditional in coupon HTML | `hooks/useCouponDownload.ts` line 341: `${expiryFormatted \|\| true ? \`...\` : ""}` — the meta row ALWAYS renders (inner ternary handles the empty-expiry case anyway) | Harmless today (dead branch), but it reads as intent to hide the row and will confuse the next editor; the "SINGLE USE" chip always shows regardless | Open |
-| WP-10 | No request timeout outside signIn/signUp | `fetchWithTimeout` (15 s) is used ONLY at store ~295 and ~369; `authenticatedFetch`, `forgotPassword`, `verifyOTP`, `setPassword`, logger, and the coupon redeem all use bare `fetch` | On Pakistani mobile networks a hung request = spinner forever (and in the redeem path, ambiguity about whether the coupon burned) | Open |
+| WP-1 | Auth token printed to console | was `console.log("[getDiscounts] token:", token)` | Token in `adb logcat` / crash tooling | **RESOLVED** — the discount slice was deleted; no `console.log` of a token remains anywhere |
+| WP-2 | Google Maps API key committed | was a literal `AIzaSy...` in the tracked config | Billable key in git | **RESOLVED** — `app.config.js` now reads `env.androidGoogleMapsApiKey` from `ANDROID_GOOGLE_MAPS_API_KEY` |
+| WP-3 | Inconsistent backend error keys | `signIn` reads `data.error \|\| data.message`; others read only one. ~8 `data.error` and ~9 `data.message` sites in `store/store.ts` | When the backend uses the other key, users see the generic fallback instead of the real reason | **Open** — real fix is a shared response-parsing helper (see `mint-rewards-backend-api-contract`) |
+| WP-4 | Campaign/brand error states crossed | `getCampaigns`/`getBrands` set each other's error + loading fields | Spinner never stops | **RESOLVED** — `getCampaigns` no longer exists; the Deal slice's `getBrands` sets its own `brandsError`/`isBrandsLoading` |
+| WP-5 | `any` types on user arrays | `store/store.ts`: `pickupHistory?: any[]` | Backend shape changes surface as runtime crashes | **Partially resolved** — `referrals` is now `string[]`; `pickupHistory` is still `any[]` |
+| WP-6 | logger.ts duplicates API_URL | was a second base-URL definition with no trailing-slash strip | Logs could go to a different backend than the app | **RESOLVED** — `utils/logger.ts` now does `const API_URL = ENV.apiUrl`, honouring INV-3 |
+| WP-7 | useCouponDownload bypasses authenticatedFetch | was a raw `fetch` with an Authorization header | 401 showed "Cannot Download" instead of the global sign-out | **RESOLVED** — the hook contains no `fetch` at all; it calls `redeemDeal` on the store, which routes through `authenticatedFetch` |
+| WP-8 | Duplicated `isProfileComplete` | was inlined in two screens | Divergence on a non-negotiable business rule | **RESOLVED** — single shared helper in `utils/profile.ts` |
+| WP-9 | Always-true conditional in coupon HTML | `utils/couponHtml.ts:343`: `${expiryFormatted \|\| true ? ... : ""}` — the meta row ALWAYS renders | Harmless dead branch, but reads as intent to hide the row and will confuse the next editor | **Open** (moved from `hooks/useCouponDownload.ts` to `utils/couponHtml.ts`) |
+| WP-10 | Inconsistent request timeouts | `fetchWithTimeout` is defined THREE times — `store/store.ts:13` (15 s, used only by `signIn`/`signUp`), `components/UpdateGate.tsx:54` (8 s) and `utils/locationGateConfig.ts:132`. `authenticatedFetch` itself has no timeout | On Pakistani mobile networks a hung authed request spins forever. The duplication in `UpdateGate` is deliberate and documented (keeping the gate off the store's import graph); the third copy is drift | **Open** |
+| WP-11 | Hardcoded Google client IDs | `utils/googleAuth.ts:19–22` — `ENV.googleIosClientId`/`ENV.googleWebClientId` commented out, literals live beneath | Not a secret (client IDs are public) but it defeats variant separation: a dev build authenticates against the production OAuth client regardless of `.env`, and it bypasses INV-3 | **Open** — reason for commenting them out is unrecorded; ask before reverting |
+| WP-12 | Sentry symbolication not automated | no Sentry config plugin in `app.config.js` `plugins`, despite `getSentryExpoConfig` in `metro.config.js` | Release-build stack traces arrive minified/unsymbolicated | **Open** — adding the plugin is a native-affecting change |
 | WP-11 | Redeem burns coupon before PDF | See INV-7 | PDF/share failure after a successful redeem = user paid points, has no coupon artifact except an alert telling them to screenshot | Open — THE active reliability campaign |
 
 Rule: each WP fix is its own reviewed change via `mint-rewards-change-control`;
@@ -366,7 +391,7 @@ and set per-screen options; keep the convention (add new screens there).
 | History of past failures (Google Sign-In saga, coupon used-state bugs) | `mint-rewards-failure-archaeology` |
 | Endpoint shapes, request/response bodies, error keys | `mint-rewards-backend-api-contract` |
 | Auth flows in depth (Google/Apple/OTP/token lifecycle) | `mint-rewards-auth-and-identity` |
-| Env vars, .env, app.json config, feature flags | `mint-rewards-config-and-flags` |
+| Env vars, .env, app.config.js config, feature flags | `mint-rewards-config-and-flags` |
 | EAS builds, prebuild, signing, profiles | `mint-rewards-build-and-env` |
 | Running the app, day-to-day operation | `mint-rewards-run-and-operate` |
 | Logs, tooling, inspecting state | `mint-rewards-diagnostics-and-tooling` |
@@ -380,7 +405,7 @@ and set per-screen options; keep the convention (add new screens there).
 
 ## 6. Provenance and maintenance
 
-All claims verified against the working tree on 2026-07-08 (branch `main`,
+All claims verified against the working tree on 2026-09-03 (branch `main`,
 HEAD 45013c5). Re-verify before trusting line numbers:
 
 - Route table: `ls app app/\(tabs\)` and `grep -n "Stack.Screen" app/_layout.tsx`
@@ -393,7 +418,7 @@ HEAD 45013c5). Re-verify before trusting line numbers:
 - INV-6 lazy loading: `grep -n "require('@react-native-google-signin\|import(\"expo-print\"" utils/googleAuth.ts hooks/useCouponDownload.ts`
 - INV-7/WP-11 ordering: `grep -n "redeem\`\|printToFileAsync\|marked used" hooks/useCouponDownload.ts`
 - WP-1 token log: `grep -n "getDiscounts] token" store/store.ts`
-- WP-2 Maps key: `grep -n "apiKey" app.json`
+- WP-2 Maps key: `grep -n "apiKey" app.config.js`
 - WP-4 crossed errors: `grep -n "brandError\|campaignError" store/store.ts`
 - WP-9 always-true: `grep -n "expiryFormatted || true" hooks/useCouponDownload.ts`
 - WP-10 timeouts: `grep -n "fetchWithTimeout(" store/store.ts`

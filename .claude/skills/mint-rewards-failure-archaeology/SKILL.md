@@ -4,7 +4,7 @@ description: >
   Chronicle of every significant investigation, dead end, rejected approach, and
   near-revert in the Mint Rewards client repo. Consult BEFORE re-attempting any
   previously-tried approach: Google Sign-In via expo-auth-session (abandoned),
-  markDiscountUsed (orphaned), .env.local secret leak (scrubbed but recoverable),
+  markDiscountUsed (now fully removed), .env.local SENTRY_AUTH_TOKEN leak (recoverable — needs rotation),
   editing android/ or ios/ directories (void — prebuild-generated), the
   MaintenanceBanner (dormant), the stalled CI/CD branch, the unmerged dependabot
   Expo bump on dev, and the Apple fullName caching trap. Triggers: "why is this
@@ -17,7 +17,7 @@ description: >
 # Mint Rewards — Failure Archaeology
 
 Every entry below is a settled (or explicitly open) battle from this repo's git
-history. Each was verified by reading the actual commit diffs on 2026-07-08.
+history. Each was verified by reading the actual commit diffs on 2026-07-08, then re-audited against the working tree on 2026-09-03.
 **Do not re-fight a settled battle.** If you are about to try something, search
 this file first; if your idea appears under a "Rule" as forbidden, stop and
 consult `mint-rewards-change-control` before proceeding.
@@ -25,7 +25,7 @@ consult `mint-rewards-change-control` before proceeding.
 Jargon used once, defined once:
 
 - **CNG / prebuild**: Expo's Continuous Native Generation — `android/` and
-  `ios/` are generated from `app.json` by `npx expo prebuild` and are NOT
+  `ios/` are generated from `app.config.js` (formerly `app.json`) by `npx expo prebuild` and are NOT
   source of truth.
 - **RAW token**: this app sends `Authorization: <token>` with no `Bearer `
   prefix (see `mint-rewards-backend-api-contract`).
@@ -66,20 +66,22 @@ could not be created. Screenshot your code as a backup." A PDF failure after a
 successful redeem burns the coupon. This is the live reliability frontier —
 see `mint-rewards-coupon-reliability-campaign`.
 
-**Orphan alert.** `markDiscountUsed` still EXISTS in `store/store.ts`
-(interface ~line 205, implementation ~line 915; `PUT /api/users/my-discounts`
-with `{ discountId }`, sets `isAvailed: true` locally). Grep on 2026-07-08
-finds ZERO callers anywhere in `app/`, `components/`, or `hooks/`. It is dead
-code from the pre-download era, superseded by the PATCH
-`/api/coupons/:id/redeem` flow.
+**Orphan alert — RESOLVED (2026-09-03).** `markDiscountUsed` was orphaned in
+`store/store.ts` for months. It is now **gone**: the entire discount slice was
+deleted when the app moved to deals. `grep -rn markDiscountUsed store/ app/
+hooks/ components/` returns nothing. So are `getDiscounts`, `availDiscount`,
+`getCampaigns` and `getBrandsWithCampaigns`.
 
-**Status.** Settled architecture (PATCH redeem + `campaign.users` membership
-is the used-state source of truth); OPEN reliability problem (redeem-before-PDF
-ordering). `markDiscountUsed`: orphaned, uncalled.
+**Status (2026-09-03).** Architecture moved on: used-state now flows through
+`POST /api/users/deals/:dealId/redeem` (`redeemDeal` on the store), called by
+`hooks/useCouponDownload.ts`. The `PATCH /api/coupons/:id/redeem` endpoint this
+entry described is also no longer called. The redeem-before-PDF ordering
+problem is unchanged and still OPEN — that is the part of this entry that still
+matters.
 
 **Rule for future sessions.**
-- Do NOT wire `markDiscountUsed` back into any screen. If used-state logic
-  changes, change it in `useCouponDownload.ts` / the PATCH redeem flow, via
+- Do NOT resurrect `markDiscountUsed` or any `my-discounts` call. If used-state
+  logic changes, change it in `useCouponDownload.ts` / `redeemDeal`, via
   `mint-rewards-change-control`.
 - Never reorder the flow to "generate PDF first, then redeem" or add redeem
   retries without backend coordination — the redeem endpoint is not known to
@@ -194,20 +196,25 @@ URL (an endpoint, not a credential). No API keys, tokens, or passwords appear
 in any `.env.local` blob in history (verified by reading every diff that
 touched the file).
 
-**The residue — state plainly.** Deleting a file does not scrub it. As of
-2026-07-08 the value is one command away for anyone with repo access:
-`git show 154a29f:.env.local`. The exposure is permanent in this history
-unless history is rewritten; for a URL the practical fix is rotation/migration
-of the endpoint if it was ever meant to be private. Rotation status: UNKNOWN.
+**The residue — state plainly.** Deleting a file does not scrub it. The value
+is one command away for anyone with repo access. The exposure is permanent in
+this history unless history is rewritten.
 
-**Related standing exposure (discovered in sweep).** `3a87f39` "Maps Platform
-API Key (Android)" (2026-05-08) committed a Google Maps Android API key into
-`app.json` under `android.config.googleMaps.apiKey`, and that key is STILL in
-`app.json` on main (as of 2026-07-08). Maps Android keys ship inside the APK
-regardless, so committing one is common practice — but it must be
-application-restricted (package `com.mintrewards.appp` + signing SHA-1) in the
-Google Cloud console. Restriction status: UNVERIFIED (console-side, outside
-this repo).
+**ESCALATED (2026-09-03).** A re-sweep found that `cee0f19` "env local"
+committed a `.env.local` containing a real **`SENTRY_AUTH_TOKEN`**, not merely a
+commented-out URL as this entry originally recorded. Verify with
+`git show cee0f19 -- .env.local`. **That token must be rotated in Sentry.**
+Rotation status: NOT DONE as of 2026-09-03. See `docs/HANDOFF.md` §12.
+
+**Related exposure — RESOLVED (2026-09-03).** `3a87f39` "Maps Platform API Key
+(Android)" (2026-05-08) committed a Google Maps Android API key into the then-
+`app.json` under `android.config.googleMaps.apiKey`. The config is now
+`app.config.js` and reads `env.androidGoogleMapsApiKey` from
+`ANDROID_GOOGLE_MAPS_API_KEY`; no key sits in a tracked file. The old key is
+still in git history, and Maps Android keys ship inside the APK regardless, so
+it must be application-restricted (package `com.mintrewards.appp` + signing
+SHA-1) in the Google Cloud console. Restriction status: UNVERIFIED
+(console-side, outside this repo).
 
 **Status.** Scrub: done. Historical recoverability: open, known exposure.
 Maps key restriction: unverified.
@@ -238,7 +245,7 @@ generated artifacts, not source.
 model priors) to hand-edit `android/app/src/main/AndroidManifest.xml`,
 `ios/**/Info.plist`, Gradle files, or the Podfile is VOID — edits there are
 lost on the next `npx expo prebuild --clean`. Native configuration goes in
-`app.json` (plugins, `android.config`, `ios` keys) — see
+`app.config.js` (plugins, `android.config`, `ios` keys) — see
 `mint-rewards-build-and-env`. The one nuance: locally-present `android/`/`ios/`
 dirs are stale caches; regenerate rather than trust them.
 
@@ -248,7 +255,9 @@ dirs are stale caches; regenerate rather than trust them.
 
 **Symptom/Trigger.** `components/ui/MaintenanceBanner.tsx` exists but nothing
 renders it; `app/(tabs)/_layout.tsx` still imports it and contains
-`{/* <MaintenanceBanner /> */}` (line ~14, as of 2026-07-08).
+`{/* <MaintenanceBanner /> */}`. **Still accurate as of 2026-09-03** —
+re-verified: `app/(tabs)/_layout.tsx:9` imports it, line 57 has the commented
+render. This entry has not rotted.
 
 **Root cause.** The app initially shipped pointing at no live backend and
 showed a maintenance banner; `3f9680c` "removed maintainence banner and
@@ -321,9 +330,13 @@ dependency patch: it typically requires React Native / config / prebuild
 migration and full device retesting, which never happened. No commit states
 this; UNVERIFIED as to intent.
 
-**Status.** Open. Main remains on Expo SDK 54 / RN 0.81.5 (as of 2026-07-08).
+**Status — RESOLVED (2026-09-03).** The migration happened. Main is now on
+**Expo SDK ~56.0.20 / RN 0.85.3 / React 19.2.3 / TypeScript ~6.0.3**, two majors
+past the SDK 54 this entry was written against. The `origin/dev` contamination
+warning below is therefore **historical** — kept for the reasoning, not as a
+live instruction. Re-verify branch state before acting on it.
 
-**Rule for future sessions.** Treat `origin/dev` as CONTAMINATED with an
+**Rule at the time (now historical).** Treat `origin/dev` as CONTAMINATED with an
 unvetted major SDK bump: do not fast-forward main from dev, and do not branch
 feature work off `origin/dev` expecting main parity. An SDK 56 migration is a
 deliberate project (see `expo-react-native-reference` and
@@ -421,10 +434,10 @@ Re-verify with (all read-only):
 - Full history sweep: `git log --oneline --graph --all`
 - Any cited commit's real change: `git show <hash> --stat` then `git show <hash>`
 - Google pivot fossil: `sed -n '1,45p' utils/googleAuth.ts` and `git show 2a8b134 -- utils/googleAuth.ts`
-- markDiscountUsed orphan check: `grep -rn "markDiscountUsed" app components hooks store`
+- markDiscountUsed fully removed: `grep -rn "markDiscountUsed" app components hooks store` (expect no hits)
 - Redeem-before-PDF ordering: `grep -n "redeem\|printToFileAsync\|already marked used" hooks/useCouponDownload.ts`
 - Leak residue exists: `git log --all --oneline -- .env.local` (do not print blob contents into any committed file)
-- Maps key still in app.json: `grep -n "googleMaps" -A2 app.json`
+- Maps key now env-sourced: `grep -n "googleMaps" -A2 app.config.js` (expect `env.androidGoogleMapsApiKey`)
 - Native dirs ignored: `git show fe5294d` and `git check-ignore -v android ios .expo`
 - Banner dormant: `grep -n "MaintenanceBanner" app/(tabs)/_layout.tsx`
 - CI branch delta: `git diff main...test/verify-cicd-pipeline --stat` and `git show test/verify-cicd-pipeline:.github/workflows/mobile-ci.yml`

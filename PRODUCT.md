@@ -19,7 +19,7 @@ Not a gamified rewards app (no confetti/badges/loud color). Not a dense fintech/
 - Match the existing screen grammar exactly: teal header with rounded bottom corners + white content sheet below.
 - One primary action per screen, always with a clear loading/disabled state.
 - Never leak security-sensitive distinctions (invalid email vs wrong code vs expired code) through copy, timing, or layout.
-- Errors surface via native alerts today (no toast system) — new states should degrade gracefully within that constraint.
+- There is no toast system. State surfaces through `utils/alert.ts` (native alerts), `ConfirmationModal`, `OtpStatusBanner`, and the full-screen gates (`LocationGate`, `UpdateGate`, `ForceUpdateScreen`) — new states should reuse one of these rather than inventing a sixth pattern.
 
 ## Accessibility & Inclusion
 Standard mobile accessibility: labeled form inputs, adequate touch targets (≥44pt), screen-reader announcements on error/success transitions. No stated WCAG level; treat AA as the working bar.

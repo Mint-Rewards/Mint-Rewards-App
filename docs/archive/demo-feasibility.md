@@ -1,3 +1,9 @@
+> **ARCHIVED — superseded, kept for history.**
+> Written to answer what a stakeholder demo could show. Its core analysis traced `GET /api/users/my-discounts` and the Campaign+Brand join — **the client no longer calls that endpoint**, and `app/discounts.tsx` / `app/collections.tsx` are no longer at the paths it cites. The CO2 formula and the `totalWasteCollected == ""` finding may still hold, but every path and line reference needs re-verifying. Its user count is superseded by the backend's production figure (~7,200).
+> Current documentation: [`docs/HANDOFF.md`](../HANDOFF.md).
+
+---
+
 # Mint Rewards — Stakeholder Demo Feasibility Report
 
 **Scope:** Read-only trace of how the consumer app sources CO2 saved, waste collected,
