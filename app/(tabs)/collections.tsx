@@ -1,4 +1,6 @@
+import InvitationCard from "@/components/collections/InvitationCard";
 import Navbar from "@/components/ui/navbar";
+import { useInvitations } from "@/hooks/useInvitations";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
 import {
@@ -185,6 +187,10 @@ const DemoCollectionsScreen = ({
   // uncommitted highlight is throwaway UI state.
   const [pickedSlotIds, setPickedSlotIds] = React.useState<Record<string, string>>({});
 
+  // Server truth with a deadline on it, so it is fetched here rather than kept
+  // in the store — see the note in useInvitations.
+  const { invitations, answering, respond } = useInvitations();
+
   const pickSlot = (collectionId: string, slotId: string) => {
     setPickedSlotIds((prev) => ({ ...prev, [collectionId]: slotId }));
   };
@@ -240,6 +246,20 @@ const DemoCollectionsScreen = ({
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
+        {/*
+          Outside the section switcher, deliberately. An invitation is a
+          question being asked of this household right now, with a deadline on
+          it; burying it under a tab nobody opened is how a round ends up with
+          nobody confirmed on it.
+        */}
+        {invitations.map((invitation) => (
+          <InvitationCard
+            key={invitation.collectionId}
+            invitation={invitation}
+            answering={answering}
+            onRespond={respond}
+          />
+        ))}
         {activeSection === "past"
           ? pastPickups.map((pickup) => {
               const completed = pickup.status === "COMPLETED";
