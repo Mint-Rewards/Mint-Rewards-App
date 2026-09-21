@@ -31,11 +31,16 @@ function whenLabel(date: string): string {
 /** Shown only while the remaining time is the pressing fact. */
 function deadlineLabel(deadline: string | null): string | null {
   if (!deadline) return null;
-  const hours = Math.floor((new Date(deadline).getTime() - Date.now()) / 3_600_000);
+  const hours = (new Date(deadline).getTime() - Date.now()) / 3_600_000;
   if (hours < 0) return null;
   if (hours < 1) return "Please reply within the hour";
-  if (hours < 24) return `Please reply within ${hours} hour${hours === 1 ? "" : "s"}`;
-  return null;
+  if (hours >= 24) return null;
+  // Rounded UP, and the comparisons use the unrounded value. A deadline three
+  // hours away is 2.999 by the time this renders, and flooring it told the
+  // household they had two hours — under-reporting the time someone has is the
+  // wrong direction to be wrong about a deadline.
+  const whole = Math.ceil(hours);
+  return `Please reply within ${whole} hour${whole === 1 ? "" : "s"}`;
 }
 
 export default function InvitationCard({

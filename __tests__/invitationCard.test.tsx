@@ -113,8 +113,14 @@ describe("InvitationCard", () => {
   });
 
   it("urges a reply only while the deadline is the pressing fact", () => {
+    // Three hours away is 2.999 by the time it renders, and the household has
+    // three hours, not two — so this asserts the rounding direction too.
     const soon = new Date(Date.now() + 3 * 3_600_000).toISOString();
     expect(textOf(render({ responseDeadlineAt: soon }).tree)).toMatch(/within 3 hours/);
+
+    // Under an hour reads as "the hour", never "within 1 hour".
+    const minutes = new Date(Date.now() + 25 * 60_000).toISOString();
+    expect(textOf(render({ responseDeadlineAt: minutes }).tree)).toMatch(/within the hour/);
 
     // Days away: saying "reply within 52 hours" is noise.
     const later = new Date(Date.now() + 52 * 3_600_000).toISOString();
