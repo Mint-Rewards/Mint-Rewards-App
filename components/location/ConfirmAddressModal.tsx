@@ -23,7 +23,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -285,11 +287,21 @@ export function ConfirmAddressModal({
       // hard gate offers neither.
       onRequestClose={dismissible ? onDismiss : () => {}}
     >
-      <View style={styles.overlay}>
+      {/*
+        The sheet is pinned to the bottom, so the keyboard lands directly on top
+        of it. Without this the lower fields — house number, street — sit behind
+        the keyboard and cannot be scrolled into view either, because the
+        ScrollView still believes its viewport extends under it.
+      */}
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
         <View style={styles.sheet}>
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.scrollContent}
           >
             {/* Map strip: shows where the pin is, opens the full picker. */}
             <TouchableOpacity
@@ -377,7 +389,7 @@ export function ConfirmAddressModal({
             ) : null}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
 
       <MapPicker
         visible={mapVisible}
@@ -402,6 +414,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
+  },
+  scrollContent: {
+    // Clears the home indicator and stops the last field sitting flush against
+    // the keyboard once the sheet has been pushed up.
+    paddingBottom: 24,
   },
   sheet: {
     backgroundColor: "#FFFFFF",

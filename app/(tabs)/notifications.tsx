@@ -1,3 +1,5 @@
+import { IS_DEV } from "@/config/env";
+import PushDebugPanel from "@/components/PushDebugPanel";
 import Navbar from "@/components/ui/navbar";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { useAppStore } from "@/store/store";
@@ -18,6 +20,9 @@ const NotificationsScreen = () => {
       <StatusBar style="light" />
 
       <Navbar user={user} />
+
+      {/* Development builds only. The component guards itself too. */}
+      {IS_DEV && <PushDebugPanel />}
 
       {/* Main Content */}
       <View style={[styles.content, { paddingBottom: tabBarOverflow }]}>

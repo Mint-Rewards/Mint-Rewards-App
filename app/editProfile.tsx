@@ -28,8 +28,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -485,18 +483,23 @@ const EditProfile = () => {
       <StatusBar style="light" />
       <Navbar user={user} />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      {/*
+        `automaticallyAdjustKeyboardInsets` rather than a KeyboardAvoidingView.
+        The latter was here and did not work: `behavior="padding"` only shrinks
+        the view, so a field already below the fold stayed unreachable — the
+        scrollable area never grew, and the lower fields could not be scrolled
+        up at all. This hands the job to iOS, which insets the scroll content by
+        the real keyboard height, so every field remains reachable.
+      */}
+      <ScrollView
+        ref={scrollRef}
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
       >
-        <ScrollView
-          ref={scrollRef}
-          style={styles.content}
-          contentContainerStyle={styles.contentContainer}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
         <View style={styles.formContainer} ref={contentRef}>
           <View style={styles.profileIconContainer}>
             <LinearGradient
@@ -600,8 +603,7 @@ const EditProfile = () => {
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
         </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </View>
   );
 };

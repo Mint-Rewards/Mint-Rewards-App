@@ -16,10 +16,14 @@ try {
 export const configureGoogleSignIn = () => {
   if (!GoogleSignin) return;
   GoogleSignin.configure({
-    // iosClientId: ENV.googleIosClientId,
-    // webClientId: ENV.googleWebClientId,
-    iosClientId: "78392867949-3jjb4h3kmf5c4bnjun1qg3vitfgtvlqd.apps.googleusercontent.com",
-    webClientId: "78392867949-dsbi2ttj54l3gomb3n112i3itfjt382t.apps.googleusercontent.com",
+    // Must come from the environment, not a literal. app.config.js derives the
+    // native iosUrlScheme from this same GOOGLE_IOS_CLIENT_ID, so a hardcoded
+    // value here disagrees with the scheme compiled into any build whose
+    // variant differs — which is why the production client ID sitting here
+    // made Google Sign-In fail on every dev build with "missing support for
+    // the following URL schemes".
+    iosClientId: ENV.googleIosClientId,
+    webClientId: ENV.googleWebClientId,
     offlineAccess: false,
     scopes: ['profile', 'email'],
   });

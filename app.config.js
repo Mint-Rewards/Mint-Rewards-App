@@ -221,8 +221,18 @@ module.exports = () => ({
       bundleIdentifier: isDev
         ? "com.mintrewards.app.dev"
         : "com.mintrewards.app",
+      // aps-environment has to match the provisioning profile the build is
+      // signed with, or APNs rejects the registration at launch. The dev
+      // variant is only ever built on a development profile, and the
+      // production variant only ever on a distribution one.
+      entitlements: {
+        "aps-environment": isDev ? "development" : "production",
+      },
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        // Lets a data-only message wake the app. An ordinary alert is shown by
+        // iOS without this, but a silent payload is dropped without it.
+        UIBackgroundModes: ["remote-notification"],
         NSAppTransportSecurity: {
           NSExceptionDomains: {
             localhost: {
@@ -270,6 +280,7 @@ module.exports = () => ({
     plugins: [
       "expo-router",
       "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
       [
         "expo-splash-screen",
         {

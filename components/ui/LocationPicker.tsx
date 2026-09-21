@@ -2,7 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   StyleProp,
   StyleSheet,
   Text,
@@ -51,7 +53,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   const [search, setSearch] = useState("");
 
   const filtered = options.filter((o) =>
-    o.toLowerCase().includes(search.toLowerCase())
+    o.toLowerCase().includes(search.toLowerCase()),
   );
 
   const handleSelect = (option: string) => {
@@ -100,83 +102,94 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         animationType="fade"
         onRequestClose={() => setIsOpen(false)}
       >
-        <TouchableOpacity
-          style={styles.overlay}
-          activeOpacity={1}
-          onPress={() => {
-            setIsOpen(false);
-            setSearch("");
-          }}
+        {/*
+          The card is pinned to the bottom and the search field puts a keyboard
+          directly over the options it is filtering. Lifting the whole sheet is
+          the only thing that helps here: the list is already scrollable, but
+          scrolling cannot reveal rows drawn underneath the keyboard.
+        */}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          <View style={styles.modalCard}>
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select {label}</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setIsOpen(false);
-                  setSearch("");
-                }}
-              >
-                <Ionicons name="close" size={22} color="#333333" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Search */}
-            <View style={styles.searchContainer}>
-              <Ionicons name="search-outline" size={16} color="#999999" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder={`Search ${label.toLowerCase()}...`}
-                placeholderTextColor="#999999"
-                value={search}
-                onChangeText={setSearch}
-              />
-              {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch("")}>
-                  <Ionicons name="close-circle" size={16} color="#999999" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Options list */}
-            <FlatList
-              data={filtered}
-              keyExtractor={(item) => item}
-              style={styles.list}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>No results found</Text>
-              }
-              renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.overlay}
+            activeOpacity={1}
+            onPress={() => {
+              setIsOpen(false);
+              setSearch("");
+            }}
+          >
+            <View style={styles.modalCard}>
+              {/* Header */}
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select {label}</Text>
                 <TouchableOpacity
-                  style={[
-                    styles.option,
-                    item === value && styles.optionSelected,
-                  ]}
-                  onPress={() => handleSelect(item)}
+                  onPress={() => {
+                    setIsOpen(false);
+                    setSearch("");
+                  }}
                 >
-                  <Text
-                    style={[
-                      styles.optionText,
-                      item === value && styles.optionTextSelected,
-                    ]}
-                  >
-                    {item}
-                  </Text>
-                  {item === value && (
-                    <Ionicons
-                      name="checkmark"
-                      size={18}
-                      color={Constants.appThemeColor}
-                    />
-                  )}
+                  <Ionicons name="close" size={22} color="#333333" />
                 </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchableOpacity>
+              </View>
+
+              {/* Search */}
+              <View style={styles.searchContainer}>
+                <Ionicons name="search-outline" size={16} color="#999999" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder={`Search ${label.toLowerCase()}...`}
+                  placeholderTextColor="#999999"
+                  value={search}
+                  onChangeText={setSearch}
+                />
+                {search.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearch("")}>
+                    <Ionicons name="close-circle" size={16} color="#999999" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Options list */}
+              <FlatList
+                data={filtered}
+                keyExtractor={(item) => item}
+                style={styles.list}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>No results found</Text>
+                }
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.option,
+                      item === value && styles.optionSelected,
+                    ]}
+                    onPress={() => handleSelect(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.optionText,
+                        item === value && styles.optionTextSelected,
+                      ]}
+                    >
+                      {item}
+                    </Text>
+                    {item === value && (
+                      <Ionicons
+                        name="checkmark"
+                        size={18}
+                        color={Constants.appThemeColor}
+                      />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
