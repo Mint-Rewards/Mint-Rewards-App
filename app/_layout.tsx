@@ -1,18 +1,17 @@
-import {
-  DarkTheme,
-  DefaultTheme,
-  router,
-  Stack,
-  ThemeProvider,
-  usePathname,
-  useGlobalSearchParams,
-} from "expo-router";
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router, useGlobalSearchParams, usePathname, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore } from "@/store/store";
+import {
+  onNotificationOpened,
+  onPushTokenRefresh,
+  registerDeviceToken,
+  registerForPush,
+  type OpenedNotification,
+} from "@/utils/push";
 import * as SecureStore from "expo-secure-store";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { configureGoogleSignIn } from '@/utils/googleAuth';
 import { logScreenView } from "@/utils/logger";
 import { EnvBanner } from "@/components/EnvBanner";
@@ -45,9 +44,13 @@ Sentry.init({
 export default Sentry.wrap(function RootLayout() {
   const colorScheme = useColorScheme();
   const { setUserData, getProfile, user } = useAppStore();
+  const token = useAppStore((state) => state.token);
   const pathname = usePathname();
   const params = useGlobalSearchParams();
   const previousRoute = useRef<string | undefined>(undefined);
+  const segments = useSegments();
+  const [pendingNotification, setPendingNotification] =
+    useState<OpenedNotification | null>(null);
 
   useEffect(() => {
     if (previousRoute.current === pathname) return;
@@ -93,6 +96,81 @@ export default Sentry.wrap(function RootLayout() {
     checkAuth();
     configureGoogleSignIn();
   }, []);
+
+  /**
+   * Push registration, in one place rather than in each sign-in path.
+   *
+   * There are four ways to arrive signed in — password, register, Google,
+   * Apple — plus a cold start with a stored token. Hooking each one would mean
+   * five call sites and a fifth to forget. This watches the state they all end
+   * up in instead.
+   *
+   * Re-registering on every launch is deliberate: it refreshes lastSeenAt and
+   * re-binds a handset that has changed hands, and the service upserts on the
+   * token so it costs one call.
+   */
+  useEffect(() => {
+    if (!user?._id || !token) return;
+    let alive = true;
+
+    registerForPush().then((result) => {
+      if (alive && result.token) registerDeviceToken(result.token, token);
+    });
+    // FCM reissues tokens on reinstall and restore-to-new-device. A token that
+    // is never re-sent goes quietly dead, which is indistinguishable from a
+    // broken pipeline.
+    const unsubscribe = onPushTokenRefresh((next) => {
+      if (alive) registerDeviceToken(next, token);
+    });
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, [user?._id, token]);
+
+  /**
+   * A tapped notification is REMEMBERED here, and acted on below.
+   *
+   * It cannot navigate immediately. On a cold start the tap is reported by the
+   * native side within milliseconds — before checkAuth has read the stored
+   * token, so there is no session to judge yet — and checkAuth then finishes
+   * with router.replace("/(tabs)/home"), which would overwrite any navigation
+   * done in the meantime. Whichever of the two finished first would win, and
+   * on a development build the bundle download makes that ordering vary.
+   */
+  useEffect(() => {
+    return onNotificationOpened((notification: OpenedNotification) => {
+      // Worth measuring: a push nobody taps is a push worth rewriting, and the
+      // event name is the only way to tell which kind is being ignored.
+      posthog.capture("notification_opened", {
+        event: notification.event,
+        collection_id: notification.collectionId,
+      });
+      setPendingNotification(notification);
+    });
+  }, []);
+
+  /**
+   * Acted on once the app has actually settled somewhere inside the tabs.
+   *
+   * Keyed on the route rather than on a timer or on auth state: arriving in
+   * the tab navigator is the observable event that means startup routing is
+   * finished and a push() will not be overwritten. Someone sent to /login
+   * keeps their pending notification until they sign in and land here.
+   *
+   * Every message this app sends is about a collection, and Collections is the
+   * only screen that can answer "what is happening with mine" — the
+   * Notifications tab is still an empty state, so routing a deliberate tap
+   * there would open a blank screen.
+   */
+  useEffect(() => {
+    // useSegments, not usePathname: groups are a routing construct and never
+    // appear in a URL, so pathname reads "/home" and would never match
+    // "/(tabs)". Segments keep the file structure — ["(tabs)", "home"].
+    if (!pendingNotification || segments[0] !== "(tabs)") return;
+    setPendingNotification(null);
+    router.push("/(tabs)/collections");
+  }, [pendingNotification, segments]);
 
   return (
     // SafeAreaProvider added so EnvBanner can read the top inset from outside
