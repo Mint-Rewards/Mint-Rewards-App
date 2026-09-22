@@ -19,6 +19,8 @@ type Opened = { data?: Record<string, unknown> } | null;
 const mockGetInitialNotification = jest.fn<() => Promise<Opened>>();
 const mockOnNotificationOpenedApp =
   jest.fn<(cb: (m: NonNullable<Opened>) => void) => () => void>();
+type Foreground = { notification?: { title?: string; body?: string }; data?: Record<string, unknown> };
+const mockOnMessage = jest.fn<(cb: (m: Foreground) => void) => () => void>();
 let mockIsRegistered = true;
 
 jest.mock("@react-native-firebase/messaging", () => {
@@ -27,6 +29,7 @@ jest.mock("@react-native-firebase/messaging", () => {
     getToken: mockGetToken,
     onTokenRefresh: mockOnTokenRefresh,
     getInitialNotification: mockGetInitialNotification,
+    onMessage: mockOnMessage,
     onNotificationOpenedApp: mockOnNotificationOpenedApp,
     registerDeviceForRemoteMessages: mockRegisterDevice,
     get isDeviceRegisteredForRemoteMessages() {
@@ -48,6 +51,7 @@ jest.mock("@/config/env", () => ({
 }));
 
 import {
+  onForegroundMessage,
   onNotificationOpened,
   registerDeviceToken,
   registerForPush,
@@ -241,5 +245,50 @@ describe("onNotificationOpened", () => {
     await Promise.resolve();
 
     expect(seen).toEqual([]);
+  });
+});
+
+describe("onForegroundMessage", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockOnMessage.mockReturnValue(() => {});
+  });
+
+  it("surfaces a notification that arrives while the app is open", () => {
+    // iOS shows nothing for these. Without this the household reading the app
+    // when their collection is cancelled never finds out.
+    const seen: unknown[] = [];
+    onForegroundMessage((n) => seen.push(n));
+
+    mockOnMessage.mock.calls[0]![0]({
+      notification: { title: "Collection cancelled", body: "Tomorrow is off." },
+      data: { event: "collection.cancelled", collectionId: "25" },
+    });
+
+    expect(seen).toEqual([
+      {
+        title: "Collection cancelled",
+        body: "Tomorrow is off.",
+        event: "collection.cancelled",
+        collectionId: "25",
+        stopId: null,
+      },
+    ]);
+  });
+
+  it("ignores a data-only message", () => {
+    // Those exist to wake the app, not to be read. Rendering one would put an
+    // empty banner on screen.
+    const seen: unknown[] = [];
+    onForegroundMessage((n) => seen.push(n));
+    mockOnMessage.mock.calls[0]![0]({ data: { event: "silent.sync" } });
+    expect(seen).toEqual([]);
+  });
+
+  it("falls back to a title when only a body is sent", () => {
+    const seen: { title: string }[] = [];
+    onForegroundMessage((n) => seen.push(n));
+    mockOnMessage.mock.calls[0]![0]({ notification: { body: "Something happened." } });
+    expect(seen[0]!.title).toBe("Mint Rewards");
   });
 });

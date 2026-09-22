@@ -3,7 +3,9 @@ import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore } from "@/store/store";
+import NotificationBanner, { type BannerMessage } from "@/components/NotificationBanner";
 import {
+  onForegroundMessage,
   onNotificationOpened,
   onPushTokenRefresh,
   registerDeviceToken,
@@ -51,6 +53,7 @@ export default Sentry.wrap(function RootLayout() {
   const segments = useSegments();
   const [pendingNotification, setPendingNotification] =
     useState<OpenedNotification | null>(null);
+  const [banner, setBanner] = useState<BannerMessage | null>(null);
 
   useEffect(() => {
     if (previousRoute.current === pathname) return;
@@ -163,6 +166,23 @@ export default Sentry.wrap(function RootLayout() {
    * Notifications tab is still an empty state, so routing a deliberate tap
    * there would open a blank screen.
    */
+  /**
+   * A notification arriving while the app is open.
+   *
+   * iOS shows nothing for these — it hands the payload straight to the app.
+   * Without a banner, someone reading the app when their collection is
+   * cancelled never finds out.
+   */
+  useEffect(() => {
+    return onForegroundMessage((message) => {
+      setBanner({
+        title: message.title,
+        body: message.body,
+        collectionId: message.collectionId,
+      });
+    });
+  }, []);
+
   useEffect(() => {
     // useSegments, not usePathname: groups are a routing construct and never
     // appear in a URL, so pathname reads "/home" and would never match
@@ -177,6 +197,21 @@ export default Sentry.wrap(function RootLayout() {
     // the navigator. The navigators' own SafeAreaProviderCompat detects this
     // provider and defers to it.
     <SafeAreaProvider>
+      {/*
+        Outside the navigator so it survives a route change, and first so it
+        sits above whatever screen is showing.
+      */}
+      <NotificationBanner
+        message={banner}
+        onPress={() => {
+          posthog.capture("notification_banner_opened", {
+            collection_id: banner?.collectionId ?? null,
+          });
+          setBanner(null);
+          router.push("/(tabs)/collections");
+        }}
+        onDismiss={() => setBanner(null)}
+      />
       <PostHogProvider
         client={posthog}
         autocapture={{

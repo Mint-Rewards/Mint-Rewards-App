@@ -234,3 +234,34 @@ export function onNotificationOpened(
     unsubscribe();
   };
 }
+
+/**
+ * A notification that arrived while the app was open.
+ *
+ * iOS hands a foreground message straight to the app and shows nothing: no
+ * banner, no sound. Without this, anyone with the app open when a collection
+ * is cancelled simply never finds out.
+ *
+ * Deliberately NOT re-raised as a system notification. That would need
+ * expo-notifications or notifee — a native dependency and a rebuild — and a
+ * system banner drawn over the app a person is already looking at reads as a
+ * glitch. An in-app banner is both cheaper and better manners.
+ */
+export function onForegroundMessage(
+  handler: (notification: OpenedNotification & { title: string; body: string }) => void,
+): () => void {
+  const fcm = messagingModule();
+  if (!pushIsSupported() || !fcm) return () => {};
+
+  return fcm().onMessage((message) => {
+    const alert = message.notification;
+    // A data-only message has nothing to show. Those exist to wake the app,
+    // not to be read, so they are ignored here rather than rendered blank.
+    if (!alert?.title && !alert?.body) return;
+    handler({
+      ...readPayload(message),
+      title: alert?.title ?? "Mint Rewards",
+      body: alert?.body ?? "",
+    });
+  });
+}
