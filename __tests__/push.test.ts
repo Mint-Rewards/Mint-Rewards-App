@@ -132,11 +132,15 @@ describe("registerDeviceToken", () => {
   it("sends the token to the backend with the user's bearer token", async () => {
     const calls = stubFetch({ ok: true });
 
-    await expect(registerDeviceToken("device-token", "user-jwt")).resolves.toBe(true);
+    await expect(registerDeviceToken("device-token", "Bearer user-jwt")).resolves.toBe(true);
 
     const { url, init } = calls[0]!;
     expect(url).toBe("https://api.test/api/devices");
+    // Verbatim, NOT re-prefixed. The backend issues the token as
+    // `Bearer <jwt>` and the app stores it whole, so adding a scheme here
+    // yields "Bearer Bearer <jwt>" and a 401 that names nothing useful.
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer user-jwt");
+    expect((init.headers as Record<string, string>).authorization).not.toMatch(/Bearer\s+Bearer/);
     const body = JSON.parse(String(init.body));
     expect(body.token).toBe("device-token");
     expect(body.platform).toBe("IOS");
@@ -149,10 +153,10 @@ describe("registerDeviceToken", () => {
     // Called during sign-in. Throwing here would fail a login over a push
     // registration, which is the wrong trade every time.
     stubFetch(new Error("offline"));
-    await expect(registerDeviceToken("t", "jwt")).resolves.toBe(false);
+    await expect(registerDeviceToken("t", "Bearer jwt")).resolves.toBe(false);
 
     stubFetch({ ok: false, status: 503 });
-    await expect(registerDeviceToken("t", "jwt")).resolves.toBe(false);
+    await expect(registerDeviceToken("t", "Bearer jwt")).resolves.toBe(false);
   });
 });
 
@@ -165,7 +169,7 @@ describe("unregisterDeviceToken", () => {
   it("releases the current token on sign-out", async () => {
     const calls = stubFetch({ ok: true });
 
-    await unregisterDeviceToken("user-jwt");
+    await unregisterDeviceToken("Bearer user-jwt");
 
     const { url, init } = calls[0]!;
     expect(url).toBe("https://api.test/api/devices");
@@ -175,7 +179,7 @@ describe("unregisterDeviceToken", () => {
 
   it("never lets a network failure block signing out", async () => {
     stubFetch(new Error("offline"));
-    await expect(unregisterDeviceToken("user-jwt")).resolves.toBeUndefined();
+    await expect(unregisterDeviceToken("Bearer user-jwt")).resolves.toBeUndefined();
   });
 });
 

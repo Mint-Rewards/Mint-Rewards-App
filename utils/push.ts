@@ -128,7 +128,12 @@ export async function registerDeviceToken(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${authToken}`,
+        // The stored token ALREADY carries its scheme: the backend issues it
+        // as `Bearer <jwt>` (see /api/users/login and /api/auth/google), and
+        // every other call in this app sends it verbatim. Adding a prefix here
+        // produced "Bearer Bearer <jwt>", which checkAuth splits on the space
+        // and then fails to verify — a 401 that looks nothing like its cause.
+        authorization: authToken,
       },
       body: JSON.stringify({
         token,
@@ -158,7 +163,12 @@ export async function unregisterDeviceToken(authToken: string): Promise<void> {
       method: "DELETE",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${authToken}`,
+        // The stored token ALREADY carries its scheme: the backend issues it
+        // as `Bearer <jwt>` (see /api/users/login and /api/auth/google), and
+        // every other call in this app sends it verbatim. Adding a prefix here
+        // produced "Bearer Bearer <jwt>", which checkAuth splits on the space
+        // and then fails to verify — a 401 that looks nothing like its cause.
+        authorization: authToken,
       },
       body: JSON.stringify({ token }),
     });
