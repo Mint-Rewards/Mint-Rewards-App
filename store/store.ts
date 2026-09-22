@@ -8,6 +8,7 @@ import { addBreadcrumb, captureWarning, setSentryUser } from "@/utils/sentry";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 import { unregisterDeviceToken } from "@/utils/push";
+import { userFromAuth } from "@/utils/userFromAuth";
 
 const API_URL = API_BASE_URL;
 
@@ -589,45 +590,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const data = await response.json();
 
       if (response.ok) {
-        const user: User = {
-          _id: data.user._id,
+        const user: User = userFromAuth(data.user, {
           token: data.token,
-          email: data.user.email || email,
-          userName: data.user.userName,
-          phone: data.user.phone,
-          isAdmin: data.user.isAdmin || false,
-          avatar: data.user.avatar,
-          address: data.user.address,
-          province: data.user.province,
-          city: data.user.city,
-          town: data.user.town,
-          townOther: data.user.townOther,
-          subArea: data.user.subArea,
-          subAreaOther: data.user.subAreaOther,
-          mintId: data.user.mintId,
-          latitude: data.user.latitude,
-          longitude: data.user.longitude,
-          deviceToken: data.user.deviceToken,
-          points: data.user.points,
-          totalCollections: data.user.totalCollections,
-          totalWasteCollected: data.user.totalWasteCollected,
-          referrals: data.user.referrals,
-          firstTimeLogin: data.user.firstTimeLogin || false,
-          emailVerified: data.user.emailVerified || false,
-          pickupHistory: data.user.pickupHistory,
-          // The two location fields the gate reads, carried through from
-          // the login response.
-          //
-          // These decide whether the location gate fires, and leaving them
-          // out is not a cosmetic loss: the gate reads locationVersion, gets
-          // undefined, falls back to 0, and asks a user who completed their
-          // address months ago for their house number again. checkAuth()
-          // stores the profile response whole and so never had this problem,
-          // which is why it only ever showed up in the seconds after a
-          // sign-in.
-          structuredAddress: data.user.structuredAddress,
-          locationVersion: data.user.locationVersion,
-        };
+          // This endpoint echoes no email back on some responses, so the
+          // address the person typed stands in.
+          fallbackEmail: email,
+        });
 
         set({ user, isLoading: false, error: null, token: data.token });
 
