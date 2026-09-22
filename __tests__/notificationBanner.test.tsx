@@ -36,8 +36,12 @@ const press = (tree: renderer.ReactTestRenderer, label: string) => {
 };
 
 describe("NotificationBanner", () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
 
   it("renders nothing when there is no message", () => {
     let tree!: renderer.ReactTestRenderer;
