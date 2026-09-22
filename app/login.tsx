@@ -95,6 +95,17 @@ const LoginScreen = () => {
             firstTimeLogin: userData.firstTimeLogin || false,
             emailVerified: userData.emailVerified || false,
             pickupHistory: userData.pickupHistory || [],
+            // The two fields the location gate reads, carried through from the
+            // login response.
+            //
+            // Leaving them out is not a cosmetic loss: the gate reads
+            // locationVersion, gets undefined, falls back to 0, and asks a user
+            // who completed their address months ago for their house number
+            // again. checkAuth() stores the profile response whole and so never
+            // had this problem, which is why it only ever appeared in the
+            // seconds after a sign-in.
+            structuredAddress: userData.structuredAddress,
+            locationVersion: userData.locationVersion,
           };
 
           useAppStore.setState({ user, token: userData.token || null });
