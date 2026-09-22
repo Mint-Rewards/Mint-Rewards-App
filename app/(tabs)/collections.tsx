@@ -78,13 +78,13 @@ const CollectionsScreen = () => {
 const RealCollectionsScreen = ({ user }: { user: User | null }) => {
   // The iOS tab bar is absolutely positioned, so the list has to clear it.
   const tabBarOverflow = useBottomTabOverflow();
-  const { invitations, loading, answering, respond } = useInvitations();
+  const { invitations, hydrated, answering, respond } = useInvitations();
 
   // "No Collections Found" is a claim, and during the first fetch it is one we
   // cannot make yet. Someone who tapped a push notification would otherwise
   // watch it assert the opposite of why they are here, for as long as the
   // request takes.
-  if (loading && invitations.length === 0) {
+  if (!hydrated) {
     return (
       <View style={styles.container}>
         <StatusBar style="light" />

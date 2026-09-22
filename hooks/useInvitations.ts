@@ -6,7 +6,9 @@
  * across screens is how someone ends up answering a window that closed an
  * hour ago.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
+import { useFocusEffect } from "expo-router";
 import { apiUrl, authenticatedFetch } from "@/utils/api";
 import { useAppStore } from "@/store/store";
 
@@ -83,6 +85,16 @@ export async function sendInvitationResponse(
 export function useInvitations() {
   const token = useAppStore((state) => state.token);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  /**
+   * Whether the first fetch has come back.
+   *
+   * Not `loading`, which stays false on that first fetch by design. A screen
+   * cannot say "no collections" before it has asked, and with nothing to
+   * distinguish "none" from "not yet" it says it anyway — which is what a
+   * household sees at the exact moment they tap a notification telling them
+   * otherwise.
+   */
+  const [hydrated, setHydrated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [answering, setAnswering] = useState<AnswerState>({});
 
@@ -97,14 +109,68 @@ export function useInvitations() {
   // body cascades a render. The first fetch needs no spinner anyway — the
   // screen has plenty else on it — so only manual reloads show one.
   useEffect(() => {
-    if (!token) return;
+    // Nobody to ask about, so the answer is already known: a spinner that
+    // waits for a fetch which will never be made never stops.
+    if (!token) {
+      setHydrated(true);
+      return;
+    }
     let alive = true;
     fetchInvitations(token).then((list) => {
-      if (alive) setInvitations(list);
+      if (!alive) return;
+      setInvitations(list);
+      setHydrated(true);
     });
     return () => {
       alive = false;
     };
+  }, [token]);
+
+  /**
+   * Again whenever this screen is looked at.
+   *
+   * The tab stays mounted, so the mount fetch above runs once per session —
+   * and an invitation that arrives after it is one the screen never learns
+   * about. A household was invited, tapped the notification, was taken to a
+   * collections screen that had already decided it was empty, and only saw
+   * the invitation after a full reload of the bundle.
+   *
+   * Skipped on the first focus, which is the same render the mount fetch is
+   * already in flight for.
+   */
+  const focusedBefore = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) return;
+      if (!focusedBefore.current) {
+        focusedBefore.current = true;
+        return;
+      }
+      let alive = true;
+      fetchInvitations(token).then((list) => {
+        if (alive) setInvitations(list);
+      });
+      return () => {
+        alive = false;
+      };
+    }, [token]),
+  );
+
+  /**
+   * And on the way back from the background.
+   *
+   * A push arrives, the household opens the app from the notification, and
+   * the collections tab is already the focused screen — so nothing re-runs.
+   * Coming back to the foreground is the one signal that covers it.
+   */
+  useEffect(() => {
+    if (!token) return;
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") {
+        fetchInvitations(token).then(setInvitations);
+      }
+    });
+    return () => sub.remove();
   }, [token]);
 
   const respond = useCallback(
@@ -135,5 +201,5 @@ export function useInvitations() {
     [token, load],
   );
 
-  return { invitations, loading, answering, respond, reload: load };
+  return { invitations, hydrated, loading, answering, respond, reload: load };
 }
