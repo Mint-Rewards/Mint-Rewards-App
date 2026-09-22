@@ -615,6 +615,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
           firstTimeLogin: data.user.firstTimeLogin || false,
           emailVerified: data.user.emailVerified || false,
           pickupHistory: data.user.pickupHistory,
+          // The two location fields the gate reads, carried through from
+          // the login response.
+          //
+          // These decide whether the location gate fires, and leaving them
+          // out is not a cosmetic loss: the gate reads locationVersion, gets
+          // undefined, falls back to 0, and asks a user who completed their
+          // address months ago for their house number again. checkAuth()
+          // stores the profile response whole and so never had this problem,
+          // which is why it only ever showed up in the seconds after a
+          // sign-in.
+          structuredAddress: data.user.structuredAddress,
+          locationVersion: data.user.locationVersion,
         };
 
         set({ user, isLoading: false, error: null, token: data.token });
