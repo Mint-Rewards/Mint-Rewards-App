@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiUrl, authenticatedFetch } from "@/utils/api";
 import { useAppStore } from "@/store/store";
+import { onForegroundMessage } from "@/utils/push";
 
 export interface InboxItem {
   id: number;
@@ -60,6 +61,29 @@ export function useNotifications() {
     });
     return () => {
       alive = false;
+    };
+  }, [token]);
+
+  /**
+   * A notification arriving while this screen is open.
+   *
+   * Without it the banner appears and the list beneath it does not change,
+   * which reads as the app having missed the very thing it just showed you.
+   *
+   * Refetched silently — no spinner. The person did not ask for a refresh and
+   * a control appearing on its own is noise.
+   */
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    const unsubscribe = onForegroundMessage(() => {
+      fetchPage(token).then((next) => {
+        if (alive) setPage(next);
+      });
+    });
+    return () => {
+      alive = false;
+      unsubscribe();
     };
   }, [token]);
 
