@@ -28,10 +28,14 @@ export type AnswerState = Record<number, "sending" | "failed" | undefined>;
  * error: the backend already answers that way, and it is not something a
  * household can act on.
  */
-async function fetchInvitations(token: string): Promise<Invitation[]> {
+export async function fetchInvitations(token: string): Promise<Invitation[]> {
   try {
     const res = await authenticatedFetch(apiUrl("/api/collections/invitations"), {
-      headers: { Authorization: `Bearer ${token}` },
+      // Verbatim. The store's token already reads "Bearer <jwt>" — both login
+      // endpoints issue it that way — so prefixing again sends
+      // "Bearer Bearer <jwt>", which 401s and, through authenticatedFetch,
+      // signs the person out. Every other caller in the app sends it as-is.
+      headers: { Authorization: token },
     });
     const body = await res.json();
     return Array.isArray(body?.invitations) ? body.invitations : [];
@@ -40,6 +44,29 @@ async function fetchInvitations(token: string): Promise<Invitation[]> {
   }
 }
 
+
+/**
+ * Answering one invitation.
+ *
+ * Separate from the hook so the header it sends can be asserted directly.
+ * Both of this file's calls once prefixed a second "Bearer" onto a token that
+ * already carried one, which 401s and signs the person out — a failure with
+ * no error to read, only an empty screen.
+ */
+export async function sendInvitationResponse(
+  token: string,
+  collectionId: number,
+  response: "ACCEPTED" | "DECLINED",
+): Promise<Response> {
+  return authenticatedFetch(
+    apiUrl(`/api/collections/${collectionId}/respond`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: token },
+      body: JSON.stringify({ response }),
+    },
+  );
+}
 
 export function useInvitations() {
   const token = useAppStore((state) => state.token);
@@ -80,17 +107,7 @@ export function useInvitations() {
       );
 
       try {
-        const res = await authenticatedFetch(
-          apiUrl(`/api/collections/${collectionId}/respond`),
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ response }),
-          },
-        );
+        const res = await sendInvitationResponse(token, collectionId, response);
         if (!res.ok) throw new Error(String(res.status));
         setAnswering((prev) => ({ ...prev, [collectionId]: undefined }));
         await load();
