@@ -20,8 +20,16 @@ export interface BannerMessage {
   collectionId: string | null;
 }
 
-/** Long enough to read two lines, short enough not to sit in the way. */
+/**
+ * How long a banner stays up.
+ *
+ * A message that leads somewhere is asking the person to do something, and
+ * five seconds is not long enough to read it, decide, and reach for it — the
+ * banner is gone by the time the hand moves. One that is purely informational
+ * has nothing to reach for, so it leaves sooner and stops covering the screen.
+ */
 const VISIBLE_MS = 5000;
+const VISIBLE_MS_ACTIONABLE = 10_000;
 
 export default function NotificationBanner({
   message,
@@ -54,7 +62,9 @@ export default function NotificationBanner({
     if (timer.current) clearTimeout(timer.current);
 
     Animated.spring(slide, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
-    timer.current = setTimeout(() => hide(onDismiss), VISIBLE_MS);
+    // Actionable means there is somewhere to go: a tap opens that collection.
+    const visibleFor = message.collectionId ? VISIBLE_MS_ACTIONABLE : VISIBLE_MS;
+    timer.current = setTimeout(() => hide(onDismiss), visibleFor);
 
     return () => {
       if (timer.current) clearTimeout(timer.current);

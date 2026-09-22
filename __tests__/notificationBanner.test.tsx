@@ -77,11 +77,31 @@ describe("NotificationBanner", () => {
     expect(onPress).toHaveBeenCalled();
   });
 
-  it("dismisses itself rather than sitting on screen", () => {
+  it("gives a tappable notification longer to be acted on", () => {
+    // Five seconds is not enough to read it, decide, and reach for it — the
+    // banner is gone by the time the hand moves.
     const onDismiss = jest.fn();
     act(() => {
       renderer.create(
         <NotificationBanner message={MESSAGE} onPress={jest.fn() as never} onDismiss={onDismiss as never} />,
+      );
+    });
+    act(() => { jest.advanceTimersByTime(9000); });
+    expect(onDismiss).not.toHaveBeenCalled();
+    act(() => { jest.advanceTimersByTime(1500); jest.runAllTimers(); });
+    expect(onDismiss).toHaveBeenCalled();
+  });
+
+  it("dismisses itself rather than sitting on screen", () => {
+    // No collection to open, so nothing to reach for and no reason to linger.
+    const onDismiss = jest.fn();
+    act(() => {
+      renderer.create(
+        <NotificationBanner
+          message={{ ...MESSAGE, collectionId: null }}
+          onPress={jest.fn() as never}
+          onDismiss={onDismiss as never}
+        />,
       );
     });
     expect(onDismiss).not.toHaveBeenCalled();
