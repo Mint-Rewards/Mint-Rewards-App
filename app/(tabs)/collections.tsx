@@ -20,7 +20,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 type SectionKey = "past" | "upcoming";
 
@@ -45,9 +52,10 @@ const CollectionsScreen = () => {
   }
 
   // Demo content is scoped to a small allowlist of accounts. Everyone else
-  // gets the original empty state, untouched.
+  // gets the real screen: their own invitations, and the original empty state
+  // when there are none.
   if (!isDemoCollectionsUser(user?.email)) {
-    return <EmptyCollectionsState user={user} />;
+    return <RealCollectionsScreen user={user} />;
   }
 
   return (
@@ -55,6 +63,62 @@ const CollectionsScreen = () => {
       user={user}
       initialSection={section === "upcoming" ? "upcoming" : "past"}
     />
+  );
+};
+
+/**
+ * The collections tab for an ordinary account.
+ *
+ * An invitation is real server state about a real round, and it used to be
+ * rendered only inside DemoCollectionsScreen — so every household outside a
+ * three-address allowlist was invited by push, tapped the notification, and
+ * landed on "No Collections Found". The demo past-pickups content stays
+ * allowlisted; being asked whether a van may come to your door does not.
+ */
+const RealCollectionsScreen = ({ user }: { user: User | null }) => {
+  // The iOS tab bar is absolutely positioned, so the list has to clear it.
+  const tabBarOverflow = useBottomTabOverflow();
+  const { invitations, loading, answering, respond } = useInvitations();
+
+  // "No Collections Found" is a claim, and during the first fetch it is one we
+  // cannot make yet. Someone who tapped a push notification would otherwise
+  // watch it assert the opposite of why they are here, for as long as the
+  // request takes.
+  if (loading && invitations.length === 0) {
+    return (
+      <View style={styles.container}>
+        <StatusBar style="light" />
+        <Navbar user={user} />
+        <View style={styles.content}>
+          <ActivityIndicator size="large" color="#00528A" />
+        </View>
+      </View>
+    );
+  }
+
+  // Nothing to answer and nothing on the way: the screen this tab has always
+  // shown, unchanged.
+  if (invitations.length === 0) return <EmptyCollectionsState user={user} />;
+
+  return (
+    <View style={styles.container}>
+      <StatusBar style="light" />
+      <Navbar user={user} />
+      <ScrollView
+        style={styles.listScroll}
+        contentContainerStyle={[styles.listContent, { paddingBottom: tabBarOverflow + 24 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {invitations.map((invitation) => (
+          <InvitationCard
+            key={invitation.collectionId}
+            invitation={invitation}
+            answering={answering}
+            onRespond={respond}
+          />
+        ))}
+      </ScrollView>
+    </View>
   );
 };
 

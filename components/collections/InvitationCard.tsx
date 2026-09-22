@@ -52,10 +52,16 @@ export default function InvitationCard({
   answering: AnswerState;
   onRespond: (collectionId: number, response: "ACCEPTED" | "DECLINED") => void;
 }) {
-  const { collectionId, scheduledDate, timeSlot, status, captainName } = invitation;
+  const { collectionId, scheduledDate, timeSlot, status, captainName, state } =
+    invitation;
+  const enRoute = invitation.collectionStatus === "IN_PROGRESS";
   const busy = answering[collectionId] === "sending";
   const failed = answering[collectionId] === "failed";
-  const deadline = status === "INVITED" ? deadlineLabel(invitation.responseDeadlineAt) : null;
+  // Only while an answer is still possible. A deadline on a round already
+  // under way is noise at best, and a prompt to do something impossible at
+  // worst.
+  const deadline =
+    state === "answerable" ? deadlineLabel(invitation.responseDeadlineAt) : null;
 
   return (
     <View style={styles.card}>
@@ -72,7 +78,7 @@ export default function InvitationCard({
 
       {deadline ? <Text style={styles.deadline}>{deadline}</Text> : null}
 
-      {status === "INVITED" ? (
+      {state === "answerable" ? (
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.button, styles.accept, busy && styles.busy]}
@@ -109,9 +115,13 @@ export default function InvitationCard({
             color={status === "ACCEPTED" ? "#0d9c80" : "#8ea0aa"}
           />
           <Text style={styles.answeredText}>
-            {status === "ACCEPTED"
-              ? "You are on the round. Please leave your bags out."
-              : "You said not this time."}
+            {status !== "ACCEPTED"
+              ? "You said not this time."
+              : enRoute
+                ? // The question a household actually has on the day, which
+                  // this screen could not answer at all until now.
+                  `${captainName ?? "Your captain"} is on the way. Please have your bags out.`
+                : "You are on the round. Please leave your bags out."}
           </Text>
         </View>
       )}
@@ -124,7 +134,10 @@ export default function InvitationCard({
         </Text>
       ) : null}
 
-      {status === "DECLINED" ? (
+      {/* Only while the answer window is open. Once the round is READY or
+          rolling, the server refuses a late change and a button that cannot
+          work is worse than no button. */}
+      {state === "declined" && invitation.collectionStatus === "CONFIRMING" ? (
         <TouchableOpacity
           style={styles.changeMind}
           onPress={() => onRespond(collectionId, "ACCEPTED")}

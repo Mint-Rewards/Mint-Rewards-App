@@ -18,6 +18,9 @@ const BASE: Invitation = {
   timeSlot: "MORNING",
   responseDeadlineAt: null,
   status: "INVITED",
+  collectionStatus: "CONFIRMING" as const,
+  state: "answerable" as const,
+  startedAt: null,
   captainName: "Imran Baig",
 };
 
@@ -88,13 +91,17 @@ describe("InvitationCard", () => {
   it("stops offering answers once one has been given", () => {
     // Showing the buttons again after an answer invites a second tap and makes
     // the first look unrecorded.
-    const { tree } = render({ status: "ACCEPTED" });
+    const { tree } = render({ status: "ACCEPTED", state: "confirmed" });
     expect(textOf(tree)).toMatch(/You are on the round/);
     expect(textOf(tree)).not.toMatch(/Yes, collect from me/);
   });
 
   it("lets someone who declined change their mind", () => {
-    const { tree, onRespond } = render({ status: "DECLINED", collectionId: 7 });
+    const { tree, onRespond } = render({
+      status: "DECLINED",
+      state: "declined",
+      collectionId: 7,
+    });
     const node = tree.root.findAll(
       (n) =>
         typeof n.props?.onPress === "function" &&
@@ -103,6 +110,53 @@ describe("InvitationCard", () => {
     )[0];
     act(() => node.props.onPress());
     expect(onRespond).toHaveBeenCalledWith(7, "ACCEPTED");
+  });
+
+  /**
+   * The day itself, which this card could not describe at all until the
+   * household endpoint started returning accepted stops on live collections.
+   * A household that said yes then watched the invitation vanish had no way
+   * to tell whether anyone was coming.
+   */
+  describe("once the household has accepted", () => {
+    const accepted = {
+      status: "ACCEPTED" as const,
+      state: "confirmed" as const,
+      // A deadline that has passed. Nothing should raise it: the answer it
+      // was pressing for has been given.
+      responseDeadlineAt: "2020-01-01T00:00:00.000Z",
+    };
+
+    it("says the captain is on the way once the round is rolling", () => {
+      const { tree } = render({
+        ...accepted,
+        collectionStatus: "IN_PROGRESS",
+        captainName: "Imran Baig",
+      });
+      expect(textOf(tree)).toMatch(/Imran Baig is on the way/);
+    });
+
+    it("asks for the bags without claiming anyone has set off yet", () => {
+      const { tree } = render({ ...accepted, collectionStatus: "READY" });
+      expect(textOf(tree)).toMatch(/You are on the round/);
+      expect(textOf(tree)).not.toMatch(/on the way/);
+    });
+
+    it("stops pressing for a reply that has been given", () => {
+      expect(textOf(render(accepted).tree)).not.toMatch(/reply|respond/i);
+    });
+  });
+
+  it("withdraws the change of mind once the window has closed", () => {
+    // The server refuses a late answer, so offering one is a button that
+    // cannot work.
+    const declined = { status: "DECLINED" as const, state: "declined" as const };
+    expect(textOf(render({ ...declined, collectionStatus: "CONFIRMING" }).tree)).toMatch(
+      /Actually, collect from me/,
+    );
+    expect(textOf(render({ ...declined, collectionStatus: "READY" }).tree)).not.toMatch(
+      /Actually, collect from me/,
+    );
   });
 
   it("says tomorrow rather than a date nobody has to decode", () => {

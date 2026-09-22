@@ -18,6 +18,18 @@ export interface Invitation {
   responseDeadlineAt: string | null;
   status: "INVITED" | "ACCEPTED" | "DECLINED";
   captainName: string | null;
+  /** The collection's own status, for telling "confirmed" from "on the way". */
+  collectionStatus: "CONFIRMING" | "READY" | "IN_PROGRESS";
+  /**
+   * What this row may offer, decided by the server.
+   *
+   * Whether an answer can still be recorded is a fact about the collection's
+   * window, not something to re-derive from a status pair — two clients doing
+   * that arithmetic is how they come to disagree, and the losing side offers a
+   * button that 409s.
+   */
+  state: "answerable" | "confirmed" | "declined";
+  startedAt: string | null;
 }
 
 export type AnswerState = Record<number, "sending" | "failed" | undefined>;
