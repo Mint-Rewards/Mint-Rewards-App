@@ -30,10 +30,23 @@ type ApplicationModule = {
   nativeBuildVersion?: string | null;
 };
 
-function load<T>(name: string): T | null {
+// Each require takes a literal path. Metro resolves requires at build time
+// and rejects a computed one outright — a `require(name)` helper typechecks,
+// passes tests that inject their own modules, and fails the export with
+// "Invalid call at line 36".
+function loadUpdates(): UpdatesModule | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require(name) as T;
+    return require("expo-updates") as UpdatesModule;
+  } catch {
+    return null;
+  }
+}
+
+function loadApplication(): ApplicationModule | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require("expo-application") as ApplicationModule;
   } catch {
     return null;
   }
@@ -53,8 +66,8 @@ export interface BuildInfo {
 }
 
 export function readBuildInfo(
-  updates: UpdatesModule | null = load<UpdatesModule>("expo-updates"),
-  application: ApplicationModule | null = load<ApplicationModule>("expo-application"),
+  updates: UpdatesModule | null = loadUpdates(),
+  application: ApplicationModule | null = loadApplication(),
 ): BuildInfo {
   const version = application?.nativeApplicationVersion ?? "unknown";
   const build = application?.nativeBuildVersion ?? "unknown";
