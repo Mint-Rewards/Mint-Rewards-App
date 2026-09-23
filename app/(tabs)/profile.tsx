@@ -10,6 +10,7 @@ import { useDebouncedNavigation } from "@/hooks/useDebouncedNavigation";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { useAppStore } from "@/store/store";
 import { alertOnce } from "@/utils/alert";
+import { buildLabel } from "@/utils/buildInfo";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -261,6 +262,13 @@ const ProfileScreen = () => {
           </View>
         </View>
 
+        {/*
+          Which build this is. A remote tester can read this line out and we
+          know whether a fix reached them, instead of guessing from whether
+          the symptom is still there.
+        */}
+        <Text style={styles.buildLabel}>{buildLabel()}</Text>
+
         {/* Bottom spacing for tab bar */}
         <View style={[styles.bottomSpacing, { height: 50 + tabBarOverflow }]} />
       </ScrollView>
@@ -381,6 +389,12 @@ const styles = StyleSheet.create({
   },
   actionButtonBusy: {
     opacity: 0.5,
+  },
+  buildLabel: {
+    textAlign: "center",
+    fontSize: 11,
+    color: "#9CA3AF",
+    marginTop: 4,
   },
   logoutButton: {
     backgroundColor: "#00528A",

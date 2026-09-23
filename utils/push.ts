@@ -11,7 +11,7 @@
  * com.mintrewards.app.dev). Going through Expo's push service would put a
  * second broker in the path that the backend does not talk to.
  */
-import { Platform } from "react-native";
+import { PermissionsAndroid, Platform } from "react-native";
 import { API_BASE_URL, ENV } from "@/config/env";
 
 /**
@@ -47,15 +47,26 @@ export interface PushRegistration {
   error?: string;
 }
 
-/**
- * iOS only for now.
- *
- * Android 13+ needs POST_NOTIFICATIONS in the manifest and its own runtime
- * prompt, and neither is in this build. Returning "unsupported" is honest;
- * pretending to register would hand back a token that never receives anything.
- */
 export function pushIsSupported(): boolean {
-  return Platform.OS === "ios";
+  return Platform.OS === "ios" || Platform.OS === "android";
+}
+
+/**
+ * The Android 13 notification prompt.
+ *
+ * RNFirebase's requestPermission() is a no-op on Android — it answers
+ * AUTHORIZED without asking anybody — so on API 33 and above the runtime
+ * request has to be made directly or the app is simply never allowed to post
+ * a notification, silently, with a token that looks perfectly healthy.
+ *
+ * Below 33 the permission is granted at install and there is nothing to ask.
+ */
+async function askAndroid(): Promise<PushPermission> {
+  if (Number(Platform.Version) < 33) return "granted";
+  const outcome = await PermissionsAndroid.request(
+    PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+  );
+  return outcome === PermissionsAndroid.RESULTS.GRANTED ? "granted" : "denied";
 }
 
 /**
@@ -71,19 +82,28 @@ export async function registerForPush(): Promise<PushRegistration> {
   if (!fcm) return { permission: "unsupported", token: null };
 
   try {
-    const status = await fcm().requestPermission();
-    const { AuthorizationStatus } = fcm;
+    let permission: PushPermission;
 
-    if (status === AuthorizationStatus.DENIED) return { permission: "denied", token: null };
+    if (Platform.OS === "android") {
+      permission = await askAndroid();
+      // A refusal is final until they change it in settings. Returning here
+      // rather than fetching a token keeps the promise this function makes:
+      // a token means notifications can actually arrive.
+      if (permission === "denied") return { permission, token: null };
+    } else {
+      const status = await fcm().requestPermission();
+      const { AuthorizationStatus } = fcm;
 
-    const permission: PushPermission =
-      status === AuthorizationStatus.PROVISIONAL ? "provisional" : "granted";
+      if (status === AuthorizationStatus.DENIED) return { permission: "denied", token: null };
+      permission = status === AuthorizationStatus.PROVISIONAL ? "provisional" : "granted";
 
-    // The APNs token has to exist before FCM can mint one against it. RNFirebase
-    // registers automatically, but on a cold first launch getToken() can win the
-    // race and throw "No APNS token specified".
-    if (!fcm().isDeviceRegisteredForRemoteMessages) {
-      await fcm().registerDeviceForRemoteMessages();
+      // iOS only. The APNs token has to exist before FCM can mint one against
+      // it; RNFirebase registers automatically, but on a cold first launch
+      // getToken() can win the race and throw "No APNS token specified".
+      // Android has no such handshake.
+      if (!fcm().isDeviceRegisteredForRemoteMessages) {
+        await fcm().registerDeviceForRemoteMessages();
+      }
     }
 
     return { permission, token: await fcm().getToken() };

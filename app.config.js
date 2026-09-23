@@ -262,6 +262,10 @@ module.exports = () => ({
       permissions: [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
+        // Android 13+ will not let the app post a notification without it, and
+        // asks at runtime. Without this line the prompt never appears and the
+        // FCM token looks perfectly healthy while nothing ever arrives.
+        "android.permission.POST_NOTIFICATIONS",
       ],
       config: {
         googleMaps: {
