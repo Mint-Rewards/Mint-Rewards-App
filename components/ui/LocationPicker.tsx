@@ -110,7 +110,15 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         */}
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          /*
+           * Android too. `undefined` is a no-op, and the usual reason that is
+           * survivable — windowSoftInputMode adjustResize shrinking the
+           * activity — does not apply inside a React Native <Modal>, which is
+           * its own window and does not resize with the activity. This card is
+           * pinned to the bottom, so "height" lifts it; "padding" would add
+           * space beneath something already at the bottom.
+           */
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <TouchableOpacity
             style={styles.overlay}

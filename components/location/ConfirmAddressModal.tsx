@@ -295,13 +295,36 @@ export function ConfirmAddressModal({
       */}
       <KeyboardAvoidingView
         style={styles.overlay}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        /*
+         * Android needs a behaviour too, which it did not have.
+         *
+         * `undefined` makes KeyboardAvoidingView a no-op, and the usual
+         * reason that is survivable on Android — windowSoftInputMode
+         * adjustResize shrinking the activity — does not apply inside a
+         * React Native <Modal>, which is its own window and does not resize
+         * with the activity. So the sheet stayed where it was and the
+         * keyboard landed on top of the house number and street, which are
+         * the two fields this sheet exists to collect.
+         *
+         * "height" rather than "padding": the sheet is pinned to the bottom
+         * with a maxHeight, so shrinking the space it is pinned inside lifts
+         * it. Padding would add space under a sheet that is already at the
+         * bottom and move nothing.
+         */
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <View style={styles.sheet}>
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.scrollContent}
+            /*
+             * So a field the keyboard still covers can be reached by hand.
+             * The avoiding view lifts the sheet; this makes the last field
+             * scrollable to once it has, rather than pinned under the
+             * keyboard's top edge.
+             */
+            automaticallyAdjustKeyboardInsets
           >
             {/* Map strip: shows where the pin is, opens the full picker. */}
             <TouchableOpacity
