@@ -1,6 +1,8 @@
 import InvitationCard from "@/components/collections/InvitationCard";
+import PastCollectionCard from "@/components/collections/PastCollectionCard";
 import Navbar from "@/components/ui/navbar";
 import { useInvitations } from "@/hooks/useInvitations";
+import { usePastCollections } from "@/hooks/usePastCollections";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
 import {
@@ -79,12 +81,13 @@ const RealCollectionsScreen = ({ user }: { user: User | null }) => {
   // The iOS tab bar is absolutely positioned, so the list has to clear it.
   const tabBarOverflow = useBottomTabOverflow();
   const { invitations, hydrated, answering, respond } = useInvitations();
+  const { collections: past, hydrated: pastHydrated } = usePastCollections();
 
   // "No Collections Found" is a claim, and during the first fetch it is one we
   // cannot make yet. Someone who tapped a push notification would otherwise
   // watch it assert the opposite of why they are here, for as long as the
   // request takes.
-  if (!hydrated) {
+  if (!hydrated || !pastHydrated) {
     return (
       <View style={styles.container}>
         <StatusBar style="light" />
@@ -96,9 +99,12 @@ const RealCollectionsScreen = ({ user }: { user: User | null }) => {
     );
   }
 
-  // Nothing to answer and nothing on the way: the screen this tab has always
-  // shown, unchanged.
-  if (invitations.length === 0) return <EmptyCollectionsState user={user} />;
+  // Nothing now and nothing before: the screen this tab has always shown,
+  // unchanged. A household with history is never empty again, which is the
+  // point — this tab went blank the moment a round finished.
+  if (invitations.length === 0 && past.length === 0) {
+    return <EmptyCollectionsState user={user} />;
+  }
 
   return (
     <View style={styles.container}>
@@ -109,14 +115,37 @@ const RealCollectionsScreen = ({ user }: { user: User | null }) => {
         contentContainerStyle={[styles.listContent, { paddingBottom: tabBarOverflow + 24 }]}
         showsVerticalScrollIndicator={false}
       >
-        {invitations.map((invitation) => (
-          <InvitationCard
-            key={invitation.collectionId}
-            invitation={invitation}
-            answering={answering}
-            onRespond={respond}
-          />
-        ))}
+        {invitations.length > 0 ? (
+          <>
+            <Text style={styles.sectionHeading}>Coming up</Text>
+            {invitations.map((invitation) => (
+              <InvitationCard
+                key={invitation.collectionId}
+                invitation={invitation}
+                answering={answering}
+                onRespond={respond}
+              />
+            ))}
+          </>
+        ) : null}
+
+        {past.length > 0 ? (
+          <>
+            {/* Headed only against something above it: a household whose only
+                rounds are past does not need the word "previous" to know. */}
+            <Text
+              style={[
+                styles.sectionHeading,
+                invitations.length === 0 && styles.sectionHeadingFirst,
+              ]}
+            >
+              {invitations.length > 0 ? "Previous collections" : "Your collections"}
+            </Text>
+            {past.map((collection) => (
+              <PastCollectionCard key={collection.collectionId} collection={collection} />
+            ))}
+          </>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -740,6 +769,17 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: "#ffffff",
   },
+  sectionHeading: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#5d7481",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginHorizontal: 20,
+    marginTop: 18,
+    marginBottom: 10,
+  },
+  sectionHeadingFirst: { marginTop: 4 },
   listScroll: {
     flex: 1,
   },
