@@ -184,12 +184,38 @@ describe("InvitationCard", () => {
       expect(textOf(tree)).toMatch(/On the way to you/);
     });
 
-    it("shows nothing at all when there is no photograph", () => {
-      // Most captains have none. An empty grey circle tells a household less
-      // than the sentence above it already did.
+    it("stands in with initials when there is no photograph", () => {
+      // The space is held either way, so the card does not rearrange itself
+      // the day a photo is added — and two letters say more than a grey disc.
       const { tree } = render({ captainName: "Abdul Qudoos", captainAvatar: null });
       expect(tree.root.findAllByType(require("react-native").Image)).toHaveLength(0);
-      expect(textOf(tree)).not.toMatch(/Your collector/);
+      expect(textOf(tree)).toMatch(/AQ/);
+      expect(textOf(tree)).toMatch(/Abdul Qudoos/);
+      expect(textOf(tree)).toMatch(/Your collector/);
+    });
+
+    it("still says who is coming when there is no name either", () => {
+      const { tree } = render({ captainName: null, captainAvatar: null });
+      expect(textOf(tree)).toMatch(/Your collector/);
+      expect(textOf(tree)).toMatch(/\?/);
+    });
+
+    it("colour-codes the two answers rather than only wording them", () => {
+      // "Yes" and "Not this time" read as equally weighted in plain text.
+      const { tree } = render({ state: "answerable" });
+      const byLabel = (label: string) =>
+        tree.root.findAll((n) => n.props?.accessibilityLabel === label)[0];
+
+      const accept = byLabel("Accept this collection");
+      const decline = byLabel("Decline this collection");
+      const flat = (s: unknown) => (Array.isArray(s) ? Object.assign({}, ...s.filter(Boolean)) : s);
+
+      expect(flat(accept.props.style).backgroundColor).toBe("#0E9F6E");
+      expect(flat(decline.props.style).borderColor).toBe("#F0C4C4");
+      // Both are a thumb-sized target and share the row equally.
+      expect(flat(accept.props.style).minHeight).toBe(48);
+      expect(flat(accept.props.style).flex).toBe(1);
+      expect(flat(decline.props.style).flex).toBe(1);
     });
   });
 

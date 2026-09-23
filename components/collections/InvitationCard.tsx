@@ -24,6 +24,18 @@ const SLOT_LABEL: Record<string, string> = {
   EVENING: "evening",
 };
 
+/**
+ * Two letters standing in for a face.
+ *
+ * Holding the space either way means the card does not rearrange itself the
+ * day a photograph is added, and initials say more than a grey disc does.
+ */
+function initials(name: string | null): string {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return (parts[0]![0]! + (parts.length > 1 ? parts[parts.length - 1]![0]! : "")).toUpperCase();
+}
+
 /** Shown only while the remaining time is the pressing fact. */
 function deadlineLabel(deadline: string | null): string | null {
   if (!deadline) return null;
@@ -62,39 +74,61 @@ export default function InvitationCard({
 
   return (
     <View style={styles.card}>
-      <View style={styles.header}>
-        <Ionicons name="leaf-outline" size={18} color="#00528A" />
-        <Text style={styles.title}>Collection {whenLabel(scheduledDate)}</Text>
+      {/*
+        Who is coming, first and largest.
+        The question being asked is "may a stranger come to your door on
+        Saturday", and the answer to "which stranger" belongs above the ask
+        rather than in a clause halfway through a sentence.
+      */}
+      <View style={styles.captainRow}>
+        {captainAvatar ? (
+          <Image source={{ uri: captainAvatar }} style={styles.avatar} />
+        ) : (
+          // Initials rather than a grey disc: the space is held either way,
+          // so the card does not rearrange itself the day a photo is added.
+          <View style={[styles.avatar, styles.avatarFallback]}>
+            <Text style={styles.avatarInitials}>{initials(captainName)}</Text>
+          </View>
+        )}
+
+        <View style={styles.captainText}>
+          <Text style={styles.captainName} numberOfLines={1}>
+            {captainName ?? "Your collector"}
+          </Text>
+          <Text style={styles.captainRole}>
+            {enRoute ? "On the way to you now" : "Your collector"}
+          </Text>
+        </View>
+
+        <View style={styles.whenPill}>
+          <Text style={styles.whenPillText}>{whenLabel(scheduledDate)}</Text>
+        </View>
       </View>
 
-      <Text style={styles.detail}>
-        {`We are collecting in your area ${whenLabel(scheduledDate)}`}
-        {SLOT_LABEL[timeSlot] ? ` in the ${SLOT_LABEL[timeSlot]}` : ""}
-        {captainName ? `, with ${captainName}` : ""}.
-      </Text>
+      <View style={styles.rule} />
 
-      {/*
-        Who is at the door, rather than only their name.
-        Shown once there is both a photograph and a name — most captains have
-        neither yet, and a grey circle with nothing in it tells a household
-        less than the sentence above already did.
-      */}
-      {captainAvatar && captainName ? (
-        <View style={styles.captain}>
-          <Image source={{ uri: captainAvatar }} style={styles.captainPhoto} />
-          <View style={styles.captainText}>
-            <Text style={styles.captainName}>{captainName}</Text>
-            <Text style={styles.captainRole}>
-              {enRoute ? "On the way to you" : "Your collector"}
-            </Text>
-          </View>
+      <View style={styles.detailRow}>
+        <Ionicons name="time-outline" size={16} color="#5d7481" />
+        <Text style={styles.detail}>
+          {`Collecting in your area ${whenLabel(scheduledDate)}`}
+          {SLOT_LABEL[timeSlot] ? ` in the ${SLOT_LABEL[timeSlot]}` : ""}.
+        </Text>
+      </View>
+
+      {deadline ? (
+        <View style={styles.deadlineRow}>
+          <Ionicons name="alert-circle-outline" size={16} color="#a06c12" />
+          <Text style={styles.deadline}>{deadline}</Text>
         </View>
       ) : null}
 
-      {deadline ? <Text style={styles.deadline}>{deadline}</Text> : null}
-
       {state === "answerable" ? (
         <View style={styles.actions}>
+          {/*
+            Colour carries the meaning, not just the words. Yes is green and
+            filled because it is the answer being asked for; no is outlined
+            in red because it is a real choice and not a cancel.
+          */}
           <TouchableOpacity
             style={[styles.button, styles.accept, busy && styles.busy]}
             onPress={() => onRespond(collectionId, "ACCEPTED")}
@@ -106,7 +140,7 @@ export default function InvitationCard({
               <ActivityIndicator size="small" color="#ffffff" />
             ) : (
               <>
-                <Ionicons name="checkmark" size={16} color="#ffffff" />
+                <Ionicons name="checkmark-circle" size={18} color="#ffffff" />
                 <Text style={styles.acceptText}>Yes, collect from me</Text>
               </>
             )}
@@ -119,15 +153,21 @@ export default function InvitationCard({
             accessibilityRole="button"
             accessibilityLabel="Decline this collection"
           >
+            <Ionicons name="close-circle-outline" size={18} color="#C13030" />
             <Text style={styles.declineText}>Not this time</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <View style={styles.answered}>
+        <View
+          style={[
+            styles.answered,
+            status === "ACCEPTED" ? styles.answeredYes : styles.answeredNo,
+          ]}
+        >
           <Ionicons
             name={status === "ACCEPTED" ? "checkmark-circle" : "close-circle"}
-            size={16}
-            color={status === "ACCEPTED" ? "#0d9c80" : "#8ea0aa"}
+            size={18}
+            color={status === "ACCEPTED" ? "#0E9F6E" : "#8ea0aa"}
           />
           <Text style={styles.answeredText}>
             {status !== "ACCEPTED"
@@ -169,47 +209,81 @@ export default function InvitationCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#ffffff",
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 16,
     marginHorizontal: 20,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: "#dbe3ea",
+    borderColor: "#EEF1F4",
+    // The same lift the home cards have, so this reads as part of the app
+    // rather than a panel bolted onto it.
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  title: { fontSize: 15, fontWeight: "700", color: "#00528A" },
-  detail: { fontSize: 14, color: "#475569", lineHeight: 20 },
-  captain: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 12,
-    padding: 10,
-    backgroundColor: "#f4f8fb",
-    borderRadius: 10,
-  },
-  captainPhoto: { width: 42, height: 42, borderRadius: 21, backgroundColor: "#dbe3ea" },
+
+  captainRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: "#EEF4F7" },
+  avatarFallback: { alignItems: "center", justifyContent: "center" },
+  avatarInitials: { fontSize: 17, fontWeight: "700", color: "#449EB2" },
   captainText: { flex: 1 },
-  captainName: { fontSize: 14, fontWeight: "700", color: "#0f2c3f" },
-  captainRole: { fontSize: 12, color: "#5d7481", marginTop: 1 },
-  deadline: { fontSize: 12, color: "#a06c12", marginTop: 8, fontWeight: "600" },
-  actions: { flexDirection: "row", gap: 10, marginTop: 14 },
+  captainName: { fontSize: 16, fontWeight: "700", color: "#0f2c3f" },
+  captainRole: { fontSize: 13, color: "#5d7481", marginTop: 2 },
+  whenPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "#EAF4F7",
+  },
+  whenPillText: { fontSize: 12, fontWeight: "700", color: "#2C7A91" },
+
+  rule: { height: 1, backgroundColor: "#EEF1F4", marginVertical: 14 },
+
+  detailRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  detail: { flex: 1, fontSize: 14, color: "#475569", lineHeight: 20 },
+
+  deadlineRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
+  deadline: { flex: 1, fontSize: 13, color: "#a06c12", fontWeight: "600" },
+
+  actions: { flexDirection: "row", gap: 10, marginTop: 16 },
   button: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 11,
+    gap: 7,
+    // 48 is the smallest target a thumb reliably hits. The old buttons were
+    // 11 points of padding and a row that shrank to its text.
+    minHeight: 48,
+    paddingHorizontal: 12,
     borderRadius: 10,
   },
-  busy: { opacity: 0.7 },
-  accept: { flex: 1, backgroundColor: "#00528A" },
+  busy: { opacity: 0.6 },
+  // Colour carries the meaning, not only the words: yes is green and filled
+  // because it is the answer being asked for, no is outlined in red because
+  // it is a real choice rather than a cancel.
+  accept: { backgroundColor: "#0E9F6E" },
   acceptText: { color: "#ffffff", fontWeight: "700", fontSize: 14 },
-  decline: { paddingHorizontal: 16, backgroundColor: "#f1f5f9" },
-  declineText: { color: "#475569", fontWeight: "600", fontSize: 14 },
-  answered: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 },
-  answeredText: { flex: 1, fontSize: 13, color: "#475569", lineHeight: 18 },
-  failed: { marginTop: 10, fontSize: 12.5, color: "#c33a30", lineHeight: 17 },
-  changeMind: { marginTop: 10, alignSelf: "flex-start" },
-  changeMindText: { color: "#00528A", fontWeight: "600", fontSize: 13 },
+  decline: { backgroundColor: "#ffffff", borderWidth: 1.5, borderColor: "#F0C4C4" },
+  declineText: { color: "#C13030", fontWeight: "600", fontSize: 14 },
+
+  answered: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 13,
+    borderRadius: 10,
+  },
+  answeredYes: { backgroundColor: "#E9F7F1" },
+  answeredNo: { backgroundColor: "#F2F5F7" },
+  answeredText: { flex: 1, fontSize: 13.5, color: "#33475b", lineHeight: 19 },
+
+  changeMind: { marginTop: 12, alignSelf: "flex-start" },
+  changeMindText: { color: "#449EB2", fontWeight: "700", fontSize: 13.5 },
+
+  failed: { marginTop: 10, fontSize: 13, color: "#C13030", lineHeight: 18 },
 });
