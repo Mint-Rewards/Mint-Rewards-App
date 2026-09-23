@@ -55,6 +55,7 @@ const invitation = (collectionId: number) => ({
   state: "answerable",
   startedAt: null,
   captainName: "Abdul Qudoos",
+  captainAvatar: null,
 });
 
 /** What the next fetch will answer with. */

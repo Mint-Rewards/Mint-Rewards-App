@@ -7,26 +7,22 @@
  */
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import type { AnswerState, Invitation } from "@/hooks/useInvitations";
+import { whenLabel } from "@/utils/collectionDate";
 
 const SLOT_LABEL: Record<string, string> = {
   MORNING: "morning",
   AFTERNOON: "afternoon",
   EVENING: "evening",
 };
-
-/** "Tomorrow" beats a date nobody should have to decode. */
-function whenLabel(date: string): string {
-  const day = new Date(`${date}T00:00:00`);
-  const today = new Date();
-  const days = Math.round(
-    (new Date(day).setHours(0, 0, 0, 0) - new Date(today).setHours(0, 0, 0, 0)) / 86_400_000,
-  );
-  if (days === 0) return "today";
-  if (days === 1) return "tomorrow";
-  return day.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
-}
 
 /** Shown only while the remaining time is the pressing fact. */
 function deadlineLabel(deadline: string | null): string | null {
@@ -54,6 +50,7 @@ export default function InvitationCard({
 }) {
   const { collectionId, scheduledDate, timeSlot, status, captainName, state } =
     invitation;
+  const captainAvatar = invitation.captainAvatar;
   const enRoute = invitation.collectionStatus === "IN_PROGRESS";
   const busy = answering[collectionId] === "sending";
   const failed = answering[collectionId] === "failed";
@@ -75,6 +72,24 @@ export default function InvitationCard({
         {SLOT_LABEL[timeSlot] ? ` in the ${SLOT_LABEL[timeSlot]}` : ""}
         {captainName ? `, with ${captainName}` : ""}.
       </Text>
+
+      {/*
+        Who is at the door, rather than only their name.
+        Shown once there is both a photograph and a name — most captains have
+        neither yet, and a grey circle with nothing in it tells a household
+        less than the sentence above already did.
+      */}
+      {captainAvatar && captainName ? (
+        <View style={styles.captain}>
+          <Image source={{ uri: captainAvatar }} style={styles.captainPhoto} />
+          <View style={styles.captainText}>
+            <Text style={styles.captainName}>{captainName}</Text>
+            <Text style={styles.captainRole}>
+              {enRoute ? "On the way to you" : "Your collector"}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       {deadline ? <Text style={styles.deadline}>{deadline}</Text> : null}
 
@@ -164,6 +179,19 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
   title: { fontSize: 15, fontWeight: "700", color: "#00528A" },
   detail: { fontSize: 14, color: "#475569", lineHeight: 20 },
+  captain: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 12,
+    padding: 10,
+    backgroundColor: "#f4f8fb",
+    borderRadius: 10,
+  },
+  captainPhoto: { width: 42, height: 42, borderRadius: 21, backgroundColor: "#dbe3ea" },
+  captainText: { flex: 1 },
+  captainName: { fontSize: 14, fontWeight: "700", color: "#0f2c3f" },
+  captainRole: { fontSize: 12, color: "#5d7481", marginTop: 1 },
   deadline: { fontSize: 12, color: "#a06c12", marginTop: 8, fontWeight: "600" },
   actions: { flexDirection: "row", gap: 10, marginTop: 14 },
   button: {

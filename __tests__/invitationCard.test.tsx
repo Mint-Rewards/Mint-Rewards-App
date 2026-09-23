@@ -1,4 +1,5 @@
 import { describe, expect, it, jest } from "@jest/globals";
+import assert from "node:assert";
 import React from "react";
 import renderer, { act } from "react-test-renderer";
 import InvitationCard from "@/components/collections/InvitationCard";
@@ -22,6 +23,7 @@ const BASE: Invitation = {
   state: "answerable" as const,
   startedAt: null,
   captainName: "Imran Baig",
+  captainAvatar: null,
 };
 
 /**
@@ -157,6 +159,38 @@ describe("InvitationCard", () => {
     expect(textOf(render({ ...declined, collectionStatus: "READY" }).tree)).not.toMatch(
       /Actually, collect from me/,
     );
+  });
+
+  describe("who is coming", () => {
+    it("shows the captain's face once there is one", async () => {
+      const { tree } = render({
+        captainName: "Abdul Qudoos",
+        captainAvatar: "https://example.test/abdul.jpg",
+      });
+      const images = tree.root.findAllByType(require("react-native").Image);
+      assert(images.length > 0);
+      expect(images[0].props.source).toEqual({ uri: "https://example.test/abdul.jpg" });
+      expect(textOf(tree)).toMatch(/Your collector/);
+    });
+
+    it("says they are on the way once the van has set off", () => {
+      const { tree } = render({
+        captainName: "Abdul Qudoos",
+        captainAvatar: "https://example.test/abdul.jpg",
+        status: "ACCEPTED",
+        state: "confirmed",
+        collectionStatus: "IN_PROGRESS",
+      });
+      expect(textOf(tree)).toMatch(/On the way to you/);
+    });
+
+    it("shows nothing at all when there is no photograph", () => {
+      // Most captains have none. An empty grey circle tells a household less
+      // than the sentence above it already did.
+      const { tree } = render({ captainName: "Abdul Qudoos", captainAvatar: null });
+      expect(tree.root.findAllByType(require("react-native").Image)).toHaveLength(0);
+      expect(textOf(tree)).not.toMatch(/Your collector/);
+    });
   });
 
   it("says tomorrow rather than a date nobody has to decode", () => {

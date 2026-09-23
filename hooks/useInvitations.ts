@@ -20,6 +20,8 @@ export interface Invitation {
   responseDeadlineAt: string | null;
   status: "INVITED" | "ACCEPTED" | "DECLINED";
   captainName: string | null;
+  /** A link to the captain's photograph, or null when there is none. */
+  captainAvatar: string | null;
   /** The collection's own status, for telling "confirmed" from "on the way". */
   collectionStatus: "CONFIRMING" | "READY" | "IN_PROGRESS";
   /**

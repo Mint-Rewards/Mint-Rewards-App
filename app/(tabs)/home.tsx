@@ -2,6 +2,8 @@ import Navbar from "@/components/ui/navbar";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { useDebouncedNavigation } from "@/hooks/useDebouncedNavigation";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
+import { useInvitations } from "@/hooks/useInvitations";
+import { whenLabel } from "@/utils/collectionDate";
 import {
   TOTAL_POINTS_EARNED,
   TOTAL_WASTE_KG,
@@ -260,6 +262,27 @@ export default function HomeScreen() {
       : undefined;
   }, [showDemoCollections, scheduledCollection, upcomingCollections]);
 
+  /*
+   * A real collection, if this household has one.
+   *
+   * The card underneath used to fall straight from "you have a booking" to
+   * "collections are going live soon" — which is a reasonable thing to tell
+   * somebody with nothing happening, and the wrong thing to tell somebody
+   * whose van is on its way.
+   *
+   * The most pressing one wins: a van already driving, then a question
+   * waiting for an answer, then a round they have accepted. Nothing changes
+   * for a household with no invitation at all.
+   */
+  const { invitations } = useInvitations();
+  const live = React.useMemo(() => {
+    const rank = (i: (typeof invitations)[number]) =>
+      i.collectionStatus === "IN_PROGRESS" ? 0 : i.state === "answerable" ? 1 : 2;
+    return [...invitations]
+      .filter((i) => i.state !== "declined")
+      .sort((a, b) => rank(a) - rank(b) || a.scheduledDate.localeCompare(b.scheduledDate))[0];
+  }, [invitations]);
+
   // Approved brands are the list; deals are what each one carries. A brand
   // approved in BrandHub appears here even with no live deals yet — tapping it
   // lands on redeem's "Not Eligible Yet!" state rather than nothing at all.
@@ -394,6 +417,29 @@ export default function HomeScreen() {
                     </Text>
                     <Text style={styles.collectionSecondary}>
                       {booked.collection.code} · {booked.slot.time}
+                    </Text>
+                  </>
+                ) : live ? (
+                  /*
+                    A real round, in the order a household cares about: the
+                    van is coming NOW, or they owe an answer, or it is
+                    settled. Anything else falls through to what this card
+                    has always said.
+                  */
+                  <>
+                    <Text style={styles.collectionPrimary}>
+                      {live.collectionStatus === "IN_PROGRESS"
+                        ? `${live.captainName ?? "Your collector"} is on the way`
+                        : live.state === "answerable"
+                          ? `Collection ${whenLabel(live.scheduledDate)} — can we come?`
+                          : `You are on the round ${whenLabel(live.scheduledDate)}`}
+                    </Text>
+                    <Text style={styles.collectionSecondary}>
+                      {live.collectionStatus === "IN_PROGRESS"
+                        ? "Please have your bags out"
+                        : live.state === "answerable"
+                          ? "Tap to answer"
+                          : "Please leave your bags out"}
                     </Text>
                   </>
                 ) : showDemoCollections && nextCollection && nextSlot ? (
