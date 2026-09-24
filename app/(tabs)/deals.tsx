@@ -1,4 +1,5 @@
 import { Deal, useAppStore } from "@/store/store";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
@@ -12,6 +13,7 @@ import {
   Alert,
   Image,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -36,7 +38,14 @@ const DealsScreen = () => {
   // The iOS tab bar is absolutely positioned; without this the last card
   // scrolls under it. No-op on Android, where the bar takes layout.
   const tabBarOverflow = useBottomTabOverflow();
-  const { user, getDeals, deals, isDealsLoading, dealsError } = useAppStore();
+  const { user, getDeals, deals, isDealsLoading, dealsError, getProfile } =
+    useAppStore();
+
+  // The same data the screen loads on mount, fetched again on a pull.
+  const refreshAll = React.useCallback(async () => {
+    await Promise.all([getDeals(), getProfile()]);
+  }, [getDeals, getProfile]);
+  const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
   // `isProfileComplete` now covers the saved coordinate and house number too
   // (owner ruling; street address is no longer part of it), so the local
   // `hasLocation` this screen used to keep — and which defined the same idea
@@ -257,6 +266,9 @@ const DealsScreen = () => {
         <ScrollView
           contentContainerStyle={[styles.list, { paddingBottom: 32 + tabBarOverflow }]}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5d7481" />
+          }
         >
           {available.map((item) => renderCard(item, false))}
           {filter === "all" && used.length > 0 && available.length > 0 && (

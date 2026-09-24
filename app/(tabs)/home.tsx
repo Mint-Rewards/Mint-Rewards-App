@@ -14,6 +14,7 @@ import {
   upcomingStatusLabel,
 } from "@/constants/mockCollectionsData";
 import { co2FromWasteKg, useAppStore } from "@/store/store";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
 import { mergeBrandsWithDeals } from "@/utils/deals";
@@ -32,6 +33,7 @@ import React, { useEffect } from "react";
 import {
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -292,6 +294,24 @@ export default function HomeScreen() {
   );
   const [co2, setCo2] = React.useState(0);
 
+  /*
+   * Everything this screen shows, fetched again on a pull.
+   *
+   * The same calls the mount effect makes, so a pull is exactly "open this
+   * screen again" and nothing can be refreshed by one path and not the
+   * other. Invitations poll on their own; they are not listed here because
+   * useInvitations already keeps them current by the second.
+   */
+  const refreshAll = React.useCallback(async () => {
+    await Promise.all([
+      wasteToCo2().then((value: number) => setCo2(value)),
+      getDeals(),
+      getBrands(),
+      loadScheduledCollection(),
+    ]);
+  }, [wasteToCo2, getDeals, getBrands, loadScheduledCollection]);
+  const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
+
   useEffect(() => {
     wasteToCo2().then((value: number) => setCo2(value));
     getDeals();
@@ -353,6 +373,9 @@ export default function HomeScreen() {
           styles.scrollContent,
           { paddingBottom: 40 + tabBarOverflow },
         ]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5d7481" />
+        }
       >
         {/* Stats */}
         <View style={styles.statsContainer}>

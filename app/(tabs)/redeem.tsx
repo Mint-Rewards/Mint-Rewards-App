@@ -1,4 +1,5 @@
 import { Deal, useAppStore } from "@/store/store";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { brandSurface } from "@/utils/brandTheme";
 import { isDealExpired, mergeBrandsWithDeals } from "@/utils/deals";
 import { useCouponDownload } from "@/hooks/useCouponDownload";
@@ -14,6 +15,7 @@ import {
   Alert,
   Image,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,8 +39,21 @@ const RedeemScreen = () => {
     brands: approvedBrands,
     getBrands,
     isBrandsLoading,
+    getProfile,
   } = useAppStore();
   const { downloadCoupon, isDownloading } = useCouponDownload();
+
+  /*
+   * The same data the screen loads on mount, fetched again on a pull.
+   *
+   * getProfile too, though nothing on mount calls it: eligibility here is
+   * decided against the household's points, and a stale balance is the one
+   * thing that makes this screen say "Not Eligible Yet" to somebody who is.
+   */
+  const refreshAll = React.useCallback(async () => {
+    await Promise.all([getDeals(), getBrands(), getProfile()]);
+  }, [getDeals, getBrands, getProfile]);
+  const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
 
   // Approved brands are the list, deals are what each carries — so this screen
   // resolves for a brand with no live deals too, and renders the "Not Eligible
@@ -166,6 +181,9 @@ const RedeemScreen = () => {
           styles.scrollContent,
           { paddingBottom: 40 + tabBarOverflow },
         ]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5d7481" />
+        }
       >
         {brand?.deals && brand.deals.length > 0 && (
           <Text style={styles.sectionTitle}>Available Deals</Text>
