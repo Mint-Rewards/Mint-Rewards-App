@@ -277,4 +277,32 @@ describe("InvitationCard", () => {
     )[0];
     expect(accept.props.disabled).toBe(true);
   });
+
+  describe("how the card spends its one row", () => {
+    /*
+     * The card carried a date pill in the header AND repeated the same date
+     * in the sentence under it. Two claims on one row, and the name lost the
+     * fight: "Abdul Qayum" rendered as "Abdul Q...". The fix was to say the
+     * date once, which is what these assert.
+     */
+    it("states the date once, not twice", () => {
+      const { tree } = render({ captainName: "Abdul Qayum" });
+      const text = textOf(tree);
+      // whenLabel renders a weekday and a day-month; counting the weekday is
+      // enough, and is what a second pill would duplicate.
+      const weekdays = text.match(
+        /Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Today|Tomorrow/g,
+      );
+      expect(weekdays).not.toBeNull();
+      expect(weekdays!.length).toBe(1);
+    });
+
+    it("gives the whole name room, however long it is", () => {
+      const { tree } = render({ captainName: "Abdul Qayum" });
+      expect(textOf(tree)).toMatch(/Abdul Qayum/);
+      // The failure mode was an ellipsis, so assert its absence directly.
+      expect(textOf(tree)).not.toMatch(/Abdul Q\.\.\./);
+      expect(textOf(tree)).not.toMatch(/\u2026/);
+    });
+  });
 });

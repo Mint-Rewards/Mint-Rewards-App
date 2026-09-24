@@ -92,16 +92,21 @@ export default function InvitationCard({
         )}
 
         <View style={styles.captainText}>
+          {/*
+            Two lines, and the name gets the whole width of them.
+
+            A date pill used to sit to the right of this, carrying the very
+            words the sentence below repeats. Two claims on one row, and the
+            name lost: "Abdul Qayum" rendered as "Abdul Q...". The header now
+            answers only "who", the body answers only "when", and neither has
+            to be abbreviated to fit beside the other.
+          */}
           <Text style={styles.captainName} numberOfLines={1}>
             {captainName ?? "Your collector"}
           </Text>
-          <Text style={styles.captainRole}>
+          <Text style={styles.captainRole} numberOfLines={1}>
             {enRoute ? "On the way to you now" : "Your collector"}
           </Text>
-        </View>
-
-        <View style={styles.whenPill}>
-          <Text style={styles.whenPillText}>{whenLabel(scheduledDate)}</Text>
         </View>
       </View>
 
@@ -110,8 +115,8 @@ export default function InvitationCard({
       <View style={styles.detailRow}>
         <Ionicons name="time-outline" size={16} color="#5d7481" />
         <Text style={styles.detail}>
-          {`Collecting in your area ${whenLabel(scheduledDate)}`}
-          {SLOT_LABEL[timeSlot] ? ` in the ${SLOT_LABEL[timeSlot]}` : ""}.
+          <Text style={styles.detailWhen}>{whenLabel(scheduledDate)}</Text>
+          {SLOT_LABEL[timeSlot] ? `, in the ${SLOT_LABEL[timeSlot]}` : ""}
         </Text>
       </View>
 
@@ -211,7 +216,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderRadius: 12,
     padding: 16,
-    marginHorizontal: 20,
+    // No horizontal margin: every screen that renders this card already pads
+    // its list (listContent, paddingHorizontal 20). Adding 20 here too inset
+    // the card to 40 while the section heading beside it stayed at 20, so the
+    // card read as narrower than the screen it lives on.
     marginBottom: 14,
     borderWidth: 1,
     borderColor: "#EEF1F4",
@@ -231,18 +239,13 @@ const styles = StyleSheet.create({
   captainText: { flex: 1 },
   captainName: { fontSize: 16, fontWeight: "700", color: "#0f2c3f" },
   captainRole: { fontSize: 13, color: "#5d7481", marginTop: 2 },
-  whenPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: "#EAF4F7",
-  },
-  whenPillText: { fontSize: 12, fontWeight: "700", color: "#2C7A91" },
 
   rule: { height: 1, backgroundColor: "#EEF1F4", marginVertical: 14 },
 
   detailRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   detail: { flex: 1, fontSize: 14, color: "#475569", lineHeight: 20 },
+  // The date is the thing being scanned for, so it is the thing set in bold.
+  detailWhen: { fontWeight: "700", color: "#0f2c3f" },
 
   deadlineRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
   deadline: { flex: 1, fontSize: 13, color: "#a06c12", fontWeight: "600" },

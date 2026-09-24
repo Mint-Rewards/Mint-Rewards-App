@@ -127,7 +127,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderRadius: 12,
     padding: 16,
-    marginHorizontal: 20,
+    // No horizontal margin: every screen that renders this card already pads
+    // its list (listContent, paddingHorizontal 20). Adding 20 here too inset
+    // the card to 40 while the section heading beside it stayed at 20, so the
+    // card read as narrower than the screen it lives on.
     marginBottom: 12,
     borderWidth: 1,
     borderColor: "#EEF1F4",

@@ -146,6 +146,24 @@ const RealCollectionsScreen = ({ user }: { user: User | null }) => {
             ))}
           </>
         ) : null}
+
+        {/*
+          A household with an invitation and no history had a card at the top
+          of the screen and then nothing at all — half a screen of white that
+          reads as something failing to load rather than as an absence.
+
+          Says what will fill it, once. Not shown to a household that has
+          history, and not shown when there is nothing above it either: that
+          case is EmptyCollectionsState, which is a whole screen of its own.
+        */}
+        {invitations.length > 0 && past.length === 0 ? (
+          <View style={styles.historyHint}>
+            <Ionicons name="time-outline" size={18} color="#94A3B8" />
+            <Text style={styles.historyHintText}>
+              Once this round is done it will appear here, with what was collected.
+            </Text>
+          </View>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -521,6 +539,21 @@ const DemoCollectionsScreen = ({
 };
 
 const styles = StyleSheet.create({
+  historyHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EEF1F4",
+    borderStyle: "dashed",
+    backgroundColor: "#FAFBFC",
+  },
+  historyHintText: { flex: 1, fontSize: 13, color: "#94A3B8", lineHeight: 18 },
+
   container: {
     flex: 1,
     backgroundColor: "#ffffff",
