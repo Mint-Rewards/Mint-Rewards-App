@@ -329,7 +329,17 @@ export default function HomeScreen() {
   // ruling — see isProfileComplete; street address is no longer part of it),
   // so the location terms that used to be ANDed here would be restating it.
   const showBrandCards = profileComplete && !locationUpdateNeeded;
-  const canOpenCollections = !!booked || !!(showDemoCollections && nextCollection && nextSlot);
+  /*
+   * Every state this card can show that has somewhere to go.
+   *
+   * `live` was missing, and it is the one that asks to be tapped: the card
+   * read "Collection Wednesday — can we come?" over the words "Tap to
+   * answer", and then handed Pressable an undefined onPress. It said tap and
+   * did nothing. The content gained a branch for a real invitation; this gate
+   * did not, and nothing connected the two.
+   */
+  const canOpenCollections =
+    !!booked || !!live || !!(showDemoCollections && nextCollection && nextSlot);
 
   return (
     <View style={styles.container}>
