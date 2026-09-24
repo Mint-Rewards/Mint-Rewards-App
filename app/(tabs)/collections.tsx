@@ -81,7 +81,11 @@ const RealCollectionsScreen = ({ user }: { user: User | null }) => {
   // The iOS tab bar is absolutely positioned, so the list has to clear it.
   const tabBarOverflow = useBottomTabOverflow();
   const { invitations, hydrated, answering, respond } = useInvitations();
-  const { collections: past, hydrated: pastHydrated } = usePastCollections();
+  const {
+    collections: past,
+    hydrated: pastHydrated,
+    failed: pastFailed,
+  } = usePastCollections();
 
   // "No Collections Found" is a claim, and during the first fetch it is one we
   // cannot make yet. Someone who tapped a push notification would otherwise
@@ -103,6 +107,21 @@ const RealCollectionsScreen = ({ user }: { user: User | null }) => {
   // unchanged. A household with history is never empty again, which is the
   // point — this tab went blank the moment a round finished.
   if (invitations.length === 0 && past.length === 0) {
+    // "You haven't started any collections yet" is a claim about the
+    // household, and when the request failed we have no grounds for it. The
+    // history route was once deployed a commit behind the app and answered
+    // 404, and this screen told every household they had no history at all.
+    if (pastFailed) {
+      return (
+        <EmptyCollectionsState
+          user={user}
+          icon="cloud-offline-outline"
+          title="Couldn't load your collections"
+          subtitle="We couldn't reach the server just now."
+          description="Your collections are safe. Pull down or try again in a moment."
+        />
+      );
+    }
     return <EmptyCollectionsState user={user} />;
   }
 
@@ -158,9 +177,15 @@ const RealCollectionsScreen = ({ user }: { user: User | null }) => {
         */}
         {invitations.length > 0 && past.length === 0 ? (
           <View style={styles.historyHint}>
-            <Ionicons name="time-outline" size={18} color="#94A3B8" />
+            <Ionicons
+              name={pastFailed ? "cloud-offline-outline" : "time-outline"}
+              size={18}
+              color="#94A3B8"
+            />
             <Text style={styles.historyHintText}>
-              Once this round is done it will appear here, with what was collected.
+              {pastFailed
+                ? "We couldn't load your previous collections just now."
+                : "Once this round is done it will appear here, with what was collected."}
             </Text>
           </View>
         ) : null}

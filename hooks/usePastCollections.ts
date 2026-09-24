@@ -33,7 +33,27 @@ export interface PastCollection {
   captainAvatar: string | null;
 }
 
-export async function fetchPastCollections(token: string): Promise<PastCollection[]> {
+export interface PastCollectionsResult {
+  collections: PastCollection[];
+  /** True when the request did not succeed, as opposed to succeeding empty. */
+  failed: boolean;
+}
+
+/**
+ * The household's finished rounds.
+ *
+ * `failed` exists because the two outcomes are not the same thing and used to
+ * render identically. The backend route was deployed one commit behind the app
+ * and answered 404; this swallowed it, returned [], and the screen said the
+ * household had never had a collection — a confident, wrong answer that took a
+ * trace through three services to disbelieve. The backend's own route comment
+ * had predicted it: "a household with no history and a backend that cannot
+ * reach operations look" alike.
+ *
+ * A 401 never reaches here — authenticatedFetch treats it as a session expiry
+ * and signs the person out — so this is 404s, 5xx and an unreachable network.
+ */
+export async function fetchPastCollections(token: string): Promise<PastCollectionsResult> {
   try {
     const res = await authenticatedFetch(apiUrl("/api/collections/history"), {
       method: "GET",
@@ -42,14 +62,11 @@ export async function fetchPastCollections(token: string): Promise<PastCollectio
       // out with nothing logged — it has happened twice.
       headers: { Authorization: token },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { collections: [], failed: true };
     const body = (await res.json()) as { collections?: PastCollection[] };
-    return body.collections ?? [];
+    return { collections: body.collections ?? [], failed: false };
   } catch {
-    // An unreachable server yields an empty history rather than an error:
-    // the backend already answers that way, and it is not something the
-    // person can act on.
-    return [];
+    return { collections: [], failed: true };
   }
 }
 
@@ -57,13 +74,16 @@ export function usePastCollections() {
   const token = useAppStore((state) => state.token);
   const [collections, setCollections] = useState<PastCollection[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) {
       setHydrated(true);
       return;
     }
-    setCollections(await fetchPastCollections(token));
+    const result = await fetchPastCollections(token);
+    setCollections(result.collections);
+    setFailed(result.failed);
     setHydrated(true);
   }, [token]);
 
@@ -73,9 +93,10 @@ export function usePastCollections() {
       setHydrated(true);
       return;
     }
-    fetchPastCollections(token).then((rows) => {
+    fetchPastCollections(token).then((result) => {
       if (!alive) return;
-      setCollections(rows);
+      setCollections(result.collections);
+      setFailed(result.failed);
       setHydrated(true);
     });
     return () => {
@@ -83,5 +104,5 @@ export function usePastCollections() {
     };
   }, [token]);
 
-  return { collections, hydrated, reload: load };
+  return { collections, hydrated, failed, reload: load };
 }
