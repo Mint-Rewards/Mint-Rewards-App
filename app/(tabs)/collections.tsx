@@ -21,9 +21,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useFocusEffect } from "expo-router";
 import React from "react";
 import {
   ActivityIndicator,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -85,7 +87,50 @@ const RealCollectionsScreen = ({ user }: { user: User | null }) => {
     collections: past,
     hydrated: pastHydrated,
     failed: pastFailed,
+    reload: reloadPast,
   } = usePastCollections();
+
+  /*
+   * History is fetched again whenever this tab comes into view.
+   *
+   * It used to be fetched once, when the screen mounted, and never again —
+   * so a household watching their own round finish saw it vanish from
+   * "Coming up" and never arrive below. The completed round was in the API
+   * the whole time; nothing ever asked a second time.
+   *
+   * Deliberately not polled. History changes when a round ends, which is
+   * rare, and useInvitations already polls for the thing that changes by the
+   * second. Focus is the moment a household is actually looking.
+   */
+  useFocusEffect(
+    React.useCallback(() => {
+      reloadPast();
+    }, [reloadPast]),
+  );
+
+  /*
+   * And once more when a round leaves the invitation list.
+   *
+   * A household sitting on this screen as the van finishes never loses
+   * focus, so nothing above would fire. An invitation disappearing is
+   * exactly the event that puts something in history.
+   */
+  const [refreshing, setRefreshing] = React.useState(false);
+  const refresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await reloadPast();
+    } finally {
+      // In a finally: a failed reload must still release the spinner, or the
+      // screen looks like it is still trying when it has given up.
+      setRefreshing(false);
+    }
+  }, [reloadPast]);
+
+  const liveIds = invitations.map((i) => i.collectionId).join(",");
+  React.useEffect(() => {
+    reloadPast();
+  }, [liveIds, reloadPast]);
 
   // "No Collections Found" is a claim, and during the first fetch it is one we
   // cannot make yet. Someone who tapped a push notification would otherwise
@@ -133,6 +178,14 @@ const RealCollectionsScreen = ({ user }: { user: User | null }) => {
         style={styles.listScroll}
         contentContainerStyle={[styles.listContent, { paddingBottom: tabBarOverflow + 24 }]}
         showsVerticalScrollIndicator={false}
+        /*
+          The affordance everyone reaches for first. Focus covers leaving and
+          coming back; this covers a household already on the screen who has
+          just watched the van drive away.
+        */
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#5d7481" />
+        }
       >
         {invitations.length > 0 ? (
           <>
