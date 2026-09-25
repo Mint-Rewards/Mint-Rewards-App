@@ -333,10 +333,15 @@ export function ConfirmAddressModal({
              * the measured keyboard height; the hook returns 0 on iOS so the
              * two never both apply.
              */
-            contentContainerStyle={[
-              styles.scrollContent,
-              keyboardInset > 0 && { paddingBottom: keyboardInset + 24 },
-            ]}
+            contentContainerStyle={styles.scrollContent}
+            /*
+             * marginBottom on the SCROLL VIEW, not padding on its content.
+             * Edge-to-edge means the window does not shrink for the keyboard,
+             * so padding the content only adds space below the fold while the
+             * viewport still runs under it. Ending the viewport above the
+             * keyboard is what lifts the field.
+             */
+            style={{ marginBottom: keyboardInset }}
             automaticallyAdjustKeyboardInsets
           >
             {/* Map strip: shows where the pin is, opens the full picker. */}

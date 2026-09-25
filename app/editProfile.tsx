@@ -3,6 +3,7 @@ import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
 import { useLocationForm } from "@/hooks/useLocationForm";
 import { useKeyboardInset } from "@/hooks/useKeyboardInset";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { alertOnce } from "@/utils/alert";
 import {
@@ -87,6 +88,9 @@ const EditProfile = () => {
   const scrollRef = useRef<ScrollView>(null);
   // 0 on iOS, where the prop below does the job.
   const keyboardInset = useKeyboardInset();
+  // Edge-to-edge draws under the system bars; this is how far up the
+  // navigation bar reaches.
+  const insets = useSafeAreaInsets();
   const contentRef = useRef<View>(null);
   const userNameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
@@ -503,8 +507,28 @@ const EditProfile = () => {
       */}
       <ScrollView
         ref={scrollRef}
-        style={styles.content}
-        contentContainerStyle={[styles.contentContainer, { paddingBottom: 120 + keyboardInset }]}
+        /*
+         * marginBottom on the SCROLL VIEW, not padding on its content.
+         *
+         * Expo SDK 56 turns edge-to-edge on for Android, so the window no
+         * longer shrinks when the keyboard opens — the app draws underneath
+         * it. Padding the content only added scrollable space below the
+         * fold; the viewport still ran to the bottom of the screen and the
+         * focused field stayed exactly where the keyboard covered it.
+         *
+         * Ending the viewport above the keyboard is what actually lifts it.
+         */
+        style={[styles.content, { marginBottom: keyboardInset }]}
+        /*
+         * And clear of the Android navigation bar, for the same reason: edge
+         * to edge means the last field otherwise sits under the ||| O < row.
+         * The home tabs escape this only because the tab bar happens to
+         * occupy that space.
+         */
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingBottom: 120 + insets.bottom },
+        ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

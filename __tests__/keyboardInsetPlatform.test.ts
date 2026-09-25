@@ -53,4 +53,25 @@ describe("screens that adjust for the keyboard", () => {
     // events are wrong, and a bare /keyboardWillShow/ matched that.
     expect(src).not.toMatch(/addListener\("keyboardWill/);
   });
+
+  it("shrinks the viewport rather than padding the content", () => {
+    /*
+     * The first attempt padded contentContainerStyle. Under edge-to-edge —
+     * on by default from Expo SDK 54 — the window does not shrink when the
+     * keyboard opens, so that only added scrollable space BELOW the fold
+     * while the viewport still ran to the bottom of the screen. The focused
+     * field stayed exactly where the keyboard covered it, and the fix
+     * appeared to do nothing at all.
+     */
+    for (const file of SCREENS) {
+      expect(read(file)).toMatch(/marginBottom: keyboardInset/);
+    }
+  });
+
+  it("keeps the last field clear of the Android navigation bar", () => {
+    // Edge-to-edge draws under the ||| O < row too. The home tabs escape it
+    // only because the tab bar happens to occupy that space.
+    expect(read("app/editProfile.tsx")).toMatch(/useSafeAreaInsets\(\)/);
+    expect(read("app/editProfile.tsx")).toMatch(/insets\.bottom/);
+  });
 });
