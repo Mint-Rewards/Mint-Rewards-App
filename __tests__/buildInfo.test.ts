@@ -65,4 +65,30 @@ describe("the build a device reports", () => {
     expect(info.version).toBe("unknown");
     expect(buildLabel(info)).toBe("vunknown (unknown) · as shipped");
   });
+
+  it("names Metro rather than a null update on a dev client", () => {
+    /*
+     * A dev client answers `isEmbeddedLaunch: false` truthfully — the bundle
+     * is not the embedded one — and has no update id, because the JS is
+     * coming down the cable. Reading only the first of those printed
+     * "update null" on the iOS build, which reads as a broken update
+     * mechanism when nothing is wrong.
+     */
+    const info = readBuildInfo(
+      { isEmbeddedLaunch: false, updateId: null, channel: null },
+      { nativeApplicationVersion: "2.2.1", nativeBuildVersion: "14" },
+    );
+    expect(info.fromMetro).toBe(true);
+    expect(buildLabel(info)).toContain("from Metro");
+    expect(buildLabel(info)).not.toContain("null");
+  });
+
+  it("does not call a real update Metro", () => {
+    const info = readBuildInfo(
+      { isEmbeddedLaunch: false, updateId: "01a0d926-7738-764c", channel: "preview" },
+      { nativeApplicationVersion: "2.2.1", nativeBuildVersion: "14" },
+    );
+    expect(info.fromMetro).toBe(false);
+    expect(buildLabel(info)).toContain("update 01a0d926");
+  });
 });

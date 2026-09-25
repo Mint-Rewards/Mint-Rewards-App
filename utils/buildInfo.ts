@@ -62,6 +62,16 @@ export interface BuildInfo {
   channel: string | null;
   /** True when running the bundle baked into the build, not an update. */
   embedded: boolean;
+  /**
+   * True when Metro is serving the JS, so neither of the above applies.
+   *
+   * A dev client reports `isEmbeddedLaunch: false` — truthfully, the bundle is
+   * not the embedded one — while having no update id to name, because there is
+   * no update: the bundle is coming down the cable. Reading only the first of
+   * those rendered "update null" on the iOS dev build, which says the update
+   * mechanism is broken when nothing is wrong at all.
+   */
+  fromMetro: boolean;
   publishedAt: string | null;
 }
 
@@ -78,13 +88,17 @@ export function readBuildInfo(
   // has arrived" read as "update applied", which is the one mistake this
   // screen exists to prevent.
   const embedded = !updates || updates.isEmbeddedLaunch !== false;
+  const updateId = embedded ? null : (updates?.updateId ?? null)?.slice(0, 8) ?? null;
+  // Not the embedded bundle and no update to name: Metro is serving it.
+  const fromMetro = !embedded && updateId === null;
 
   return {
     version,
     build,
-    updateId: embedded ? null : (updates?.updateId ?? null)?.slice(0, 8) ?? null,
+    updateId,
     channel: updates?.channel ?? null,
     embedded,
+    fromMetro,
     publishedAt:
       !embedded && updates?.createdAt ? new Date(updates.createdAt).toISOString() : null,
   };
@@ -94,6 +108,7 @@ export function readBuildInfo(
 export function buildLabel(info: BuildInfo = readBuildInfo()): string {
   const parts = [`v${info.version} (${info.build})`];
   if (info.channel) parts.push(info.channel);
-  parts.push(info.embedded ? "as shipped" : `update ${info.updateId}`);
+  if (info.fromMetro) parts.push("from Metro");
+  else parts.push(info.embedded ? "as shipped" : `update ${info.updateId}`);
   return parts.join(" · ");
 }
