@@ -75,3 +75,61 @@ describe("screens that adjust for the keyboard", () => {
     expect(read("app/editProfile.tsx")).toMatch(/insets\.bottom/);
   });
 });
+
+/**
+ * What the two shipped fixes above got wrong.
+ *
+ * Both `01a0d907` (content padding) and `01a0d912` (viewport margin) passed
+ * every test in the block above and changed nothing on the handset. Both were
+ * built on `keyboardInset`, and under edge-to-edge that measurement does not
+ * reliably arrive — so both reduced to multiplying by zero, silently, on the
+ * one platform they existed for.
+ *
+ * These tests pin the invariants that do NOT depend on the measurement.
+ */
+describe("the keyboard fix does not depend on a measured height", () => {
+  const editProfile = () => read("app/editProfile.tsx");
+
+  it("reserves the navigation bar on the screen, not in the scroll content", () => {
+    /*
+     * Padding the scroll CONTENT leaves the viewport running to the bottom of
+     * the glass, so whatever is passing under the ||| O < row at any moment is
+     * still covered by it — which is what the handset showed. The container
+     * has to end above the bar.
+     */
+    expect(editProfile()).toMatch(
+      /styles\.container,\s*\{\s*paddingBottom:\s*insets\.bottom\s*\}/,
+    );
+  });
+
+  it("scrolls a focused field to the top of the viewport", () => {
+    /*
+     * An Android keyboard never covers the top of the screen, so a field
+     * scrolled up there is visible whatever the keyboard is doing and however
+     * tall it is reported to be. This is the part that actually works.
+     */
+    const src = editProfile();
+    expect(src).toMatch(/const scrollFieldIntoView/);
+    expect(src).toMatch(/onFocus=\{\(\) => \{/);
+    expect(src).toMatch(/scrollFieldIntoView\(inputRef\)/);
+  });
+
+  it("assumes a keyboard when Android reports none", () => {
+    /*
+     * A ScrollView cannot scroll past the end of its content, so a field near
+     * the bottom has nowhere to go without room reserved below it. Reserving
+     * that room from `keyboardInset` alone is the same zero-multiplication
+     * that sank the last two attempts.
+     */
+    const src = editProfile();
+    expect(src).toMatch(/ANDROID_KEYBOARD_FALLBACK = \d+/);
+    expect(src).toMatch(/Math\.max\(keyboardInset, ANDROID_KEYBOARD_FALLBACK\)/);
+    // Driven by the cursor being in a field, not by the measurement.
+    expect(src).toMatch(/fieldFocused/);
+  });
+
+  it("does not carry the reserved room around at rest", () => {
+    // A screenful of blank space below a form nobody is typing in.
+    expect(editProfile()).toMatch(/!fieldFocused\s*\?\s*0/);
+  });
+});
