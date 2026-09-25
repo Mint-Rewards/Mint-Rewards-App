@@ -33,6 +33,7 @@ import {
   View,
 } from "react-native";
 import MapPicker from "@/components/ui/MapPicker";
+import { useKeyboardInset } from "@/hooks/useKeyboardInset";
 import { LocationFields } from "@/components/location/LocationFields";
 import { useLocationForm } from "@/hooks/useLocationForm";
 import { useAppStore } from "@/store/store";
@@ -86,6 +87,9 @@ export function ConfirmAddressModal({
   const { user, token } = useAppStore();
   const form = useLocationForm();
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // 0 on iOS, where automaticallyAdjustKeyboardInsets does the job.
+  const keyboardInset = useKeyboardInset();
+
   const [mapVisible, setMapVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [prefillReady, setPrefillReady] = useState(false);
@@ -317,13 +321,22 @@ export function ConfirmAddressModal({
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.scrollContent}
             /*
              * So a field the keyboard still covers can be reached by hand.
-             * The avoiding view lifts the sheet; this makes the last field
+             * The avoiding view lifts the sheet; these make the last field
              * scrollable to once it has, rather than pinned under the
              * keyboard's top edge.
+             *
+             * Two of them because `automaticallyAdjustKeyboardInsets` is
+             * iOS-only and silently ignored on Android — which left this
+             * sheet fixed on one platform and not the other. Android pads by
+             * the measured keyboard height; the hook returns 0 on iOS so the
+             * two never both apply.
              */
+            contentContainerStyle={[
+              styles.scrollContent,
+              keyboardInset > 0 && { paddingBottom: keyboardInset + 24 },
+            ]}
             automaticallyAdjustKeyboardInsets
           >
             {/* Map strip: shows where the pin is, opens the full picker. */}

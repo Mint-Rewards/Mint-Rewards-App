@@ -2,6 +2,7 @@ import { LocationFields } from "@/components/location/LocationFields";
 import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
 import { useLocationForm } from "@/hooks/useLocationForm";
+import { useKeyboardInset } from "@/hooks/useKeyboardInset";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { alertOnce } from "@/utils/alert";
 import {
@@ -84,6 +85,8 @@ const EditProfile = () => {
   const focusTarget = parseProfileFocus(focus);
 
   const scrollRef = useRef<ScrollView>(null);
+  // 0 on iOS, where the prop below does the job.
+  const keyboardInset = useKeyboardInset();
   const contentRef = useRef<View>(null);
   const userNameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
@@ -484,17 +487,24 @@ const EditProfile = () => {
       <Navbar user={user} />
 
       {/*
-        `automaticallyAdjustKeyboardInsets` rather than a KeyboardAvoidingView.
-        The latter was here and did not work: `behavior="padding"` only shrinks
-        the view, so a field already below the fold stayed unreachable — the
-        scrollable area never grew, and the lower fields could not be scrolled
-        up at all. This hands the job to iOS, which insets the scroll content by
-        the real keyboard height, so every field remains reachable.
+        Two mechanisms, one per platform, because there is no prop that does
+        both.
+
+        iOS gets `automaticallyAdjustKeyboardInsets`, which insets the scroll
+        content by the real keyboard height. A KeyboardAvoidingView was here
+        first and did not work: `behavior="padding"` only shrinks the view, so
+        a field already below the fold stayed unreachable.
+
+        That prop is iOS-ONLY and silently ignored on Android, so for a long
+        time this screen was fixed on one platform and untouched on the other
+        — the bottom fields sat behind the Android keyboard while iOS looked
+        perfect, which is the hardest kind of bug to be told about. Android
+        pads by the measured keyboard height instead.
       */}
       <ScrollView
         ref={scrollRef}
         style={styles.content}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: 120 + keyboardInset }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
