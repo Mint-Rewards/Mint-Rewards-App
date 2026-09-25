@@ -121,15 +121,81 @@ describe("the keyboard fix does not depend on a measured height", () => {
      * that room from `keyboardInset` alone is the same zero-multiplication
      * that sank the last two attempts.
      */
-    const src = editProfile();
-    expect(src).toMatch(/ANDROID_KEYBOARD_FALLBACK = \d+/);
-    expect(src).toMatch(/Math\.max\(keyboardInset, ANDROID_KEYBOARD_FALLBACK\)/);
-    // Driven by the cursor being in a field, not by the measurement.
-    expect(src).toMatch(/fieldFocused/);
+    // One number, declared with the hook, so the two screens cannot drift.
+    expect(read("hooks/useKeyboardInset.ts")).toMatch(
+      /export const ANDROID_KEYBOARD_FALLBACK = \d+/,
+    );
+    for (const file of SCREENS) {
+      const src = read(file);
+      expect(src).toMatch(/Math\.max\(keyboardInset, ANDROID_KEYBOARD_FALLBACK\)/);
+      // Driven by the cursor being in a field, not by the measurement.
+      expect(src).toMatch(/fieldFocused/);
+    }
   });
 
   it("does not carry the reserved room around at rest", () => {
     // A screenful of blank space below a form nobody is typing in.
-    expect(editProfile()).toMatch(/!fieldFocused\s*\?\s*0/);
+    for (const file of SCREENS) {
+      expect(read(file)).toMatch(/!fieldFocused\s*\?\s*0/);
+    }
+  });
+
+  it("gives the scroll something to measure against", () => {
+    /*
+     * `measureLayout` needs a frame. Without a ref on one, the scroll is a
+     * silent no-op — which is the exact shape of the two fixes that shipped
+     * and changed nothing.
+     */
+    for (const file of SCREENS) {
+      const src = read(file);
+      expect(src).toMatch(/const contentRef = useRef<View>\(null\)/);
+      expect(src).toMatch(/ref=\{contentRef\}/);
+      expect(src).toMatch(/const scrollFieldIntoView/);
+      expect(src).toMatch(/onFieldFocus=\{/);
+    }
+  });
+});
+
+/**
+ * Sheets anchored to the bottom of an edge-to-edge screen.
+ *
+ * `justifyContent: "flex-end"` means the bottom of the glass, which is under
+ * the ||| O < row — so the last control of every one of these sat against the
+ * system buttons. Six of them, wrong in the same way, which is what the shared
+ * hook is for.
+ */
+describe("bottom sheets clear the system controls", () => {
+  const SHEETS = [
+    "app/(tabs)/deals.tsx",
+    "app/(tabs)/redeem.tsx",
+    "components/location/TownChangeModal.tsx",
+    "components/location/ConfirmAddressModal.tsx",
+    "components/ui/LocationPicker.tsx",
+    "components/location/FinishProfileModal.tsx",
+  ];
+
+  for (const file of SHEETS) {
+    it(`${file} reserves the inset below its last control`, () => {
+      const src = read(file);
+      expect(src).toMatch(/useSheetInset\(/);
+      expect(src).toMatch(/paddingBottom: sheetInset/);
+    });
+  }
+
+  it("every bottom-anchored sheet is on the list", () => {
+    /*
+     * The list above is only as good as its completeness, and a seventh sheet
+     * added later would be wrong in the same way with nothing to catch it.
+     * This finds them by the property that causes the problem.
+     */
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    const found = execSync(
+      'grep -rl \'justifyContent: "flex-end"\' --include=*.tsx app components || true',
+      { cwd: process.cwd(), encoding: "utf8" },
+    )
+      .split("\n")
+      .filter(Boolean)
+      .sort();
+    expect(found).toEqual([...SHEETS].sort());
   });
 });

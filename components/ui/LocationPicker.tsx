@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useSheetInset } from "@/hooks/useSheetInset";
 import React, { useState } from "react";
 import {
   FlatList,
@@ -49,6 +50,9 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   error,
   containerStyle,
 }) => {
+  // Edge-to-edge otherwise puts this sheet's last control — a Close or a
+  // Cancel — flush against the ||| O < row.
+  const sheetInset = useSheetInset();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -128,7 +132,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
               setSearch("");
             }}
           >
-            <View style={styles.modalCard}>
+            <View style={[styles.modalCard, { paddingBottom: sheetInset }]}>
               {/* Header */}
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Select {label}</Text>

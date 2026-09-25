@@ -5,6 +5,7 @@ module.exports = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
   },
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.js"],
   testMatch: ["**/__tests__/**/*.test.ts?(x)"],
   // Excludes git worktrees under .claude/worktrees, which check out this same
   // repo (same package name) — without this, Haste sees two modules with an

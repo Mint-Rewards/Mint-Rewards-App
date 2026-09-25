@@ -18,6 +18,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { useSheetInset } from "@/hooks/useSheetInset";
 import React from "react";
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -40,6 +41,9 @@ export function TownChangeModal({
   onRelabel,
   onCancel,
 }: Props) {
+  // Edge-to-edge otherwise puts this sheet's last control — a Close or a
+  // Cancel — flush against the ||| O < row.
+  const sheetInset = useSheetInset(34);
   return (
     <Modal
       visible={visible}
@@ -50,7 +54,7 @@ export function TownChangeModal({
       onRequestClose={onCancel}
     >
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: sheetInset }]}>
           <Text style={styles.title}>Are you changing your area?</Text>
           <Text style={styles.subtitle}>
             {currentTown

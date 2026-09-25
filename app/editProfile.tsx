@@ -2,7 +2,7 @@ import { LocationFields } from "@/components/location/LocationFields";
 import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
 import { useLocationForm } from "@/hooks/useLocationForm";
-import { useKeyboardInset } from "@/hooks/useKeyboardInset";
+import { ANDROID_KEYBOARD_FALLBACK, useKeyboardInset } from "@/hooks/useKeyboardInset";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { alertOnce } from "@/utils/alert";
@@ -57,20 +57,6 @@ const FOCUS_SCROLL_MARGIN = 24;
  * have been laid out; measuring in the same tick as mount returns zeroes.
  */
 const FOCUS_SETTLE_MS = 350;
-
-/**
- * Scroll room to assume under a focused field when Android reports no
- * keyboard height of its own.
- *
- * `useKeyboardInset` reads `keyboardDidShow`, and under edge-to-edge that
- * event is not reliably raised with a usable height — which is how two
- * successive fixes built on the measurement changed nothing on the handset.
- * A field cannot be scrolled clear of the keyboard unless there is somewhere
- * below it to scroll TO, so the room is reserved on the strength of the
- * cursor being in a field, and the measurement is used only when it is
- * larger. 320dp is a little over a typical Android keyboard.
- */
-const ANDROID_KEYBOARD_FALLBACK = 320;
 
 /** One frame, so the keyboard animation has begun before we measure. */
 const FIELD_FOCUS_SCROLL_MS = 120;

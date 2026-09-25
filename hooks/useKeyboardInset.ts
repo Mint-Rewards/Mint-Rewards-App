@@ -39,3 +39,18 @@ export function useKeyboardInset(): number {
 
   return inset;
 }
+
+/**
+ * Scroll room to assume when Android reports no keyboard height of its own.
+ *
+ * The hook above reads `keyboardDidShow`, and under edge-to-edge that event is
+ * not reliably raised with a usable height — which is how two successive fixes
+ * built on the measurement changed nothing on the handset. A field cannot be
+ * scrolled clear of the keyboard unless there is somewhere below it to scroll
+ * TO, so callers reserve the room on the strength of the cursor being in a
+ * field and use the measurement only when it is larger.
+ *
+ * 320dp is a little over a typical Android keyboard. It lives here rather than
+ * on either screen because both need it and they must not drift apart.
+ */
+export const ANDROID_KEYBOARD_FALLBACK = 320;

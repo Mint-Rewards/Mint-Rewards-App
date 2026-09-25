@@ -1,4 +1,5 @@
 import { Deal, useAppStore } from "@/store/store";
+import { useSheetInset } from "@/hooks/useSheetInset";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -35,6 +36,9 @@ const formatExpiry = (endDate: string) => {
 type FilterType = "all" | "active";
 
 const DealsScreen = () => {
+  // Edge-to-edge otherwise puts this sheet's last control — a Close or a
+  // Cancel — flush against the ||| O < row.
+  const sheetInset = useSheetInset();
   // The iOS tab bar is absolutely positioned; without this the last card
   // scrolls under it. No-op on Android, where the bar takes layout.
   const tabBarOverflow = useBottomTabOverflow();
@@ -286,7 +290,7 @@ const DealsScreen = () => {
         onRequestClose={closeCouponModal}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.couponSheet}>
+          <View style={[styles.couponSheet, { paddingBottom: sheetInset }]}>
 
             {/* Teal header */}
             <View style={styles.couponHeader}>

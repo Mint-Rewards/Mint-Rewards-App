@@ -1,4 +1,5 @@
 import { Deal, useAppStore } from "@/store/store";
+import { useSheetInset } from "@/hooks/useSheetInset";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { brandSurface } from "@/utils/brandTheme";
 import { isDealExpired, mergeBrandsWithDeals } from "@/utils/deals";
@@ -29,6 +30,9 @@ const formatExpiry = (endDate: string) => {
 };
 
 const RedeemScreen = () => {
+  // Edge-to-edge otherwise puts this sheet's last control — a Close or a
+  // Cancel — flush against the ||| O < row.
+  const sheetInset = useSheetInset();
   // The iOS tab bar is absolutely positioned, so the last deal card would sit
   // underneath it without this. No-op on Android, where the bar takes layout.
   const tabBarOverflow = useBottomTabOverflow();
@@ -317,7 +321,7 @@ const RedeemScreen = () => {
         onRequestClose={closeDetailModal}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+          <View style={[styles.modalSheet, { paddingBottom: sheetInset }]}>
             {/* Teal header */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalAppName}>MINT REWARDS</Text>

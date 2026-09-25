@@ -21,6 +21,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { useSheetInset } from "@/hooks/useSheetInset";
 import React, { useEffect } from "react";
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useDeadline } from "@/hooks/useDeadline";
@@ -90,6 +91,9 @@ export function FinishProfileModal({
   onDismiss,
   bonus = null,
 }: Props) {
+  // Edge-to-edge otherwise puts this sheet's last control — a Close or a
+  // Cancel — flush against the ||| O < row.
+  const sheetInset = useSheetInset(34);
   const rows = ROWS.map((row) => ({
     ...row,
     done: !row.covers.some((field) => missing.includes(field)),
@@ -130,7 +134,7 @@ export function FinishProfileModal({
       onRequestClose={dismissible ? onDismiss : () => {}}
     >
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: sheetInset }]}>
           {showBonus ? (
             <View style={styles.badgeRow}>
               <View style={styles.badge}>
