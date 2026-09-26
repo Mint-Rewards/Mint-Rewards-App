@@ -19,6 +19,7 @@ import { logScreenView } from "@/utils/logger";
 import { EnvBanner } from "@/components/EnvBanner";
 import LocationGate from "@/components/LocationGate";
 import UpdateGate from "@/components/UpdateGate";
+import NotificationGate from "@/components/NotificationGate";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { PostHogProvider } from "posthog-react-native";
 import { posthog } from "@/utils/posthog";
@@ -246,6 +247,10 @@ export default Sentry.wrap(function RootLayout() {
           {/* Same contract as UpdateGate: renders null unless it decides a
               location modal is due, and only on Home. */}
           <LocationGate />
+          {/* Last of the three, deliberately: it only asks once a profile is
+              complete, so it cannot land on top of the location gate, which
+              is the more urgent ask. */}
+          <NotificationGate />
           {/* Pinned to "dark" (dark glyphs) rather than "auto". "auto" follows
               the ThemeProvider above and resolves to light glyphs in dark mode,
               which vanish against the hardcoded-white screens. Same reason the

@@ -37,7 +37,13 @@ function messagingModule(): Messaging | null {
   return cached;
 }
 
-export type PushPermission = "granted" | "denied" | "provisional" | "unsupported";
+export type PushPermission =
+  | "granted"
+  | "denied"
+  | "provisional"
+  /** Nobody has been asked yet, so a prompt will still be shown. iOS only. */
+  | "undetermined"
+  | "unsupported";
 
 export interface PushRegistration {
   permission: PushPermission;
@@ -114,6 +120,81 @@ export async function registerForPush(): Promise<PushRegistration> {
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * What the device thinks now, WITHOUT asking anybody.
+ *
+ * Distinct from `registerForPush`, which prompts. This is safe to call on
+ * every foreground, which is the point: a person who turns notifications off
+ * in system settings does so outside the app, and nothing in the app would
+ * otherwise ever find out. They would simply stop being told about their
+ * collections.
+ *
+ * On Android `hasPermission()` maps to `areNotificationsEnabled()`, so it
+ * catches the settings toggle and not merely the Android 13 runtime grant —
+ * which matters, because below API 33 the runtime permission does not exist
+ * and the toggle is the only thing there is. On iOS it reads the stored
+ * notification settings and never prompts.
+ */
+export async function checkPushPermission(): Promise<PushPermission> {
+  if (!pushIsSupported()) return "unsupported";
+  const fcm = messagingModule();
+  if (!fcm) return "unsupported";
+
+  try {
+    const status = await fcm().hasPermission();
+    const { AuthorizationStatus } = fcm;
+    if (status === AuthorizationStatus.NOT_DETERMINED) return "undetermined";
+    if (status === AuthorizationStatus.PROVISIONAL) return "provisional";
+    if (status === AuthorizationStatus.DENIED) return "denied";
+    return "granted";
+  } catch {
+    // A check that cannot be made must never be reported as "off": nagging
+    // someone whose notifications work is worse than missing someone whose
+    // do not, and this runs on every foreground.
+    return "granted";
+  }
+}
+
+export interface PushPromptResult {
+  permission: PushPermission;
+  /**
+   * True when the system will not show a prompt again, so only the Settings
+   * app can turn notifications back on.
+   *
+   * Android stops showing the runtime dialog after two refusals and below API
+   * 33 never shows one at all; iOS answers from its stored decision. In all
+   * three cases asking again is a button that visibly does nothing, which is
+   * why the caller needs to know to send them to Settings instead.
+   */
+  needsSettings: boolean;
+}
+
+/**
+ * Asks, then reports honestly whether asking was still possible.
+ *
+ * Deliberately re-checks rather than trusting the request's own answer: the
+ * three platforms disagree about what they return when the prompt was
+ * suppressed, and `hasPermission()` afterwards is the one thing that means the
+ * same everywhere.
+ */
+export async function promptForPush(): Promise<PushPromptResult> {
+  if (!pushIsSupported()) {
+    return { permission: "unsupported", needsSettings: false };
+  }
+
+  try {
+    await registerForPush();
+  } catch {
+    // Fall through to the check; it decides either way.
+  }
+
+  const permission = await checkPushPermission();
+  return {
+    permission,
+    needsSettings: permission !== "granted" && permission !== "provisional",
+  };
 }
 
 /**

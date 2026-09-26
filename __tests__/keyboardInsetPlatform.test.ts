@@ -172,6 +172,7 @@ describe("bottom sheets clear the system controls", () => {
     "components/location/ConfirmAddressModal.tsx",
     "components/ui/LocationPicker.tsx",
     "components/location/FinishProfileModal.tsx",
+    "components/NotificationNudgeModal.tsx",
   ];
 
   for (const file of SHEETS) {
