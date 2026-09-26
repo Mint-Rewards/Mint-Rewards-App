@@ -45,7 +45,9 @@ const SLOT = {
 
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
 
-beforeEach(() => mockFetch.mockReset());
+beforeEach(() => {
+  mockFetch.mockReset();
+});
 
 describe("reading what dates are open", () => {
   it("sends the stored token verbatim", async () => {
@@ -57,7 +59,10 @@ describe("reading what dates are open", () => {
      */
     mockFetch.mockResolvedValue(ok({ eligible: true, slots: [] }) as never);
     await fetchCollectionSlots("Bearer abc.def");
-    const [, init] = mockFetch.mock.calls[0] as [string, { headers: Record<string, string> }];
+    const [, init] = mockFetch.mock.calls[0] as unknown as [
+      string,
+      { headers: Record<string, string> },
+    ];
     expect(init.headers.Authorization).toBe("Bearer abc.def");
   });
 
@@ -138,6 +143,20 @@ describe("what the booking screen promises", () => {
     const src = read("app/bookCollection.tsx");
     expect(src).toMatch(/Couldn&apos;t load dates/);
     expect(src).toMatch(/Try again/);
+  });
+
+  it("leaves the native header off, for every screen and not one by one", () => {
+    /*
+     * Each screen draws its own Navbar, so a native header on top of it is
+     * two headers with the route's FILENAME printed across the second —
+     * which is how bookCollection shipped. It was opt-out, one line per
+     * route, and the new route had no line. A default that must be repeated
+     * is a default the next screen forgets too.
+     */
+    const layout = read("app/_layout.tsx");
+    expect(layout).toMatch(/<Stack[^>]*screenOptions=\{\{ headerShown: false \}\}/);
+    // And the one screen that asks for it back does so from its own file.
+    expect(read("app/+not-found.tsx")).toMatch(/headerShown: true/);
   });
 
   it("only offers the entry point to a complete profile", () => {

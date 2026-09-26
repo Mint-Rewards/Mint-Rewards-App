@@ -224,19 +224,20 @@ export default Sentry.wrap(function RootLayout() {
       >
         <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
           <EnvBanner />
-          <Stack initialRouteName="index">
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-          <Stack.Screen name="register" options={{ headerShown: false }} />
-          <Stack.Screen name="verify-email" options={{ headerShown: false }} />
-          <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-          {/* redeem / deals / collections / notifications now live inside
-              (tabs) so the bottom nav bar renders on them. Route paths are
-              unchanged — a group segment adds nothing to the URL. */}
-          <Stack.Screen name="editProfile" options={{ headerShown: false }} />
-          <Stack.Screen name="otp-screen" options={{ headerShown: false }} />
-          <Stack.Screen name="change-password" options={{ headerShown: false }} />
+          {/*
+            Every screen draws its own Navbar, so the native header is off by
+            DEFAULT rather than per screen.
+
+            It was opt-out before, one line per route, and `bookCollection`
+            shipped without its line — so it arrived with two headers stacked
+            and "bookCollection" printed across the top, which is the route's
+            filename. A default that has to be repeated is a default that the
+            next new screen forgets too.
+
+            `+not-found` opts back IN, from its own file: it is the one screen
+            with nothing else to say where you are.
+          */}
+          <Stack initialRouteName="index" screenOptions={{ headerShown: false }}>
           <Stack.Screen name="+not-found" />
           </Stack>
           {/* Sibling overlay, not a replacement for <Stack>: checkAuth() above
