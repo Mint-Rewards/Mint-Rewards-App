@@ -18,9 +18,9 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { useSheetInset } from "@/hooks/useSheetInset";
+import { BottomSheet } from "@/components/ui/BottomSheet";
 import React from "react";
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface Props {
   visible: boolean;
@@ -41,20 +41,19 @@ export function TownChangeModal({
   onRelabel,
   onCancel,
 }: Props) {
-  // Edge-to-edge otherwise puts this sheet's last control — a Close or a
-  // Cancel — flush against the ||| O < row.
-  const sheetInset = useSheetInset(34);
   return (
-    <Modal
+    /*
+     * Backdrop tap, drag-down and Android back all cancel — the one outcome
+     * that changes nothing, so none of them can become a silent third answer.
+     * The two buttons stay: they are the question's answers, not a way out.
+     */
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="fade"
-      // Android back must not be a silent third answer: it cancels, which is
-      // the only outcome that changes nothing.
-      onRequestClose={onCancel}
+      onClose={onCancel}
+      style={styles.sheet}
+      extraInset={34}
     >
-      <View style={styles.overlay}>
-        <View style={[styles.sheet, { paddingBottom: sheetInset }]}>
+      <>
           <Text style={styles.title}>Are you changing your area?</Text>
           <Text style={styles.subtitle}>
             {currentTown
@@ -99,18 +98,12 @@ export function TownChangeModal({
           >
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
+      </>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
   sheet: {
     backgroundColor: "#0E4C4C",
     borderTopLeftRadius: 28,

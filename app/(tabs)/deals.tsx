@@ -1,5 +1,5 @@
 import { Deal, useAppStore } from "@/store/store";
-import { useSheetInset } from "@/hooks/useSheetInset";
+import { BottomSheet } from "@/components/ui/BottomSheet";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -13,7 +13,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -36,9 +35,6 @@ const formatExpiry = (endDate: string) => {
 type FilterType = "all" | "active";
 
 const DealsScreen = () => {
-  // Edge-to-edge otherwise puts this sheet's last control — a Close or a
-  // Cancel — flush against the ||| O < row.
-  const sheetInset = useSheetInset();
   // The iOS tab bar is absolutely positioned; without this the last card
   // scrolls under it. No-op on Android, where the bar takes layout.
   const tabBarOverflow = useBottomTabOverflow();
@@ -283,14 +279,15 @@ const DealsScreen = () => {
       )}
 
       {/* ── Step 1: Coupon detail modal ── */}
-      <Modal
+      <BottomSheet
         visible={couponModal.visible}
-        transparent
-        animationType="slide"
-        onRequestClose={closeCouponModal}
+        onClose={closeCouponModal}
+        style={styles.couponSheet}
+        /* The card opens with its own coloured header, so the grab bar
+           floats over it rather than sitting on a strip of sheet above. */
+        handleFloating
+        handleTint="light"
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.couponSheet, { paddingBottom: sheetInset }]}>
 
             {/* Teal header */}
             <View style={styles.couponHeader}>
@@ -387,13 +384,8 @@ const DealsScreen = () => {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.closeBtn} onPress={closeCouponModal}>
-                <Text style={styles.closeBtnText}>Close</Text>
-              </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheet>
 
     </View>
   );
@@ -531,11 +523,6 @@ const styles = StyleSheet.create({
   availTextDisabled: { color: "#aaa" },
 
   // ── Coupon detail modal ──
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
-  },
   couponSheet: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 28,
@@ -678,8 +665,6 @@ const styles = StyleSheet.create({
   },
   downloadBtnDisabled: { opacity: 0.65 },
   downloadBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
-  closeBtn: { paddingVertical: 12, width: "100%", alignItems: "center" },
-  closeBtnText: { color: "#999", fontSize: 14, fontWeight: "500" },
 });
 
 export default DealsScreen;

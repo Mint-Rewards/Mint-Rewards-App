@@ -157,37 +157,97 @@ describe("the keyboard fix does not depend on a measured height", () => {
 });
 
 /**
- * Sheets anchored to the bottom of an edge-to-edge screen.
+ * Sheets that rise from the bottom of an edge-to-edge screen.
+ *
+ * Two things they all have to get right, and both were wrong across the board.
  *
  * `justifyContent: "flex-end"` means the bottom of the glass, which is under
- * the ||| O < row — so the last control of every one of these sat against the
- * system buttons. Six of them, wrong in the same way, which is what the shared
- * hook is for.
+ * the ||| O < row, so every sheet's last control sat against the system
+ * buttons. And every one of them could only be closed by a button: tapping
+ * the dimmed area did nothing, which is the first thing anybody tries.
+ *
+ * `BottomSheet` now owns both. A sheet either uses it, or reserves the inset
+ * itself and says why.
  */
-describe("bottom sheets clear the system controls", () => {
-  const SHEETS = [
+describe("bottom sheets", () => {
+  /** Sheets that delegate to the shared component. */
+  const ON_BOTTOM_SHEET = [
     "app/(tabs)/deals.tsx",
     "app/(tabs)/redeem.tsx",
     "components/location/TownChangeModal.tsx",
-    "components/location/ConfirmAddressModal.tsx",
-    "components/ui/LocationPicker.tsx",
     "components/location/FinishProfileModal.tsx",
     "components/NotificationNudgeModal.tsx",
   ];
 
-  for (const file of SHEETS) {
-    it(`${file} reserves the inset below its last control`, () => {
+  /**
+   * Sheets that still build their own, and the reason each one does.
+   *
+   * Not an exemption from the inset — they are checked for it below — only
+   * from the shared component.
+   */
+  const OWN_CONTAINER: Record<string, string> = {
+    // Hosts a KeyboardAvoidingView, a ScrollView and the focus-scrolling
+    // above; converting it in the same pass as everything else would put the
+    // location gate's hard rule on the same roll of the dice as a cosmetic
+    // change.
+    "components/location/ConfirmAddressModal.tsx": "keyboard handling",
+    // Already closes on a backdrop tap, so the complaint never applied.
+    "components/ui/LocationPicker.tsx": "already dismissible",
+  };
+
+  for (const file of ON_BOTTOM_SHEET) {
+    it(`${file} uses the shared sheet`, () => {
+      const src = read(file);
+      expect(src).toMatch(/<BottomSheet/);
+      // Which is where the inset comes from, so it must not also roll its own.
+      expect(src).not.toMatch(/justifyContent: "flex-end"/);
+    });
+
+    it(`${file} has no Close button`, () => {
+      /*
+       * The backdrop, the drag and Android back all close it. A "Close"
+       * control on top of those is the thing the user asked to be rid of.
+       * "Not now" and "Cancel" are answers to a question, not ways out, and
+       * are deliberately still allowed.
+       */
+      expect(read(file)).not.toMatch(/>Close</);
+    });
+  }
+
+  for (const [file, why] of Object.entries(OWN_CONTAINER)) {
+    it(`${file} reserves the inset itself (${why})`, () => {
       const src = read(file);
       expect(src).toMatch(/useSheetInset\(/);
       expect(src).toMatch(/paddingBottom: sheetInset/);
     });
   }
 
-  it("every bottom-anchored sheet is on the list", () => {
+  it("the shared sheet reserves the inset and offers three ways out", () => {
+    const src = read("components/ui/BottomSheet.tsx");
+    expect(src).toMatch(/useSheetInset\(/);
+    expect(src).toMatch(/paddingBottom: sheetInset/);
+    // Backdrop, drag, Android back.
+    expect(src).toMatch(/testID="bottom-sheet-backdrop"/);
+    expect(src).toMatch(/PanResponder\.create/);
+    expect(src).toMatch(/onRequestClose=\{dismissible \? onClose/);
+  });
+
+  it("a pinned sheet cannot be swiped away", () => {
     /*
-     * The list above is only as good as its completeness, and a seventh sheet
-     * added later would be wrong in the same way with nothing to catch it.
-     * This finds them by the property that causes the problem.
+     * The location gate's hard rule: a household with no pin cannot be
+     * catered for. A gate that a drag dismisses is not a gate, so all three
+     * exits route through the one flag.
+     */
+    const src = read("components/ui/BottomSheet.tsx");
+    expect(src).toMatch(/onPress=\{dismissible \? onClose : undefined\}/);
+    expect(src).toMatch(/const dragHandlers = dismissible \? responder\.panHandlers : \{\}/);
+  });
+
+  it("every bottom-anchored sheet is accounted for", () => {
+    /*
+     * The lists above are only as good as their completeness, and a new sheet
+     * would be wrong in the same two ways with nothing to catch it. This finds
+     * them by the property that causes the problem.
      */
     const { execSync } = require("node:child_process") as typeof import("node:child_process");
     const found = execSync(
@@ -197,6 +257,8 @@ describe("bottom sheets clear the system controls", () => {
       .split("\n")
       .filter(Boolean)
       .sort();
-    expect(found).toEqual([...SHEETS].sort());
+    expect(found).toEqual(
+      [...Object.keys(OWN_CONTAINER), "components/ui/BottomSheet.tsx"].sort(),
+    );
   });
 });

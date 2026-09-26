@@ -1,5 +1,5 @@
 import { Deal, useAppStore } from "@/store/store";
-import { useSheetInset } from "@/hooks/useSheetInset";
+import { BottomSheet } from "@/components/ui/BottomSheet";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { brandSurface } from "@/utils/brandTheme";
 import { isDealExpired, mergeBrandsWithDeals } from "@/utils/deals";
@@ -15,7 +15,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -30,9 +29,6 @@ const formatExpiry = (endDate: string) => {
 };
 
 const RedeemScreen = () => {
-  // Edge-to-edge otherwise puts this sheet's last control — a Close or a
-  // Cancel — flush against the ||| O < row.
-  const sheetInset = useSheetInset();
   // The iOS tab bar is absolutely positioned, so the last deal card would sit
   // underneath it without this. No-op on Android, where the bar takes layout.
   const tabBarOverflow = useBottomTabOverflow();
@@ -314,14 +310,15 @@ const RedeemScreen = () => {
       </ScrollView>
 
       {/* Deal detail modal */}
-      <Modal
+      <BottomSheet
         visible={detailModal.visible}
-        transparent
-        animationType="slide"
-        onRequestClose={closeDetailModal}
+        onClose={closeDetailModal}
+        style={styles.modalSheet}
+        /* The card opens with its own coloured header, so the grab bar
+           floats over it rather than sitting on a strip of sheet above. */
+        handleFloating
+        handleTint="light"
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { paddingBottom: sheetInset }]}>
             {/* Teal header */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalAppName}>MINT REWARDS</Text>
@@ -410,13 +407,8 @@ const RedeemScreen = () => {
               </TouchableOpacity>
               )}
 
-              <TouchableOpacity style={styles.closeBtn} onPress={closeDetailModal}>
-                <Text style={styles.closeBtnText}>Close</Text>
-              </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheet>
     </View>
   );
 };
@@ -536,12 +528,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
 
-  // ── Detail modal ──
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
-  },
   modalSheet: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 28,
@@ -663,8 +649,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   alreadyUsedText: { flex: 1, fontSize: 14, color: "#276749", lineHeight: 20 },
-  closeBtn: { paddingVertical: 12, width: "100%", alignItems: "center" },
-  closeBtnText: { color: "#999", fontSize: 14, fontWeight: "500" },
 });
 
 export default RedeemScreen;

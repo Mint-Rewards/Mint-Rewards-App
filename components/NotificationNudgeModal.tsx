@@ -7,9 +7,9 @@
  * the same kind of favour and should not look like different apps.
  */
 import React from "react";
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useSheetInset } from "@/hooks/useSheetInset";
+import { BottomSheet } from "@/components/ui/BottomSheet";
 
 interface Props {
   visible: boolean;
@@ -30,17 +30,20 @@ export function NotificationNudgeModal({
   onEnable,
   onDismiss,
 }: Props) {
-  const sheetInset = useSheetInset(34);
-
   return (
-    <Modal
+    /*
+     * Backdrop tap and drag-down are a dismissal, the same as "Not now" —
+     * which stays, because it is the honest label for what it does and
+     * spends one of the two the gate allows.
+     */
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onDismiss}
+      onClose={onDismiss}
+      style={styles.sheet}
+      extraInset={34}
+      handleTint="light"
     >
-      <View style={styles.overlay}>
-        <View style={[styles.sheet, { paddingBottom: sheetInset }]}>
+      <>
           <View style={styles.iconRing}>
             <Ionicons name="notifications" size={28} color="#0B3B3B" />
           </View>
@@ -85,14 +88,12 @@ export function NotificationNudgeModal({
           >
             <Text style={styles.skipText}>Not now</Text>
           </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
+      </>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: "#0E4C4C",
     borderTopLeftRadius: 28,
