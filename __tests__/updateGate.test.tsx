@@ -48,7 +48,19 @@ jest.mock("expo-application", () => ({
   },
 }));
 
+import { AppState } from "react-native";
 import UpdateGate from "@/components/UpdateGate";
+
+/**
+ * The AppState listeners the gate registers, so a test can drive a
+ * background/foreground trip without a device.
+ *
+ * A spy on the real object rather than a module mock: `react-native`'s index
+ * exposes AppState through a getter over an internal path, so mocking that
+ * path leaves the named export undefined and every test in this file dies at
+ * mount.
+ */
+const mockAppStateListeners: ((s: string) => void)[] = [];
 
 const CONFIG = {
   minSupportedVersion: "2.1.8",
@@ -90,6 +102,13 @@ beforeEach(() => {
   mockCheckForUpdate.mockReset();
   mockFetchUpdate.mockReset();
   mockReload.mockReset();
+  mockAppStateListeners.length = 0;
+  jest
+    .spyOn(AppState, "addEventListener")
+    .mockImplementation(((_event: string, handler: (s: string) => void) => {
+      mockAppStateListeners.push(handler);
+      return { remove: () => {} };
+    }) as never);
   jest.spyOn(console, "warn").mockImplementation(() => {});
 });
 
@@ -296,3 +315,95 @@ describe("UpdateGate — forced OTA path", () => {
  *   simulated above by throwing an AbortError, which is the same code path the
  *   gate sees; asserting the real timer would mean an 8-second test.
  */
+
+/**
+ * Why two handsets on one APK ran bundles a day and a half apart.
+ *
+ * `checkAutomatically: "ON_LOAD"` with `fallbackToCacheTimeout: 0` runs the
+ * CACHED bundle at launch and downloads the new one behind it, so an update
+ * always lands one launch late. Android keeps a backgrounded process alive, so
+ * what a tester calls "closing and reopening the app" is a RESUME — no launch,
+ * no check, no swap. A device that never gets killed never moves.
+ */
+describe("UpdateGate — coming back from the background", () => {
+  /** Drives a trip away and back, `awayMs` apart. */
+  async function goAwayAndReturn(awayMs: number) {
+    const start = Date.now();
+    const now = jest.spyOn(Date, "now");
+    now.mockReturnValue(start);
+    await act(async () => {
+      mockAppStateListeners.forEach((h) => h("background"));
+    });
+    now.mockReturnValue(start + awayMs);
+    await act(async () => {
+      mockAppStateListeners.forEach((h) => h("active"));
+      await Promise.resolve();
+    });
+    now.mockRestore();
+  }
+
+  it("checks and applies after a long enough absence", async () => {
+    mockFetchResolving(CONFIG);
+    mockCheckForUpdate.mockResolvedValue({ isAvailable: true } as never);
+    mockFetchUpdate.mockResolvedValue(undefined as never);
+    mockReload.mockResolvedValue(undefined as never);
+
+    await renderGate();
+    // forceOTA is false, so the mount check left the OTA path alone.
+    expect(mockCheckForUpdate).not.toHaveBeenCalled();
+
+    await goAwayAndReturn(10 * 60 * 1000);
+
+    expect(mockCheckForUpdate).toHaveBeenCalled();
+    expect(mockReload).toHaveBeenCalled();
+  });
+
+  it("does not interrupt a quick trip to another app", async () => {
+    mockFetchResolving(CONFIG);
+    mockCheckForUpdate.mockResolvedValue({ isAvailable: true } as never);
+
+    await renderGate();
+    await goAwayAndReturn(30 * 1000);
+
+    expect(mockCheckForUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not depend on forceOTA", async () => {
+    /*
+     * forceOTA is the emergency "nobody may continue on an old bundle" lever.
+     * Ordinary delivery must not need someone to remember to set it — it was
+     * false in dev the whole time QA was stranded.
+     */
+    mockFetchResolving({ ...CONFIG, forceOTA: false });
+    mockCheckForUpdate.mockResolvedValue({ isAvailable: true } as never);
+    mockFetchUpdate.mockResolvedValue(undefined as never);
+    mockReload.mockResolvedValue(undefined as never);
+
+    await renderGate();
+    await goAwayAndReturn(10 * 60 * 1000);
+
+    expect(mockReload).toHaveBeenCalled();
+  });
+
+  it("leaves the user on their bundle when there is nothing to apply", async () => {
+    mockFetchResolving(CONFIG);
+    mockCheckForUpdate.mockResolvedValue({ isAvailable: false } as never);
+
+    await renderGate();
+    await goAwayAndReturn(10 * 60 * 1000);
+
+    expect(mockFetchUpdate).not.toHaveBeenCalled();
+    expect(mockReload).not.toHaveBeenCalled();
+  });
+
+  it("fails open when the resume check throws", async () => {
+    mockFetchResolving(CONFIG);
+    mockCheckForUpdate.mockRejectedValue(new Error("offline") as never);
+
+    const tree = await renderGate();
+    await goAwayAndReturn(10 * 60 * 1000);
+
+    // No overlay left stranded over the app.
+    expect(tree.root.findAllByProps({ testID: "update-gate" })).toHaveLength(0);
+  });
+});
