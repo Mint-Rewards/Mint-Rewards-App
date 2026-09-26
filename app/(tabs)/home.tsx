@@ -531,6 +531,38 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {/*
+          Book a collection — the inverse of being invited to one.
+          Gated on `profileComplete` alone, which is the same single source
+          the deals prompt below uses. The rule behind it is not cosmetic: a
+          household we cannot route to cannot be collected from, so offering
+          the choice would be offering something we cannot deliver. The
+          screen itself re-checks with the server, because completeness here
+          is the app's opinion and routability is operations' fact.
+        */}
+        {profileComplete && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.bookSlotCard}
+              onPress={() => navigateOnce(() => router.push("/bookCollection"))}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              testID="book-collection-card"
+            >
+              <View style={styles.bookSlotIcon}>
+                <Ionicons name="calendar" size={22} color="#0B3B3B" />
+              </View>
+              <View style={styles.bookSlotBody}>
+                <Text style={styles.bookSlotTitle}>Book a collection</Text>
+                <Text style={styles.bookSlotText}>
+                  Pick a date that suits you and we&apos;ll arrange a van.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9FD8C8" />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Coupons */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -750,6 +782,26 @@ const styles = StyleSheet.create({
   couponName: { fontSize: 26, fontWeight: "700", letterSpacing: -0.3 },
   couponLogoWrapper: { width: 110, height: 110, alignItems: "center", justifyContent: "center" },
   couponLogo: { width: 110, height: 110 },
+  bookSlotCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: "#0E4C4C",
+    borderRadius: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  bookSlotIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#9FD8C8",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bookSlotBody: { flex: 1 },
+  bookSlotTitle: { fontSize: 16.5, fontWeight: "700", color: "#FFFFFF" },
+  bookSlotText: { fontSize: 13.5, color: "#BFE0DA", marginTop: 2, lineHeight: 19 },
   profilePromptCard: {
     flexDirection: "row",
     alignItems: "center",
