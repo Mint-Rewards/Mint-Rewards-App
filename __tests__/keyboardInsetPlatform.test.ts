@@ -233,60 +233,88 @@ describe("bottom sheets", () => {
     const src = read("components/ui/BottomSheet.tsx");
     expect(src).toMatch(/animationType="none"/);
     expect(src).not.toMatch(/animationType="slide"/);
-    expect(src).toMatch(/backdropOpacity/);
-    expect(src).toMatch(/opacity: backdropOpacity/);
     expect(src).toMatch(/const \[rendered, setRendered\]/);
   });
 
-  it("claims the drag on the capture phase", () => {
+  it("uses Gesture Handler, not the JS responder system", () => {
     /*
-     * A TouchableOpacity inside the card becomes the responder the moment a
-     * finger lands on it, and a bubbling `onMoveShouldSetPanResponder` is
-     * then never consulted — so a card that is mostly buttons ignored every
-     * drag. Taps do not move, so a slop threshold lets a drag win without
-     * costing a tap.
+     * Two attempts were built on PanResponder and neither followed the
+     * finger. The JS responder system negotiates per touch: a
+     * TouchableOpacity becomes the responder the moment a finger lands on
+     * it, and on a card that is mostly buttons the sheet is never asked.
+     * Capturing on the move phase did not rescue it either. Gesture Handler
+     * runs natively and does not take part in that argument.
      */
     const src = read("components/ui/BottomSheet.tsx");
-    expect(src).toMatch(/onMoveShouldSetPanResponderCapture/);
-    expect(src).not.toMatch(/onMoveShouldSetPanResponder:/);
+    expect(src).toMatch(/Gesture\.Pan\(\)/);
+    expect(src).toMatch(/<GestureDetector gesture=\{pan\}>/);
+    // Its absence from the CODE. The header comment names it deliberately,
+    // to record why it is not being used.
+    expect(src).not.toMatch(/PanResponder\.create/);
+    expect(src).not.toMatch(/panHandlers/);
   });
 
-  it("gives the grab bar its own handlers", () => {
+  it("mounts the gesture root the Modal needs", () => {
     /*
-     * They used to go to the card only, while the bar sat on top of it
-     * swallowing touches it then did nothing with — worse than no handle at
-     * all, because it advertises a gesture that does not work.
+     * The one line whose absence makes a Gesture Handler gesture inside a
+     * React Native <Modal> silently inert: the modal's contents live in a
+     * separate native view hierarchy that the app's root does not reach.
+     * Forgetting it reproduces the exact bug this replaced, with no error.
+     */
+    expect(read("components/ui/BottomSheet.tsx")).toMatch(
+      /<GestureHandlerRootView style=\{styles\.root\}>/,
+    );
+  });
+
+  it("reads velocity in the units Gesture Handler reports", () => {
+    /*
+     * Gesture Handler gives px per SECOND where PanResponder gave px per
+     * millisecond. Carrying the old threshold across would have made every
+     * gesture a dismissal — a thousandfold error that no type would catch.
      */
     const src = read("components/ui/BottomSheet.tsx");
-    const handleZone = src.slice(src.indexOf("styles.handleZone, handleFloating"));
-    expect(handleZone.slice(0, 200)).toMatch(/\{\.\.\.dragHandlers\}/);
-    // And not the old conditional that withheld them whenever the card had them.
-    expect(src).not.toMatch(/dragAnywhere \? \{\} : dragHandlers/);
+    const threshold = /const DISMISS_VELOCITY = (\d+)/.exec(src);
+    expect(threshold).not.toBeNull();
+    expect(Number(threshold![1])).toBeGreaterThan(100);
+    expect(src).toMatch(/event\.velocityY > DISMISS_VELOCITY/);
+  });
+
+  it("does not eat taps on the buttons inside the card", () => {
+    // The whole card is the handle, so the gesture must not activate until
+    // the finger has actually travelled. A tap does not move.
+    const src = read("components/ui/BottomSheet.tsx");
+    expect(src).toMatch(/\.activeOffsetY\(\[-ACTIVATION_SLOP, ACTIVATION_SLOP\]\)/);
   });
 
   it("follows the finger upward too, without exposing the backdrop", () => {
     /*
-     * Dragging up cannot dismiss anything, but a handle that answers in only
-     * one direction feels broken — you pull it and nothing moves. It follows
-     * reluctantly and springs back, and the card's background runs past the
-     * bottom of the screen by the same amount it can be lifted, so what comes
-     * into view is more card rather than a strip of dimmed area beneath it.
+     * Dragging up cannot dismiss anything, but a card that answers in only
+     * one direction does not feel attached to the finger. It follows
+     * reluctantly and springs back, and its background runs past the bottom
+     * of the screen by the same amount it can be lifted, so what comes into
+     * view is more card rather than a strip of dimmed area beneath it.
      */
     const src = read("components/ui/BottomSheet.tsx");
-    expect(src).toMatch(/Math\.max\(-LIFT_LIMIT, gesture\.dy \* LIFT_DAMPING\)/);
+    expect(src).toMatch(/Math\.max\(-LIFT_LIMIT, event\.translationY \* LIFT_DAMPING\)/);
     expect(src).toMatch(/paddingBottom: sheetInset \+ LIFT_LIMIT/);
     expect(src).toMatch(/marginBottom: -LIFT_LIMIT/);
-    // The old one-way clamp, which is what made the bar feel dead upward.
-    expect(src).not.toMatch(/if \(gesture\.dy > 0\) translateY\.setValue/);
+  });
+
+  it("dims in step with the drag", () => {
+    // What makes a half-finished drag readable: the gesture shows you what
+    // letting go will do before you let go.
+    const src = read("components/ui/BottomSheet.tsx");
+    expect(src).toMatch(/const backdropStyle = useAnimatedStyle/);
+    expect(src).toMatch(/interpolate\(\s*translateY\.value/);
   });
 
   it("the shared sheet reserves the inset and offers three ways out", () => {
     const src = read("components/ui/BottomSheet.tsx");
     expect(src).toMatch(/useSheetInset\(/);
     expect(src).toMatch(/paddingBottom: sheetInset/);
-    // Backdrop, drag, Android back.
+    // Drag, backdrop, Android back.
+    expect(src).toMatch(/Gesture\.Pan\(\)/);
     expect(src).toMatch(/testID="bottom-sheet-backdrop"/);
-    expect(src).toMatch(/PanResponder\.create/);
     expect(src).toMatch(/onRequestClose=\{dismissible \? onClose/);
   });
 
@@ -298,7 +326,7 @@ describe("bottom sheets", () => {
      */
     const src = read("components/ui/BottomSheet.tsx");
     expect(src).toMatch(/onPress=\{dismissible \? onClose : undefined\}/);
-    expect(src).toMatch(/const dragHandlers = dismissible \? responder\.panHandlers : \{\}/);
+    expect(src).toMatch(/\.enabled\(dismissible\)/);
   });
 
   it("every bottom-anchored sheet is accounted for", () => {

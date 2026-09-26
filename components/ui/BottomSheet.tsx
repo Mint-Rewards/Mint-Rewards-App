@@ -1,78 +1,102 @@
 /**
- * A card that rises from the bottom, and leaves the way it arrived.
+ * A card that rises from the bottom and clings to your finger.
  *
- * Three ways out, none of them a button: tap the dimmed area behind it, drag
- * it down past a threshold, or press Android's back. A sheet that can only be
- * closed by a "Close" control is the one shape of modal people reliably feel
- * trapped in — every other app on the handset dismisses on a backdrop tap, so
- * the first thing they try is the thing that did nothing.
+ * Three ways out, none of them a button: drag it down, tap the dimmed area
+ * behind it, or press Android's back. A sheet that can only be closed by a
+ * "Close" control is the one shape of modal people reliably feel trapped in —
+ * every other app on the handset dismisses on a backdrop tap, so the first
+ * thing they try is the thing that did nothing.
  *
- * Core Animated and PanResponder rather than reanimated/gesture-handler,
- * which are both installed: a gesture-handler gesture inside a React Native
- * <Modal> needs its own GestureHandlerRootView around the modal's contents,
- * and forgetting it produces a sheet that simply ignores the drag with no
- * error anywhere. PanResponder has no such requirement, and this ships by OTA.
+ * Gesture Handler and Reanimated, NOT PanResponder. Two attempts were built on
+ * PanResponder and neither followed the finger: the JS responder system
+ * negotiates per touch, a TouchableOpacity becomes the responder the moment a
+ * finger lands on it, and on a card that is mostly buttons the sheet is simply
+ * never asked. Capturing on the move phase did not rescue it either. Gesture
+ * Handler runs at the native level and does not take part in that argument,
+ * which is why every app whose sheets feel right is using it.
+ *
+ * The documented cost is that a gesture inside a React Native <Modal> needs
+ * its own GestureHandlerRootView around the modal's contents — without it the
+ * drag is silently ignored, which is exactly the failure this replaces. It is
+ * mounted below, deliberately and with this comment attached to it.
  */
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  Animated,
   Dimensions,
   Modal,
-  PanResponder,
   Pressable,
   StyleSheet,
   View,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
+import Animated, {
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  Extrapolation,
+} from "react-native-reanimated";
 import { useSheetInset } from "@/hooks/useSheetInset";
 
-/** How far down it must be dragged to count as a dismissal. */
+/** How far down it must be left to count as a dismissal. */
 const DISMISS_DISTANCE = 110;
 
 /**
- * A flick counts even when it is short.
+ * A flick counts even when it is short, in px per second.
  *
  * Distance alone makes a quick downward flick — which is what most people
- * actually do — feel like it was ignored.
+ * actually do — feel like it was ignored. Note the unit: Gesture Handler
+ * reports px/s where PanResponder reported px/ms, and carrying the old
+ * number across would have made every gesture a dismissal.
  */
-const DISMISS_VELOCITY = 0.6;
+const DISMISS_VELOCITY = 800;
 
-/** Below this the gesture is a tap or a horizontal drift, not a dismissal. */
-const DRAG_SLOP = 8;
-
-const ENTER_MS = 240;
-const EXIT_MS = 200;
+/**
+ * Vertical travel before the drag takes over from the buttons underneath.
+ *
+ * This is what lets the whole card be a handle without eating taps: a tap
+ * does not move, so the gesture never activates and the press goes through.
+ */
+const ACTIVATION_SLOP = 10;
 
 /**
  * How far the card may be lifted ABOVE its resting place, and how heavily
  * that movement is damped.
  *
- * Dragging up cannot dismiss anything, but a handle that only answers in one
- * direction feels broken — you pull it and nothing happens. So it follows the
- * finger, reluctantly, and springs back. The sheet's own background is
- * extended by this much below the screen (see `overhang`), so lifting it
- * reveals more card rather than a strip of backdrop under it.
+ * Dragging up cannot dismiss anything, but a card that answers in only one
+ * direction does not feel attached to the finger. So it follows, reluctantly,
+ * and springs back. The card's own background is extended by this much below
+ * the screen, so lifting it reveals more card and not a strip of backdrop.
  */
 const LIFT_LIMIT = 64;
 const LIFT_DAMPING = 0.35;
+
+const ENTER_MS = 260;
+const EXIT_MS = 200;
 
 interface Props {
   visible: boolean;
   onClose: () => void;
   /**
-   * False pins the sheet in place: no backdrop tap, no drag, no back button.
+   * False pins the card in place: no drag, no backdrop tap, no back button.
    *
    * For the gates, where whether the user may skip is a decision made by
    * policy rather than by reaching for the nearest way out.
    */
   dismissible?: boolean;
   /**
-   * Whether the whole card is a drag handle, or only the grab bar.
+   * False confines the drag to the grab bar.
    *
-   * False for a sheet with a ScrollView in it: the responder claims the
-   * gesture on the CAPTURE phase, which is what lets a drag beat the buttons
-   * inside the card — and would equally beat a scroll.
+   * For a sheet with a ScrollView in it, where a card-wide pan and the scroll
+   * are competing for the same downward drag.
    */
   dragAnywhere?: boolean;
   /** Extra padding under the content, on top of the system inset. */
@@ -110,114 +134,101 @@ export function BottomSheet({
   /**
    * Kept mounted through the exit animation.
    *
-   * The Modal's own `animationType` cannot be used here: "slide" translates
-   * the ENTIRE modal, dim layer included, so the backdrop slid down with the
-   * card instead of fading where it stood. Animating it here means the sheet
-   * has to outlive `visible` going false long enough to play the exit.
+   * The Modal's own `animationType` cannot be used: "slide" translates the
+   * ENTIRE modal, dim layer included, so the backdrop slid away with the card
+   * instead of fading where it stood.
    */
   const [rendered, setRendered] = useState(visible);
-
-  const translateY = useRef(new Animated.Value(screenHeight)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const translateY = useSharedValue(screenHeight);
 
   useEffect(() => {
     if (visible) {
       setRendered(true);
-      translateY.setValue(screenHeight);
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: ENTER_MS,
-          useNativeDriver: true,
-        }),
-        Animated.timing(backdropOpacity, {
-          toValue: 1,
-          duration: ENTER_MS,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      translateY.value = screenHeight;
+      translateY.value = withTiming(0, { duration: ENTER_MS });
       return;
     }
-
     /*
      * Runs from wherever the card currently is, so a drag that crossed the
      * threshold carries on from under the finger rather than snapping back
      * and then leaving.
      */
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: screenHeight,
-        duration: EXIT_MS,
-        useNativeDriver: true,
-      }),
-      Animated.timing(backdropOpacity, {
-        toValue: 0,
-        duration: EXIT_MS,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) setRendered(false);
+    translateY.value = withTiming(screenHeight, { duration: EXIT_MS }, (done) => {
+      if (done) runOnJS(setRendered)(false);
     });
-  }, [visible, screenHeight, translateY, backdropOpacity]);
+  }, [visible, screenHeight, translateY]);
+
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
 
   /**
-   * Asks the PARENT to close, and does not animate.
+   * The dim fades with the drag, not just with the open and close.
    *
-   * The exit belongs to the effect above, which fires when `visible` goes
-   * false. Animating here as well would play it twice, and would also hide a
-   * sheet whose owner decided not to close it.
+   * It is the thing that makes a half-completed drag readable: the further
+   * the card has gone, the more of the screen behind it shows through, so the
+   * gesture tells you what letting go will do before you let go.
    */
-  const requestClose = useCallback(() => onClose(), [onClose]);
-  const closeRef = useRef(requestClose);
-  closeRef.current = requestClose;
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      translateY.value,
+      [0, screenHeight * 0.6],
+      [1, 0],
+      Extrapolation.CLAMP,
+    ),
+  }));
 
-  const responder = useRef(
-    PanResponder.create({
-      /*
-       * CAPTURE, not bubble. A TouchableOpacity inside the card becomes the
-       * responder the moment a finger lands on it, and a bubbling
-       * `onMoveShouldSetPanResponder` is then never consulted — so the card
-       * ignored every drag that began on a button, which on a card that is
-       * mostly buttons is every drag. Capturing on a downward move of more
-       * than a few pixels lets a drag beat a tap without breaking taps,
-       * which do not move.
-       */
-      onMoveShouldSetPanResponderCapture: (_event, gesture) =>
-        gesture.dy > DRAG_SLOP && gesture.dy > Math.abs(gesture.dx),
-      onPanResponderMove: (_event, gesture) => {
-        translateY.setValue(
-          gesture.dy >= 0
-            ? gesture.dy
-            : // Upward: damped and capped, because there is nothing above to
-              // travel to and only the dismissal below to aim at.
-              Math.max(-LIFT_LIMIT, gesture.dy * LIFT_DAMPING),
-        );
-      },
-      onPanResponderRelease: (_event, gesture) => {
-        if (gesture.dy > DISMISS_DISTANCE || gesture.vy > DISMISS_VELOCITY) {
-          closeRef.current();
-          return;
-        }
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 4,
-        }).start();
-      },
-      // A gesture taken away mid-drag must not leave the card stranded.
-      onPanResponderTerminate: () => {
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 4,
-        }).start();
-      },
-    }),
-  ).current;
-
-  const dragHandlers = dismissible ? responder.panHandlers : {};
+  const pan = Gesture.Pan()
+    .enabled(dismissible)
+    // Vertical only, and only past the slop, so taps and horizontal swipes
+    // inside the card are left alone.
+    .activeOffsetY([-ACTIVATION_SLOP, ACTIVATION_SLOP])
+    .failOffsetX([-20, 20])
+    .onUpdate((event) => {
+      translateY.value =
+        event.translationY >= 0
+          ? event.translationY
+          : Math.max(-LIFT_LIMIT, event.translationY * LIFT_DAMPING);
+    })
+    .onEnd((event) => {
+      if (
+        event.translationY > DISMISS_DISTANCE ||
+        event.velocityY > DISMISS_VELOCITY
+      ) {
+        // The parent owns `visible`; the exit plays in the effect above.
+        runOnJS(onClose)();
+        return;
+      }
+      translateY.value = withSpring(0, { damping: 18, stiffness: 180 });
+    });
 
   if (!rendered) return null;
+
+  const card = (
+    <Animated.View
+      style={[
+        styles.card,
+        {
+          /*
+           * The card runs LIFT_LIMIT past the bottom of the screen and is
+           * pulled back by the same amount, so what comes into view when it
+           * is lifted is more card and not the dimmed area behind it.
+           */
+          paddingBottom: sheetInset + LIFT_LIMIT,
+          marginBottom: -LIFT_LIMIT,
+        },
+        style,
+        cardStyle,
+      ]}
+    >
+      {dismissible ? (
+        <View style={[styles.handleZone, handleFloating && styles.handleFloating]}>
+          <View style={[styles.handle, handleTint === "light" && styles.handleLight]} />
+        </View>
+      ) : null}
+      {children}
+    </Animated.View>
+  );
 
   return (
     <Modal
@@ -230,69 +241,39 @@ export function BottomSheet({
       statusBarTranslucent
       onRequestClose={dismissible ? onClose : () => {}}
     >
-      <View style={styles.overlay} testID={testID}>
-        {/*
-          The dimmed area, as its own layer behind the card, fading rather
-          than travelling. Absolutely positioned rather than wrapping the
-          card: a Pressable that CONTAINS it would fire on every tap inside
-          it too, so the sheet would close when someone pressed a button.
-        */}
-        <Animated.View
-          style={[styles.backdrop, { opacity: backdropOpacity }]}
-          pointerEvents="auto"
-        >
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={dismissible ? onClose : undefined}
-            // Announced as the dismissal it is, since it has no label.
-            accessibilityRole={dismissible ? "button" : undefined}
-            accessibilityLabel={dismissible ? "Close" : undefined}
-            testID="bottom-sheet-backdrop"
-          />
-        </Animated.View>
+      {/*
+        Required. A Gesture Handler gesture inside a React Native <Modal> is
+        silently inert without its own root view here — the modal's contents
+        are in a separate native view hierarchy that the app's root does not
+        reach. This is the single line whose absence made the last two
+        attempts ignore every drag.
+      */}
+      <GestureHandlerRootView style={styles.root}>
+        <View style={styles.overlay} testID={testID}>
+          <Animated.View style={[styles.backdrop, backdropStyle]}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={dismissible ? onClose : undefined}
+              // Announced as the dismissal it is, since it has no label.
+              accessibilityRole={dismissible ? "button" : undefined}
+              accessibilityLabel={dismissible ? "Close" : undefined}
+              testID="bottom-sheet-backdrop"
+            />
+          </Animated.View>
 
-        <Animated.View
-          style={[
-            styles.sheet,
-            {
-              /*
-               * The card runs LIFT_LIMIT past the bottom of the screen and is
-               * pulled back by the same amount, so the part that comes into
-               * view when it is lifted is more card and not the dimmed area
-               * behind it.
-               */
-              paddingBottom: sheetInset + LIFT_LIMIT,
-              marginBottom: -LIFT_LIMIT,
-              transform: [{ translateY }],
-            },
-            style,
-          ]}
-          {...(dragAnywhere ? dragHandlers : {})}
-        >
-          {/*
-            The grab bar, and always a drag target in its own right — it gets
-            the handlers whether or not the rest of the card does. Giving them
-            only to the card left this bar swallowing touches it then did
-            nothing with, which is worse than having no handle at all.
-          */}
-          {dismissible ? (
-            <View
-              style={[styles.handleZone, handleFloating && styles.handleFloating]}
-              {...dragHandlers}
-            >
-              <View
-                style={[styles.handle, handleTint === "light" && styles.handleLight]}
-              />
-            </View>
-          ) : null}
-          {children}
-        </Animated.View>
-      </View>
+          {dragAnywhere ? (
+            <GestureDetector gesture={pan}>{card}</GestureDetector>
+          ) : (
+            card
+          )}
+        </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   overlay: { flex: 1, justifyContent: "flex-end" },
   backdrop: {
     position: "absolute",
@@ -302,14 +283,12 @@ const styles = StyleSheet.create({
     left: 0,
     backgroundColor: "rgba(0,0,0,0.5)",
   },
-  sheet: {
+  card: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     overflow: "hidden",
   },
-  // Generous, because it is also the drag target: a 4px bar is a fine thing
-  // to look at and a poor thing to catch with a thumb.
   handleZone: { alignItems: "center", paddingTop: 10, paddingBottom: 6 },
   handleFloating: {
     position: "absolute",
@@ -317,7 +296,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 2,
-    // Taller than it looks: the bar is 4px and a thumb is not.
     paddingTop: 12,
     paddingBottom: 14,
   },
