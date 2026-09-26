@@ -222,6 +222,64 @@ describe("bottom sheets", () => {
     });
   }
 
+  it("fades the backdrop instead of sliding it away with the card", () => {
+    /*
+     * The Modal's own `animationType="slide"` translates the ENTIRE modal,
+     * dim layer included — so the black wash travelled down with the card
+     * and the screen behind it was revealed from the top. The sheet animates
+     * itself, which is why it also has to stay mounted past `visible` going
+     * false to play the exit.
+     */
+    const src = read("components/ui/BottomSheet.tsx");
+    expect(src).toMatch(/animationType="none"/);
+    expect(src).not.toMatch(/animationType="slide"/);
+    expect(src).toMatch(/backdropOpacity/);
+    expect(src).toMatch(/opacity: backdropOpacity/);
+    expect(src).toMatch(/const \[rendered, setRendered\]/);
+  });
+
+  it("claims the drag on the capture phase", () => {
+    /*
+     * A TouchableOpacity inside the card becomes the responder the moment a
+     * finger lands on it, and a bubbling `onMoveShouldSetPanResponder` is
+     * then never consulted — so a card that is mostly buttons ignored every
+     * drag. Taps do not move, so a slop threshold lets a drag win without
+     * costing a tap.
+     */
+    const src = read("components/ui/BottomSheet.tsx");
+    expect(src).toMatch(/onMoveShouldSetPanResponderCapture/);
+    expect(src).not.toMatch(/onMoveShouldSetPanResponder:/);
+  });
+
+  it("gives the grab bar its own handlers", () => {
+    /*
+     * They used to go to the card only, while the bar sat on top of it
+     * swallowing touches it then did nothing with — worse than no handle at
+     * all, because it advertises a gesture that does not work.
+     */
+    const src = read("components/ui/BottomSheet.tsx");
+    const handleZone = src.slice(src.indexOf("styles.handleZone, handleFloating"));
+    expect(handleZone.slice(0, 200)).toMatch(/\{\.\.\.dragHandlers\}/);
+    // And not the old conditional that withheld them whenever the card had them.
+    expect(src).not.toMatch(/dragAnywhere \? \{\} : dragHandlers/);
+  });
+
+  it("follows the finger upward too, without exposing the backdrop", () => {
+    /*
+     * Dragging up cannot dismiss anything, but a handle that answers in only
+     * one direction feels broken — you pull it and nothing moves. It follows
+     * reluctantly and springs back, and the card's background runs past the
+     * bottom of the screen by the same amount it can be lifted, so what comes
+     * into view is more card rather than a strip of dimmed area beneath it.
+     */
+    const src = read("components/ui/BottomSheet.tsx");
+    expect(src).toMatch(/Math\.max\(-LIFT_LIMIT, gesture\.dy \* LIFT_DAMPING\)/);
+    expect(src).toMatch(/paddingBottom: sheetInset \+ LIFT_LIMIT/);
+    expect(src).toMatch(/marginBottom: -LIFT_LIMIT/);
+    // The old one-way clamp, which is what made the bar feel dead upward.
+    expect(src).not.toMatch(/if \(gesture\.dy > 0\) translateY\.setValue/);
+  });
+
   it("the shared sheet reserves the inset and offers three ways out", () => {
     const src = read("components/ui/BottomSheet.tsx");
     expect(src).toMatch(/useSheetInset\(/);
