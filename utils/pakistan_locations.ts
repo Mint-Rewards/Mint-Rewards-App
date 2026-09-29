@@ -2475,7 +2475,6 @@ export const PAKISTAN_LOCATIONS: LocationData = {
       "Ranchore Lines",
       "Saddar Bazaar",
       "Serai Quarter",
-      "Shah Rasool",
     ],
     "Hyderabad": [
       "Latifabad",

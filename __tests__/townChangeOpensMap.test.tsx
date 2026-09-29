@@ -101,8 +101,14 @@ const rehydrateAmbiguous = (api: Api) =>
 describe('"I\'ve moved house" opens the map', () => {
   // The sheet animates out before it reports closing, and the map waits for
   // that — so this suite has to be able to move time forward.
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  // Braces, not a concise body: `jest.useFakeTimers()` returns the Jest
+  // object, and a hook that returns a non-thenable is a type error.
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
 
   it("calls onOpenMap and clears the pin, in that order of consequence", () => {
     const onOpenMap = jest.fn();

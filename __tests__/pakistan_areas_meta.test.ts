@@ -323,7 +323,18 @@ describe("PAKISTAN_LOCATIONS is frozen", () => {
        */
       cities: 872,
       citiesWithTowns: 228,
-      towns: 2628,
+      /*
+       * 2,628 from the import, less one.
+       *
+       * "Shah Rasool" was accepted as a town of Karachi when the registry's
+       * own "Shah Rasool Colony" is a sub-area of Clifton. That is the exact
+       * shape karachiPrefillRecall asserts must resolve to nothing — the name
+       * pulled twelve DHA-labelled pins into Clifton and cost it 39 points of
+       * precision. The importer's sub-area check compared whole names and
+       * could not see a suffix-stripped one; it now rejects these as
+       * `subAreaStem`, so the count cannot drift back up.
+       */
+      towns: 2627,
       // Untouched by the import. Sub-areas carry decisions OSM cannot see —
       // which town takes the step at all, whether its blocks are "Block" or
       // "Sector" — so they stay curated and "Other" covers the rest.

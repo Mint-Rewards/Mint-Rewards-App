@@ -282,7 +282,7 @@ const CURATED_TOWN_VARIANTS = new Set(
 
 const mergedTowns = {};
 const allCities = Object.values(mergedCities).flat();
-const rejected = { folded: 0, subArea: 0, sameAsCity: 0, alias: 0, generic: 0, crossCity: 0 };
+const rejected = { folded: 0, subArea: 0, subAreaStem: 0, sameAsCity: 0, alias: 0, generic: 0, crossCity: 0 };
 for (const city of allCities) {
   const curated = CURATED.towns[city] ?? [];
   // Every variant the curated towns already answer to, not just their folds.
@@ -304,6 +304,27 @@ for (const city of allCities) {
     }
     if ([...variants].some((v) => taken.has(v))) { rejected.folded++; continue; }
     if (subFolds.has(f)) { rejected.subArea++; continue; }
+    /*
+     * The same sub-area with its generic suffix dropped.
+     *
+     * OSM offers "Shah Rasool" where the registry has "Shah Rasool Colony",
+     * a sub-area of Clifton. Accepting it as a TOWN gives the resolver two
+     * readings of one place and it takes the wrong one — that exact name
+     * pulled twelve DHA-labelled pins into Clifton and cost it 39 points of
+     * precision, which is why __tests__/karachiPrefillRecall.test.ts asserts
+     * it must resolve to nothing.
+     *
+     * The equality check above cannot see it, because the folds differ. Safe
+     * to apply as a prefix: a candidate that matches a real town has already
+     * been folded away by the variant test, so what reaches here and stems a
+     * sub-area is a fragment of that sub-area and not a place in its own
+     * right. Legitimate towns whose sub-areas carry their name — Malir,
+     * Korangi, Gulberg — never arrive here at all.
+     */
+    if ([...subFolds].some((sub) => sub !== f && sub.startsWith(f))) {
+      rejected.subAreaStem++;
+      continue;
+    }
     if (aliasFolds.has(f)) { rejected.alias++; continue; }
     for (const v of variants) taken.add(v);
     extra.push(t);
@@ -312,7 +333,8 @@ for (const city of allCities) {
 }
 console.error(
   `rejected — folds onto an existing town: ${rejected.folded}, ` +
-    `is already a sub-area: ${rejected.subArea}, names its own city: ${rejected.sameAsCity}, ` +
+    `is already a sub-area: ${rejected.subArea}, stems one: ${rejected.subAreaStem}, ` +
+    `names its own city: ${rejected.sameAsCity}, ` +
     `collides with an alias: ${rejected.alias}, names no particular place: ${rejected.generic}, ` +
     `would make a curated town ambiguous: ${rejected.crossCity}`,
 );
