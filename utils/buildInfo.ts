@@ -1,0 +1,160 @@
+/**
+ * Which bundle this device is actually running.
+ *
+ * A tester on the other side of the country is told "I pushed a fix, reopen
+ * the app" and has no way to tell whether they reopened it hard enough. The
+ * fix either appears or it does not, and when it does not there is nothing to
+ * report but its absence.
+ *
+ * Two versions, deliberately, because they answer different questions:
+ *
+ *   - the BINARY version says whether they need a new build installed. It is
+ *     read from expo-application for the reason versionGate.ts spells out:
+ *     after an OTA lands, ENV.appVersion describes the downloaded bundle's
+ *     config, not the binary sitting on the phone.
+ *   - the UPDATE id says which JS they are running on top of it.
+ *
+ * Both modules are required lazily. A phone may be running a binary built
+ * before one of them was linked in, and a top-level import of a missing native
+ * module throws at module evaluation — taking the screen with it. Same guard
+ * as UpdateGate.
+ */
+type UpdatesModule = {
+  updateId?: string | null;
+  createdAt?: Date | null;
+  channel?: string | null;
+  isEmbeddedLaunch?: boolean;
+};
+type ApplicationModule = {
+  nativeApplicationVersion?: string | null;
+  nativeBuildVersion?: string | null;
+};
+
+// Each require takes a literal path. Metro resolves requires at build time
+// and rejects a computed one outright — a `require(name)` helper typechecks,
+// passes tests that inject their own modules, and fails the export with
+// "Invalid call at line 36".
+function loadUpdates(): UpdatesModule | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require("expo-updates") as UpdatesModule;
+  } catch {
+    return null;
+  }
+}
+
+function loadApplication(): ApplicationModule | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require("expo-application") as ApplicationModule;
+  } catch {
+    return null;
+  }
+}
+
+export interface BuildInfo {
+  /** Version of the installed binary, e.g. "2.2.1". */
+  version: string;
+  /** iOS build number / Android versionCode. */
+  build: string;
+  /** Short id of the OTA update in use, or null on the JS that shipped. */
+  updateId: string | null;
+  channel: string | null;
+  /** True when running the bundle baked into the build, not an update. */
+  embedded: boolean;
+  /**
+   * True when Metro is serving the JS, so neither of the above applies.
+   *
+   * A dev client reports `isEmbeddedLaunch: false` — truthfully, the bundle is
+   * not the embedded one — while having no update id to name, because there is
+   * no update: the bundle is coming down the cable. Reading only the first of
+   * those rendered "update null" on the iOS dev build, which says the update
+   * mechanism is broken when nothing is wrong at all.
+   */
+  fromMetro: boolean;
+  publishedAt: string | null;
+}
+
+export function readBuildInfo(
+  updates: UpdatesModule | null = loadUpdates(),
+  application: ApplicationModule | null = loadApplication(),
+): BuildInfo {
+  const version = application?.nativeApplicationVersion ?? "unknown";
+  const build = application?.nativeBuildVersion ?? "unknown";
+
+  // isEmbeddedLaunch is the honest signal, and the default when the module is
+  // missing. An updateId exists on an embedded launch too — it is the id of
+  // the bundle that shipped — so reporting that alone would make "no update
+  // has arrived" read as "update applied", which is the one mistake this
+  // screen exists to prevent.
+  const embedded = !updates || updates.isEmbeddedLaunch !== false;
+  const updateId = embedded ? null : (updates?.updateId ?? null)?.slice(0, 8) ?? null;
+  // Not the embedded bundle and no update to name: Metro is serving it.
+  const fromMetro = !embedded && updateId === null;
+
+  return {
+    version,
+    build,
+    updateId,
+    channel: updates?.channel ?? null,
+    embedded,
+    fromMetro,
+    publishedAt:
+      !embedded && updates?.createdAt ? new Date(updates.createdAt).toISOString() : null,
+  };
+}
+
+/** One line, for the foot of a settings screen. Safe to read aloud over a call. */
+/**
+ * When the running bundle was published, as "29 Sep 18:42".
+ *
+ * The update id is a UUID and two of them cannot be compared by eye —
+ * `01a0ec2c` against `01a0df21` says nothing about which is newer. A
+ * timestamp is ordered, which is the actual question being asked: am I on
+ * the latest, and if not how far behind?
+ *
+ * Deliberately not the wall-clock year, and deliberately local time: this is
+ * read aloud over a call while someone looks at a dashboard.
+ */
+function publishedLabel(iso: string | null): string | null {
+  if (!iso) return null;
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return null;
+  return at
+    .toLocaleString("en-GB", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    .replace(",", "");
+}
+
+/** One line, for the foot of a settings screen. Safe to read aloud over a call. */
+export function buildLabel(info: BuildInfo = readBuildInfo()): string {
+  const parts = [`v${info.version} (${info.build})`];
+  if (info.channel) parts.push(info.channel);
+
+  if (info.fromMetro) {
+    parts.push("from Metro");
+  } else if (info.embedded) {
+    /*
+     * "as shipped" was true and unhelpful. It is the state a fresh install is
+     * in before its first update lands, and someone checking whether a fix
+     * arrived cannot tell that from a build that simply never checks. Naming
+     * the build says WHICH bundle they are on, which is the thing being
+     * asked.
+     */
+    parts.push(`bundled with ${info.build}`);
+  } else {
+    /*
+     * Time first, id second. The time answers "am I current"; the id is for
+     * quoting back when something is wrong, and is no use for comparing.
+     */
+    const at = publishedLabel(info.publishedAt);
+    parts.push(at ? `update ${at} · ${info.updateId}` : `update ${info.updateId}`);
+  }
+
+  return parts.join(" · ");
+}

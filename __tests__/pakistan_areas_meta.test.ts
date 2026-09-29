@@ -302,11 +302,44 @@ describe("PAKISTAN_LOCATIONS is frozen", () => {
       subAreas: Object.values(PAKISTAN_LOCATIONS.subAreas).flat().length,
     }).toEqual({
       provinces: 7,
-      cities: 58,
-      citiesWithTowns: 10,
-      towns: 263,   // 196 + 56 from the P0.6 Karachi expansion
-      subAreaKeys: 151,   // +1: Jamshed Town gains a sub-area list
-      subAreas: 1109,   // +5 re-parented: Data Nagar, Shanti Nagar, Memon Nagar, Gulshan-e-Shamim, Darussalam Society
+      /*
+       * 58 -> 874, and 10 -> 233 cities with towns, from the OpenStreetMap
+       * import (scripts/build-pakistan-locations.mjs). The curated list
+       * covered nine cities properly and left a user in Sialkot to pick
+       * their city and be offered nothing.
+       *
+       * Every curated name, spelling and ordering survives — the subset
+       * check above proves it, and the generator only ever appends. 54
+       * OSM candidates were refused for colliding with what was already
+       * here: 198 that would have made a CURATED town ambiguous anywhere in
+       * the registry — resolveGeocodedName can be called unscoped and must
+       * still name exactly one place, and "Bin Qasim Town" stopped resolving
+       * at all once something elsewhere folded to the same name — 4 more
+       * sharing a variant within their own city ("F-10" against "Sector
+       * F-10"), 13 already sub-areas, 7 bare administrative
+       * words like "Cantonment" that name no particular place, 3 naming
+       * their own city, and one literal "Defence" that would have left
+       * Karachi's DHA alias naming two places and therefore none.
+       */
+      cities: 872,
+      citiesWithTowns: 228,
+      /*
+       * 2,628 from the import, less one.
+       *
+       * "Shah Rasool" was accepted as a town of Karachi when the registry's
+       * own "Shah Rasool Colony" is a sub-area of Clifton. That is the exact
+       * shape karachiPrefillRecall asserts must resolve to nothing — the name
+       * pulled twelve DHA-labelled pins into Clifton and cost it 39 points of
+       * precision. The importer's sub-area check compared whole names and
+       * could not see a suffix-stripped one; it now rejects these as
+       * `subAreaStem`, so the count cannot drift back up.
+       */
+      towns: 2627,
+      // Untouched by the import. Sub-areas carry decisions OSM cannot see —
+      // which town takes the step at all, whether its blocks are "Block" or
+      // "Sector" — so they stay curated and "Other" covers the rest.
+      subAreaKeys: 151,
+      subAreas: 1109,
     });
   });
 

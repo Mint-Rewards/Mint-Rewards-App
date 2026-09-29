@@ -41,8 +41,33 @@ jest.mock("expo-router", () => ({ router: { push: jest.fn() } }));
 import ShareScreen from "../app/(tabs)/share";
 
 /** Every string rendered anywhere in the tree, flattened. */
+/**
+ * Walks the tree for its strings rather than stringifying it.
+ *
+ * JSON.stringify threw "Converting circular structure to JSON" the moment the
+ * screen passed a React element in a prop — `refreshControl={<RefreshControl
+ * .../>}`, which is ordinary React Native. An element carries `_owner`, which
+ * points back into the fiber tree. The rendered text is what these tests are
+ * about, so collect that and nothing else.
+ */
 function allText(tree: renderer.ReactTestRenderer): string {
-  return JSON.stringify(tree.toJSON());
+  const out: string[] = [];
+  const walk = (node: unknown): void => {
+    if (node === null || node === undefined) return;
+    if (typeof node === "string" || typeof node === "number") {
+      out.push(String(node));
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    // Children only: props may hold elements, and those are not rendered text.
+    const children = (node as { children?: unknown }).children;
+    if (children) walk(children);
+  };
+  walk(tree.toJSON());
+  return out.join(" ");
 }
 
 function render() {

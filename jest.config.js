@@ -5,6 +5,10 @@ module.exports = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
   },
+  // React Native's own resolution, plus Reanimated 4's worklets exception —
+  // see jest.resolver.js for why the preset's could not simply be replaced.
+  resolver: "<rootDir>/jest.resolver.js",
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.js"],
   testMatch: ["**/__tests__/**/*.test.ts?(x)"],
   // Excludes git worktrees under .claude/worktrees, which check out this same
   // repo (same package name) — without this, Haste sees two modules with an

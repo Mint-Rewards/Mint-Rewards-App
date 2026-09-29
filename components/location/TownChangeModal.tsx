@@ -18,8 +18,9 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { BottomSheet } from "@/components/ui/BottomSheet";
 import React from "react";
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface Props {
   visible: boolean;
@@ -31,6 +32,14 @@ interface Props {
   onRelabel: () => void;
   /** Dismissal backs out of the edit entirely rather than picking for the user. */
   onCancel: () => void;
+  /**
+   * Fired once this sheet has actually gone.
+   *
+   * "I've moved" hands off to the map picker, and React Native drops a Modal
+   * presented while another is dismissing — so the caller must wait for this
+   * rather than opening the map in the same breath as answering.
+   */
+  onClosed?: () => void;
 }
 
 export function TownChangeModal({
@@ -39,18 +48,22 @@ export function TownChangeModal({
   onMoved,
   onRelabel,
   onCancel,
+  onClosed,
 }: Props) {
   return (
-    <Modal
+    /*
+     * Backdrop tap, drag-down and Android back all cancel — the one outcome
+     * that changes nothing, so none of them can become a silent third answer.
+     * The two buttons stay: they are the question's answers, not a way out.
+     */
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="fade"
-      // Android back must not be a silent third answer: it cancels, which is
-      // the only outcome that changes nothing.
-      onRequestClose={onCancel}
+      onClose={onCancel}
+      onClosed={onClosed}
+      style={styles.sheet}
+      extraInset={34}
     >
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
+      <>
           <Text style={styles.title}>Are you changing your area?</Text>
           <Text style={styles.subtitle}>
             {currentTown
@@ -95,25 +108,18 @@ export function TownChangeModal({
           >
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
+      </>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
   sheet: {
     backgroundColor: "#0E4C4C",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 24,
     paddingTop: 28,
-    paddingBottom: 34,
     gap: 12,
   },
   title: { fontSize: 26, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.4 },

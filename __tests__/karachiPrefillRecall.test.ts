@@ -17,14 +17,41 @@
  * "Shah Rasool". They are the reason this file is longer than the fixes it
  * covers.
  */
-import { describe, expect, it } from "@jest/globals";
+import { beforeAll, describe, expect, it } from "@jest/globals";
 import {
   extractSubAreaForTown,
   getPrefillConfidence,
   resolveGeocodedName,
   shouldPrefillArea,
 } from "@/utils/pakistan_areas";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { measure } from "../scripts/measure-karachi-prefill";
+
+/**
+ * The cached sweep is generated, not committed.
+ *
+ * `scripts/geocode-spike/out/` is gitignored — it holds thousands of live
+ * geocoder responses, which are somebody else's data and far too large to
+ * carry in the repository. So this file is present on the machine that ran
+ * the sweep and absent everywhere else, including CI and a fresh clone,
+ * where the suite used to fail to load at all and take its other twenty
+ * assertions down with it.
+ *
+ * Skipped rather than failed: a measurement that was never taken here is not
+ * a regression, and a red suite that means "you have not run a script" trains
+ * people to ignore red suites. Regenerate with
+ * `node scripts/geocode-spike/centroid-sweep.js`.
+ */
+const SWEEP_PATH = path.join(
+  __dirname,
+  "..",
+  "scripts",
+  "geocode-spike",
+  "out",
+  "karachi-core-liq-address.jsonl",
+);
+const whenMeasured = existsSync(SWEEP_PATH) ? describe : describe.skip;
 
 const inKarachi = (raw: string) => resolveGeocodedName(raw, "Karachi");
 
@@ -162,8 +189,20 @@ describe("prefill confidence tiers", () => {
   });
 });
 
-describe("the measured tier matches the measurement", () => {
-  const result = measure();
+whenMeasured("the measured tier matches the measurement", () => {
+  /*
+   * Loaded in beforeAll, not at describe scope.
+   *
+   * jest-circus EXECUTES the body of a skipped describe — it only marks the
+   * tests inside as skipped — so reading the sweep here would still throw on
+   * a machine that has not generated it, and take the whole file down before
+   * any of its other twenty assertions ran. beforeAll does not run for a
+   * skipped suite.
+   */
+  let result: ReturnType<typeof measure>;
+  beforeAll(() => {
+    result = measure();
+  });
 
   // The promotion gate, re-derived from the cached sweep rather than quoted
   // from a report. This is what stops `geocodePrefill: true` drifting away from

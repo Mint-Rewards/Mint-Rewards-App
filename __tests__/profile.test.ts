@@ -60,7 +60,10 @@ describe("needsLocationUpdate", () => {
   });
 
   it("is false for a city with no canonical town list", () => {
-    expect(needsLocationUpdate(base({ city: "Sialkot", town: "Cantt" }))).toBe(
+    // Bahawalpur, not Sialkot: the OpenStreetMap import gave Sialkot 94 towns,
+    // so it no longer illustrates a city the registry has no list for. 641 of
+    // the 874 cities still have none, and that is the case this covers.
+    expect(needsLocationUpdate(base({ city: "Bahawalpur", town: "Cantt" }))).toBe(
       false,
     );
   });

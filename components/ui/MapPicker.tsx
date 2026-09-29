@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import MapView, { Marker } from "react-native-maps";
+import MapView from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isFixWithinCity, resolveSelectionViewport } from "@/utils/locationForm";
 import {
@@ -48,6 +48,20 @@ interface MapPickerProps {
   onClose: () => void;
 }
 
+/**
+ * How far in the map must be before a tap can honestly be called a building.
+ *
+ * latitudeDelta is the visible span in degrees; 0.004 is roughly 440m across
+ * the screen, which is about zoom 17 — the point at which individual roofs are
+ * distinguishable. The picker used to open at 0.01, a 1.1km span, and record
+ * every tap at that scale as a verified rooftop. Neither Apple nor Google
+ * draws building footprints that far out, so the user was aiming at nothing.
+ */
+const BUILDING_VISIBLE_DELTA = 0.004;
+
+/** What the picker opens at when it knows where to look. */
+const CLOSE_DELTA = 0.002;
+
 const PAKISTAN_CENTER = {
   latitude: 30.3753,
   longitude: 69.3451,
@@ -79,6 +93,24 @@ export default function MapPicker({
   // pin placed yet, so the footer can nudge the user toward placing one.
   const [gpsCentered, setGpsCentered] = useState(false);
   const mapRef = useRef<MapView>(null);
+
+  // What the camera opens at, before it has reported anything. A saved pin
+  // opens close; anything else — a city centroid, the country — is assumed too
+  // far out, which is both true and the safe way to be wrong: the banner says
+  // "zoom in" until the map says otherwise, rather than the reverse.
+  const openingDelta =
+    !Number.isNaN(parseFloat(initialLatitude ?? "")) &&
+    !Number.isNaN(parseFloat(initialLongitude ?? ""))
+      ? CLOSE_DELTA
+      : PAKISTAN_CENTER.latitudeDelta;
+
+  // Kept in both: a ref so a tap reads it synchronously, and state so the
+  // guidance banner re-renders as the user pinches.
+  // Where the camera is pointing, gesture or not, so Confirm has a
+  // coordinate even from a user who never moved the map.
+  const centreRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const zoomDeltaRef = useRef<number>(openingDelta);
+  const [tooFarOut, setTooFarOut] = useState(openingDelta > BUILDING_VISIBLE_DELTA);
   // Analytics bookkeeping. Refs, not state: nothing renders from these, and
   // `flow_abandoned` must read the CURRENT step from inside a close handler
   // that would otherwise close over a stale render's value.
@@ -129,14 +161,14 @@ export default function MapPicker({
   }, [visible]);
 
   /** Resolves true when a GPS fix actually recentered the camera. */
-  const requestAndCenter = async (): Promise<boolean> => {
+  const requestAndCenter = async (placePin = false): Promise<boolean> => {
     setLocating(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         Alert.alert(
           "Permission Needed",
-          "Allow location access so we can center the map on your position. You can still tap the map to place your pin anywhere.",
+          "Allow location access so we can center the map on your position. You can still move the map yourself to place the pin.",
           [{ text: "OK" }]
         );
         setLocating(false);
@@ -169,15 +201,27 @@ export default function MapPicker({
         return false;
       }
 
-      // GPS is viewport only: it may recenter the camera, it must never
-      // place or move the pin. `gps_fix` is a documented no-op.
-      dispatch({ type: "gps_fix" });
+      // Opening the sheet is viewport only: a fix that arrives on its own may
+      // recenter the camera and must never move the pin. `gps_fix` is a
+      // documented no-op and stays one.
+      //
+      // Pressing the locate button is not that. It is the user saying "I am
+      // here", which is a placement, and treating it as viewport-only is what
+      // made them hunt for their own house after asking to be taken to it.
+      if (placePin) {
+        // Their real position, at the accuracy GPS gives: building precision
+        // regardless of what the camera happens to be showing right now.
+        dispatch({ type: "user_place", ...coords, coarse: false });
+        lastStepRef.current = "pin_placed";
+      } else {
+        dispatch({ type: "gps_fix" });
+      }
       setGpsCentered(true);
       // Only advances the step — a pin already placed is further along, and a
       // GPS re-center after it must not walk the funnel backwards.
       if (lastStepRef.current === "map_opened") lastStepRef.current = "gps_centered";
       mapRef.current?.animateToRegion(
-        { ...coords, latitudeDelta: 0.01, longitudeDelta: 0.01 },
+        { ...coords, latitudeDelta: CLOSE_DELTA, longitudeDelta: CLOSE_DELTA },
         600
       );
       return true;
@@ -192,12 +236,17 @@ export default function MapPicker({
   /**
    * A deliberate placement: map tap or marker drag-end. Both are the same
    * event to the reducer and the same interaction to the funnel.
+   *
+   * The zoom at the moment of the tap decides what the pin may claim. Read
+   * from a ref rather than state so a tap immediately after a pinch uses the
+   * camera the user is actually looking at.
    */
   const handleUserPlace = (coordinate: {
     latitude: number;
     longitude: number;
   }) => {
-    dispatch({ type: "user_place", ...coordinate });
+    const coarse = zoomDeltaRef.current > BUILDING_VISIBLE_DELTA;
+    dispatch({ type: "user_place", ...coordinate, coarse });
     pinInteractionsRef.current += 1;
     lastStepRef.current = "pin_placed";
     trackPinInteracted(pinInteractionsRef.current);
@@ -213,13 +262,15 @@ export default function MapPicker({
   };
 
   const handleConfirm = () => {
-    if (!state.pin) return;
+    // The pin is whatever the crosshair is over. state.pin is authoritative
+    // once they have moved the map; before that the camera may still be
+    // sitting on a saved coordinate or a city centroid, and confirming that is
+    // legitimate — it just keeps the weaker placement it came with, so it is
+    // not mistaken for a rooftop they chose.
+    const pin = state.pin ?? centreRef.current;
+    if (!pin) return;
     confirmedRef.current = true;
-    onConfirm(
-      state.pin.latitude.toFixed(7),
-      state.pin.longitude.toFixed(7),
-      state.placement
-    );
+    onConfirm(pin.latitude.toFixed(7), pin.longitude.toFixed(7), state.placement);
     onClose();
   };
 
@@ -227,7 +278,12 @@ export default function MapPicker({
     const lat = parseFloat(initialLatitude ?? "");
     const lng = parseFloat(initialLongitude ?? "");
     if (!isNaN(lat) && !isNaN(lng)) {
-      return { latitude: lat, longitude: lng, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+      return {
+        latitude: lat,
+        longitude: lng,
+        latitudeDelta: CLOSE_DELTA,
+        longitudeDelta: CLOSE_DELTA,
+      };
     }
     // No saved pin. The form already knows their city and town, so open on that
     // rather than on the whole country — the view a user gets when GPS is
@@ -259,7 +315,7 @@ export default function MapPicker({
         </View>
 
         <Text style={styles.hint}>
-          Tap the map or drag the pin to set your exact location
+          Move the map to put the pin on your rooftop
         </Text>
 
         {/* Map */}
@@ -268,24 +324,81 @@ export default function MapPicker({
             ref={mapRef}
             style={StyleSheet.absoluteFill}
             initialRegion={initialRegion}
-            onPress={(e) => handleUserPlace(e.nativeEvent.coordinate)}
+            /*
+             * Imagery, not the street map.
+             *
+             * Vector building footprints are thin over much of Pakistan in
+             * both Apple's and Google's basemaps, so a street map can show a
+             * blank block where a house plainly is. Satellite shows the roof
+             * the user is trying to point at, and "hybrid" keeps the road and
+             * place labels on top so they can still find their street.
+             */
+            mapType="hybrid"
+            /*
+             * The pin does not move; the map does.
+             *
+             * Dragging a small marker with the thumb that is also holding the
+             * phone means covering the very rooftop being aimed at, and a
+             * mis-grab moves the map instead. Fixing the pin to the centre and
+             * sliding the map under it is how every delivery app does this,
+             * and it leaves the target visible the whole time.
+             *
+             * `details.isGesture` is what separates the user moving the map
+             * from us animating it. Without that test, the camera settling
+             * after open would record a placement the user never made, and a
+             * derived centroid would be promoted to a deliberate pin.
+             */
+            onRegionChangeComplete={(region, details) => {
+              zoomDeltaRef.current = region.latitudeDelta;
+              setTooFarOut(region.latitudeDelta > BUILDING_VISIBLE_DELTA);
+              centreRef.current = {
+                latitude: region.latitude,
+                longitude: region.longitude,
+              };
+              if (!details?.isGesture) return;
+              handleUserPlace({
+                latitude: region.latitude,
+                longitude: region.longitude,
+              });
+            }}
             showsUserLocation
             showsMyLocationButton={false}
-          >
-            {state.pin && (
-              <Marker
-                coordinate={state.pin}
-                draggable
-                onDragEnd={(e) => handleUserPlace(e.nativeEvent.coordinate)}
-                pinColor="#00528A"
-              />
-            )}
-          </MapView>
+          />
+
+          {/*
+            The pin itself: an overlay at the exact centre, never a Marker.
+            `pointerEvents="none"` so it cannot swallow a drag meant for the
+            map underneath. Nudged up by half its height so the point sits on
+            the centre rather than the middle of the teardrop.
+          */}
+          <View pointerEvents="none" style={styles.centrePin}>
+            <Ionicons name="location" size={40} color="#00528A" />
+          </View>
+
+          {/*
+            Says what the map can and cannot be used for at this zoom.
+            Deliberately not a blocker: a user on a slow connection who cannot
+            load close imagery still gets to save where they live, and the pin
+            is recorded as `area` rather than being refused or, worse, recorded
+            as a rooftop it never was.
+          */}
+          <View style={[styles.zoomHint, tooFarOut ? styles.zoomHintWarn : styles.zoomHintOk]}>
+            <Ionicons
+              name={tooFarOut ? "search-outline" : "checkmark-circle"}
+              size={16}
+              color={tooFarOut ? "#92400E" : "#065F46"}
+            />
+            <Text style={[styles.zoomHintText, { color: tooFarOut ? "#92400E" : "#065F46" }]}>
+              {tooFarOut
+                ? "Zoom in until you can see your roof, then tap it"
+                : "Tap your rooftop to place the pin"}
+            </Text>
+          </View>
 
           {/* GPS re-center button */}
           <TouchableOpacity
             style={styles.gpsBtn}
-            onPress={requestAndCenter}
+            onPress={() => requestAndCenter(true)}
             disabled={locating}
           >
             {locating ? (
@@ -315,7 +428,7 @@ export default function MapPicker({
           <TouchableOpacity
             style={[styles.confirmBtn, !state.pin && styles.confirmBtnDisabled]}
             onPress={handleConfirm}
-            disabled={!state.pin}
+            disabled={!state.pin && !centreRef.current}
             activeOpacity={0.8}
           >
             <Ionicons name="checkmark-circle" size={20} color="#fff" />
@@ -328,6 +441,39 @@ export default function MapPicker({
 }
 
 const styles = StyleSheet.create({
+  // Centred by inset rather than by measuring the map: the map fills its
+  // parent, so its centre is the parent's centre. marginTop lifts the glyph so
+  // the POINT of the teardrop is what sits on the coordinate — centring the
+  // icon itself would place the pin about 20px south of where it looks.
+  centrePin: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // Floats over the map rather than taking layout from it: the map is the
+  // thing being used, and a banner that pushed it around would move the very
+  // rooftop the user is aiming at.
+  zoomHint: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    top: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  zoomHintWarn: { backgroundColor: "#FEF3C7" },
+  zoomHintOk: { backgroundColor: "#D1FAE5" },
+  zoomHintText: { flex: 1, fontSize: 13, fontWeight: "600" },
+
   container: {
     flex: 1,
     backgroundColor: "#fff",

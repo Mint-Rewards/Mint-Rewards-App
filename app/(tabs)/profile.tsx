@@ -9,12 +9,15 @@ import {
 import { useDebouncedNavigation } from "@/hooks/useDebouncedNavigation";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { useAppStore } from "@/store/store";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { alertOnce } from "@/utils/alert";
+import { buildLabel } from "@/utils/buildInfo";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
 import {
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,7 +26,14 @@ import {
 } from "react-native";
 
 const ProfileScreen = () => {
-  const { signOut, deleteAccount, user, deals, getDeals } = useAppStore();
+  const { signOut, deleteAccount, user, deals, getDeals, getProfile } =
+    useAppStore();
+
+  // The same data the screen loads on mount, fetched again on a pull.
+  const refreshAll = React.useCallback(async () => {
+    await Promise.all([getProfile(), getDeals()]);
+  }, [getProfile, getDeals]);
+  const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
 
   // The "Rewards" stat used to read `campaigns`, which nothing ever populated,
   // so it always rendered 0. Fetch the deals it now counts.
@@ -130,7 +140,13 @@ const ProfileScreen = () => {
         </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5d7481" />
+        }
+      >
         {/* Quick Actions */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -261,6 +277,13 @@ const ProfileScreen = () => {
           </View>
         </View>
 
+        {/*
+          Which build this is. A remote tester can read this line out and we
+          know whether a fix reached them, instead of guessing from whether
+          the symptom is still there.
+        */}
+        <Text style={styles.buildLabel}>{buildLabel()}</Text>
+
         {/* Bottom spacing for tab bar */}
         <View style={[styles.bottomSpacing, { height: 50 + tabBarOverflow }]} />
       </ScrollView>
@@ -381,6 +404,12 @@ const styles = StyleSheet.create({
   },
   actionButtonBusy: {
     opacity: 0.5,
+  },
+  buildLabel: {
+    textAlign: "center",
+    fontSize: 11,
+    color: "#9CA3AF",
+    marginTop: 4,
   },
   logoutButton: {
     backgroundColor: "#00528A",

@@ -130,8 +130,26 @@ describe("coverage, stated rather than assumed", () => {
   });
 
   it("is partial, and the fallback path stays exercised", () => {
+    /*
+     * Coverage is now a small fraction, and that is a statement about the
+     * SWEEP rather than about the data.
+     *
+     * The registry went from 58 cities to 874 with the OpenStreetMap import;
+     * the centroid sweep has only ever been run over the original 58. OSM
+     * carries a coordinate for every imported city, and it was deliberately
+     * NOT used: this table also feeds `isFixWithinCity`, which rejects a
+     * user's pin that sits too far from the centroid, so an unverified point
+     * would refuse legitimate addresses rather than merely centre a map
+     * badly. Its absences are findings too — Hub and Kotli are missing
+     * because two providers disagreed about them.
+     *
+     * So the floor is what the swept cities still guarantee, and the ratio is
+     * left to say plainly that most cities fall back. Running the sweep over
+     * the imported cities is the work that moves this number.
+     */
+    expect(Object.keys(CITY_CENTROIDS).length).toBeGreaterThan(45);
     const cityCoverage = Object.keys(CITY_CENTROIDS).length / ALL_CITIES.length;
-    expect(cityCoverage).toBeGreaterThan(0.8);
+    expect(cityCoverage).toBeLessThan(1);
     // Deliberately NOT 100%. Every consumer must keep handling a miss: the
     // sweep drops whatever its two providers disagree about, and no registry
     // will ever outrun the names people type into the "Other" box.

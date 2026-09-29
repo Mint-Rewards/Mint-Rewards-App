@@ -1,4 +1,5 @@
 import { useAppStore } from "@/store/store";
+import { userFromAuth } from "@/utils/userFromAuth";
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import AppleSignInButton from "@/components/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
@@ -70,33 +71,10 @@ const RegisterScreen = () => {
 
         if (data.Status === "Success") {
           const userData = data.data;
-          const user = {
-            _id: userData._id,
+          const user = userFromAuth(userData, {
             token: userData.token || "",
-            email: userData.email,
-            userName: userData.userName,
-            phone: userData.phone || "",
-            isAdmin: userData.isAdmin || false,
-            avatar: userData.avatar || userData.picture || "",
-            address: userData.address || "",
-            province: userData.province || "",
-            city: userData.city || "",
-            town: userData.town || "",
-            townOther: userData.townOther || "",
-            subArea: userData.subArea || "",
-            subAreaOther: userData.subAreaOther || "",
-            mintId: userData.mintId,
-            latitude: userData.latitude || "",
-            longitude: userData.longitude || "",
-            deviceToken: userData.deviceToken || "",
-            points: userData.points || 0,
-            totalCollections: userData.totalCollections || "",
-            totalWasteCollected: userData.totalWasteCollected || "",
-            referrals: userData.referrals || [],
-            firstTimeLogin: userData.firstTimeLogin || false,
-            emailVerified: userData.emailVerified || false,
-            pickupHistory: userData.pickupHistory || [],
-          };
+            picture: userData.picture,
+          });
 
           useAppStore.setState({ user, token: userData.token || null });
           await SecureStore.setItemAsync("userToken", userData.token || "");
@@ -160,33 +138,9 @@ const RegisterScreen = () => {
       if (data.Status === 'Success') {
         const userData = data.data;
 
-        const user = {
-          _id: userData._id,
-          token: userData.token || '',
-          email: userData.email,
-          userName: userData.userName,
-          phone: userData.phone || '',
-          isAdmin: userData.isAdmin || false,
-          avatar: userData.avatar || '',
-          address: userData.address || '',
-          province: userData.province || '',
-          city: userData.city || '',
-          town: userData.town || '',
-          townOther: userData.townOther || '',
-          subArea: userData.subArea || '',
-          subAreaOther: userData.subAreaOther || '',
-          mintId: userData.mintId,
-          latitude: userData.latitude || '',
-          longitude: userData.longitude || '',
-          deviceToken: userData.deviceToken || '',
-          points: userData.points || 0,
-          totalCollections: userData.totalCollections || '',
-          totalWasteCollected: userData.totalWasteCollected || '',
-          referrals: userData.referrals || [],
-          firstTimeLogin: userData.firstTimeLogin || false,
-          emailVerified: userData.emailVerified || false,
-          pickupHistory: userData.pickupHistory || [],
-        };
+        const user = userFromAuth(userData, {
+          token: userData.token || "",
+        });
 
         useAppStore.setState({ user, token: userData.token || null });
 

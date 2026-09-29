@@ -21,16 +21,21 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { useSheetInset } from "@/hooks/useSheetInset";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import MapPicker from "@/components/ui/MapPicker";
+import { ANDROID_KEYBOARD_FALLBACK, useKeyboardInset } from "@/hooks/useKeyboardInset";
 import { LocationFields } from "@/components/location/LocationFields";
 import { useLocationForm } from "@/hooks/useLocationForm";
 import { useAppStore } from "@/store/store";
@@ -81,9 +86,70 @@ export function ConfirmAddressModal({
   onConfirm,
   bonus = null,
 }: Props) {
+  // Edge-to-edge otherwise puts this sheet's last control — a Close or a
+  // Cancel — flush against the ||| O < row.
+  const sheetInset = useSheetInset(30);
   const { user, token } = useAppStore();
   const form = useLocationForm();
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // 0 on iOS, where automaticallyAdjustKeyboardInsets does the job.
+  const keyboardInset = useKeyboardInset();
+  const scrollRef = useRef<ScrollView>(null);
+  const contentRef = useRef<View>(null);
+  /**
+   * Whether a field holds the cursor, tracked apart from the measured height.
+   *
+   * Under edge-to-edge that measurement does not reliably arrive, so anything
+   * built on it alone is multiplying by zero. See app/editProfile.tsx, where
+   * two shipped fixes did exactly that and changed nothing on the handset.
+   */
+  const [fieldFocused, setFieldFocused] = useState(false);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Somewhere for a focused field to scroll TO. A ScrollView cannot scroll
+  // past the end of its content, so without this the last fields cannot move.
+  const keyboardRoom = !fieldFocused
+    ? 0
+    : Platform.OS === "android"
+      ? Math.max(keyboardInset, ANDROID_KEYBOARD_FALLBACK)
+      : keyboardInset;
+
+  /** Android blurs the old field before focusing the new one; see editProfile. */
+  const markFieldFocused = () => {
+    if (blurTimer.current) clearTimeout(blurTimer.current);
+    setFieldFocused(true);
+  };
+  const markFieldBlurred = () => {
+    if (blurTimer.current) clearTimeout(blurTimer.current);
+    blurTimer.current = setTimeout(() => setFieldFocused(false), 150);
+  };
+  useEffect(
+    () => () => {
+      if (blurTimer.current) clearTimeout(blurTimer.current);
+    },
+    [],
+  );
+
+  /**
+   * Lifts a focused field to the top of the viewport.
+   *
+   * Independent of how tall the keyboard is: an Android keyboard never covers
+   * the top of the screen. Every failure path is a no-op — a measurement that
+   * cannot be taken must leave a usable sheet.
+   */
+  const scrollFieldIntoView = (anchor: React.RefObject<TextInput | null>) => {
+    setTimeout(() => {
+      const target = anchor.current;
+      const content = contentRef.current;
+      if (!target || !content) return;
+      target.measureLayout(
+        content,
+        (_x, y) => scrollRef.current?.scrollTo({ y: Math.max(0, y - 24), animated: true }),
+        () => {},
+      );
+    }, 120);
+  };
+
   const [mapVisible, setMapVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [prefillReady, setPrefillReady] = useState(false);
@@ -285,12 +351,67 @@ export function ConfirmAddressModal({
       // hard gate offers neither.
       onRequestClose={dismissible ? onDismiss : () => {}}
     >
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
+      {/*
+        The sheet is pinned to the bottom, so the keyboard lands directly on top
+        of it. Without this the lower fields — house number, street — sit behind
+        the keyboard and cannot be scrolled into view either, because the
+        ScrollView still believes its viewport extends under it.
+      */}
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        /*
+         * Android needs a behaviour too, which it did not have.
+         *
+         * `undefined` makes KeyboardAvoidingView a no-op, and the usual
+         * reason that is survivable on Android — windowSoftInputMode
+         * adjustResize shrinking the activity — does not apply inside a
+         * React Native <Modal>, which is its own window and does not resize
+         * with the activity. So the sheet stayed where it was and the
+         * keyboard landed on top of the house number and street, which are
+         * the two fields this sheet exists to collect.
+         *
+         * "height" rather than "padding": the sheet is pinned to the bottom
+         * with a maxHeight, so shrinking the space it is pinned inside lifts
+         * it. Padding would add space under a sheet that is already at the
+         * bottom and move nothing.
+         */
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <View style={[styles.sheet, { paddingBottom: sheetInset }]}>
           <ScrollView
+            ref={scrollRef}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            /*
+             * So a field the keyboard still covers can be reached by hand.
+             * The avoiding view lifts the sheet; these make the last field
+             * scrollable to once it has, rather than pinned under the
+             * keyboard's top edge.
+             *
+             * Two of them because `automaticallyAdjustKeyboardInsets` is
+             * iOS-only and silently ignored on Android — which left this
+             * sheet fixed on one platform and not the other. Android pads by
+             * the measured keyboard height; the hook returns 0 on iOS so the
+             * two never both apply.
+             */
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: 24 + keyboardRoom },
+            ]}
+            /*
+             * marginBottom on the SCROLL VIEW, not padding on its content.
+             * Edge-to-edge means the window does not shrink for the keyboard,
+             * so padding the content only adds space below the fold while the
+             * viewport still runs under it. Ending the viewport above the
+             * keyboard is what lifts the field.
+             */
+            style={{ marginBottom: keyboardInset }}
+            automaticallyAdjustKeyboardInsets
           >
+            {/* The frame a focused field is measured against. Without it
+                `scrollFieldIntoView` has nothing to measure to and silently
+                does nothing — the exact shape of the last two failures. */}
+            <View ref={contentRef}>
             {/* Map strip: shows where the pin is, opens the full picker. */}
             <TouchableOpacity
               style={styles.mapStrip}
@@ -345,6 +466,13 @@ export function ConfirmAddressModal({
                 // is genuinely ambiguous again. Without this the "I've moved"
                 // answer would clear the pin and open nothing.
                 onOpenMap={() => setMapVisible(true)}
+                /* House number is the bottom of that block and the field the
+                   keyboard actually covers. */
+                onFieldFocus={(ref) => {
+                  markFieldFocused();
+                  scrollFieldIntoView(ref);
+                }}
+                onFieldBlur={markFieldBlurred}
               />
             ) : (
               <Text style={styles.loading}>Checking your pin…</Text>
@@ -375,9 +503,10 @@ export function ConfirmAddressModal({
                 <Text style={styles.skipText}>Not now</Text>
               </TouchableOpacity>
             ) : null}
+            </View>
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
 
       <MapPicker
         visible={mapVisible}
@@ -402,6 +531,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
+  },
+  scrollContent: {
+    // Clears the home indicator and stops the last field sitting flush against
+    // the keyboard once the sheet has been pushed up.
+    paddingBottom: 24,
   },
   sheet: {
     backgroundColor: "#FFFFFF",

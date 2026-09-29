@@ -21,8 +21,9 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { BottomSheet } from "@/components/ui/BottomSheet";
 import React, { useEffect } from "react";
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useDeadline } from "@/hooks/useDeadline";
 import { trackProfileBonusShown } from "@/utils/locationAnalytics";
 import type { MissingField } from "@/utils/locationGate";
@@ -121,16 +122,20 @@ export function FinishProfileModal({
   }, [offeredPoints, offeredUntil]);
 
   return (
-    <Modal
+    /*
+     * `dismissible` governs the backdrop tap, the drag and Android back
+     * alike — a hard gate that could be swiped away would not be a gate, and
+     * routing all three through the one flag is how they cannot disagree.
+     */
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      // Android's back button must route through the same path as any other
-      // dismissal, or a hard gate is trivially bypassed by pressing back.
-      onRequestClose={dismissible ? onDismiss : () => {}}
+      onClose={onDismiss}
+      dismissible={dismissible}
+      style={styles.sheet}
+      extraInset={34}
+      handleTint="light"
     >
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
+      <>
           {showBonus ? (
             <View style={styles.badgeRow}>
               <View style={styles.badge}>
@@ -208,21 +213,18 @@ export function FinishProfileModal({
               <Text style={styles.skipText}>Not now</Text>
             </TouchableOpacity>
           ) : null}
-        </View>
-      </View>
-    </Modal>
+      </>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: "#0E4C4C",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 24,
     paddingTop: 28,
-    paddingBottom: 34,
     gap: 6,
   },
   badgeRow: {

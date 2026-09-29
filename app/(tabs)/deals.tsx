@@ -1,4 +1,6 @@
 import { Deal, useAppStore } from "@/store/store";
+import { BottomSheet } from "@/components/ui/BottomSheet";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
@@ -11,7 +13,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -36,7 +38,14 @@ const DealsScreen = () => {
   // The iOS tab bar is absolutely positioned; without this the last card
   // scrolls under it. No-op on Android, where the bar takes layout.
   const tabBarOverflow = useBottomTabOverflow();
-  const { user, getDeals, deals, isDealsLoading, dealsError } = useAppStore();
+  const { user, getDeals, deals, isDealsLoading, dealsError, getProfile } =
+    useAppStore();
+
+  // The same data the screen loads on mount, fetched again on a pull.
+  const refreshAll = React.useCallback(async () => {
+    await Promise.all([getDeals(), getProfile()]);
+  }, [getDeals, getProfile]);
+  const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
   // `isProfileComplete` now covers the saved coordinate and house number too
   // (owner ruling; street address is no longer part of it), so the local
   // `hasLocation` this screen used to keep — and which defined the same idea
@@ -257,6 +266,9 @@ const DealsScreen = () => {
         <ScrollView
           contentContainerStyle={[styles.list, { paddingBottom: 32 + tabBarOverflow }]}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5d7481" />
+          }
         >
           {available.map((item) => renderCard(item, false))}
           {filter === "all" && used.length > 0 && available.length > 0 && (
@@ -267,14 +279,15 @@ const DealsScreen = () => {
       )}
 
       {/* ── Step 1: Coupon detail modal ── */}
-      <Modal
+      <BottomSheet
         visible={couponModal.visible}
-        transparent
-        animationType="slide"
-        onRequestClose={closeCouponModal}
+        onClose={closeCouponModal}
+        style={styles.couponSheet}
+        /* The card opens with its own coloured header, so the grab bar
+           floats over it rather than sitting on a strip of sheet above. */
+        handleFloating
+        handleTint="light"
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.couponSheet}>
 
             {/* Teal header */}
             <View style={styles.couponHeader}>
@@ -371,13 +384,8 @@ const DealsScreen = () => {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.closeBtn} onPress={closeCouponModal}>
-                <Text style={styles.closeBtnText}>Close</Text>
-              </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheet>
 
     </View>
   );
@@ -515,11 +523,6 @@ const styles = StyleSheet.create({
   availTextDisabled: { color: "#aaa" },
 
   // ── Coupon detail modal ──
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
-  },
   couponSheet: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 28,
@@ -662,8 +665,6 @@ const styles = StyleSheet.create({
   },
   downloadBtnDisabled: { opacity: 0.65 },
   downloadBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
-  closeBtn: { paddingVertical: 12, width: "100%", alignItems: "center" },
-  closeBtnText: { color: "#999", fontSize: 14, fontWeight: "500" },
 });
 
 export default DealsScreen;

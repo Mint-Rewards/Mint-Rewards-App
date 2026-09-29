@@ -1,4 +1,8 @@
+import InvitationCard from "@/components/collections/InvitationCard";
+import PastCollectionCard from "@/components/collections/PastCollectionCard";
 import Navbar from "@/components/ui/navbar";
+import { useInvitations } from "@/hooks/useInvitations";
+import { usePastCollections } from "@/hooks/usePastCollections";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
 import {
@@ -17,8 +21,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useFocusEffect } from "expo-router";
 import React from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 type SectionKey = "past" | "upcoming";
 
@@ -43,9 +56,10 @@ const CollectionsScreen = () => {
   }
 
   // Demo content is scoped to a small allowlist of accounts. Everyone else
-  // gets the original empty state, untouched.
+  // gets the real screen: their own invitations, and the original empty state
+  // when there are none.
   if (!isDemoCollectionsUser(user?.email)) {
-    return <EmptyCollectionsState user={user} />;
+    return <RealCollectionsScreen user={user} />;
   }
 
   return (
@@ -53,6 +67,183 @@ const CollectionsScreen = () => {
       user={user}
       initialSection={section === "upcoming" ? "upcoming" : "past"}
     />
+  );
+};
+
+/**
+ * The collections tab for an ordinary account.
+ *
+ * An invitation is real server state about a real round, and it used to be
+ * rendered only inside DemoCollectionsScreen — so every household outside a
+ * three-address allowlist was invited by push, tapped the notification, and
+ * landed on "No Collections Found". The demo past-pickups content stays
+ * allowlisted; being asked whether a van may come to your door does not.
+ */
+const RealCollectionsScreen = ({ user }: { user: User | null }) => {
+  // The iOS tab bar is absolutely positioned, so the list has to clear it.
+  const tabBarOverflow = useBottomTabOverflow();
+  const { invitations, hydrated, answering, respond } = useInvitations();
+  const {
+    collections: past,
+    hydrated: pastHydrated,
+    failed: pastFailed,
+    reload: reloadPast,
+  } = usePastCollections();
+
+  /*
+   * History is fetched again whenever this tab comes into view.
+   *
+   * It used to be fetched once, when the screen mounted, and never again —
+   * so a household watching their own round finish saw it vanish from
+   * "Coming up" and never arrive below. The completed round was in the API
+   * the whole time; nothing ever asked a second time.
+   *
+   * Deliberately not polled. History changes when a round ends, which is
+   * rare, and useInvitations already polls for the thing that changes by the
+   * second. Focus is the moment a household is actually looking.
+   */
+  useFocusEffect(
+    React.useCallback(() => {
+      reloadPast();
+    }, [reloadPast]),
+  );
+
+  /*
+   * And once more when a round leaves the invitation list.
+   *
+   * A household sitting on this screen as the van finishes never loses
+   * focus, so nothing above would fire. An invitation disappearing is
+   * exactly the event that puts something in history.
+   */
+  const [refreshing, setRefreshing] = React.useState(false);
+  const refresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await reloadPast();
+    } finally {
+      // In a finally: a failed reload must still release the spinner, or the
+      // screen looks like it is still trying when it has given up.
+      setRefreshing(false);
+    }
+  }, [reloadPast]);
+
+  const liveIds = invitations.map((i) => i.collectionId).join(",");
+  React.useEffect(() => {
+    reloadPast();
+  }, [liveIds, reloadPast]);
+
+  // "No Collections Found" is a claim, and during the first fetch it is one we
+  // cannot make yet. Someone who tapped a push notification would otherwise
+  // watch it assert the opposite of why they are here, for as long as the
+  // request takes.
+  if (!hydrated || !pastHydrated) {
+    return (
+      <View style={styles.container}>
+        <StatusBar style="light" />
+        <Navbar user={user} />
+        <View style={styles.content}>
+          <ActivityIndicator size="large" color="#00528A" />
+        </View>
+      </View>
+    );
+  }
+
+  // Nothing now and nothing before: the screen this tab has always shown,
+  // unchanged. A household with history is never empty again, which is the
+  // point — this tab went blank the moment a round finished.
+  if (invitations.length === 0 && past.length === 0) {
+    // "You haven't started any collections yet" is a claim about the
+    // household, and when the request failed we have no grounds for it. The
+    // history route was once deployed a commit behind the app and answered
+    // 404, and this screen told every household they had no history at all.
+    if (pastFailed) {
+      return (
+        <EmptyCollectionsState
+          user={user}
+          icon="cloud-offline-outline"
+          title="Couldn't load your collections"
+          subtitle="We couldn't reach the server just now."
+          description="Your collections are safe. Pull down or try again in a moment."
+        />
+      );
+    }
+    return <EmptyCollectionsState user={user} />;
+  }
+
+  return (
+    <View style={styles.container}>
+      <StatusBar style="light" />
+      <Navbar user={user} />
+      <ScrollView
+        style={styles.listScroll}
+        contentContainerStyle={[styles.listContent, { paddingBottom: tabBarOverflow + 24 }]}
+        showsVerticalScrollIndicator={false}
+        /*
+          The affordance everyone reaches for first. Focus covers leaving and
+          coming back; this covers a household already on the screen who has
+          just watched the van drive away.
+        */
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#5d7481" />
+        }
+      >
+        {invitations.length > 0 ? (
+          <>
+            <Text style={styles.sectionHeading}>Coming up</Text>
+            {invitations.map((invitation) => (
+              <InvitationCard
+                key={invitation.collectionId}
+                invitation={invitation}
+                answering={answering}
+                onRespond={respond}
+              />
+            ))}
+          </>
+        ) : null}
+
+        {past.length > 0 ? (
+          <>
+            {/* Headed only against something above it: a household whose only
+                rounds are past does not need the word "previous" to know. */}
+            <Text
+              style={[
+                styles.sectionHeading,
+                invitations.length === 0 && styles.sectionHeadingFirst,
+              ]}
+            >
+              {invitations.length > 0 ? "Previous collections" : "Your collections"}
+            </Text>
+            {past.map((collection) => (
+              <PastCollectionCard key={collection.collectionId} collection={collection} />
+            ))}
+          </>
+        ) : null}
+
+        {/*
+          A household with an invitation and no history had a card at the top
+          of the screen and then nothing at all — half a screen of white that
+          reads as something failing to load rather than as an absence.
+
+          Says what will fill it, once. Not shown to a household that has
+          history, and not shown when there is nothing above it either: that
+          case is EmptyCollectionsState, which is a whole screen of its own.
+        */}
+        {invitations.length > 0 && past.length === 0 ? (
+          <View style={styles.historyHint}>
+            <Ionicons
+              name={pastFailed ? "cloud-offline-outline" : "time-outline"}
+              size={18}
+              color="#94A3B8"
+            />
+            <Text style={styles.historyHintText}>
+              {pastFailed
+                ? "We couldn't load your previous collections just now."
+                : "Once this round is done it will appear here, with what was collected."}
+            </Text>
+          </View>
+        ) : null}
+      </ScrollView>
+    </View>
   );
 };
 
@@ -185,6 +376,10 @@ const DemoCollectionsScreen = ({
   // uncommitted highlight is throwaway UI state.
   const [pickedSlotIds, setPickedSlotIds] = React.useState<Record<string, string>>({});
 
+  // Server truth with a deadline on it, so it is fetched here rather than kept
+  // in the store — see the note in useInvitations.
+  const { invitations, answering, respond } = useInvitations();
+
   const pickSlot = (collectionId: string, slotId: string) => {
     setPickedSlotIds((prev) => ({ ...prev, [collectionId]: slotId }));
   };
@@ -240,6 +435,20 @@ const DemoCollectionsScreen = ({
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
+        {/*
+          Outside the section switcher, deliberately. An invitation is a
+          question being asked of this household right now, with a deadline on
+          it; burying it under a tab nobody opened is how a round ends up with
+          nobody confirmed on it.
+        */}
+        {invitations.map((invitation) => (
+          <InvitationCard
+            key={invitation.collectionId}
+            invitation={invitation}
+            answering={answering}
+            onRespond={respond}
+          />
+        ))}
         {activeSection === "past"
           ? pastPickups.map((pickup) => {
               const completed = pickup.status === "COMPLETED";
@@ -408,6 +617,21 @@ const DemoCollectionsScreen = ({
 };
 
 const styles = StyleSheet.create({
+  historyHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EEF1F4",
+    borderStyle: "dashed",
+    backgroundColor: "#FAFBFC",
+  },
+  historyHintText: { flex: 1, fontSize: 13, color: "#94A3B8", lineHeight: 18 },
+
   container: {
     flex: 1,
     backgroundColor: "#ffffff",
@@ -656,6 +880,17 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: "#ffffff",
   },
+  sectionHeading: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#5d7481",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginHorizontal: 20,
+    marginTop: 18,
+    marginBottom: 10,
+  },
+  sectionHeadingFirst: { marginTop: 4 },
   listScroll: {
     flex: 1,
   },

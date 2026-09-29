@@ -1,8 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useSheetInset } from "@/hooks/useSheetInset";
 import React, { useState } from "react";
 import {
   FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  Pressable,
   StyleProp,
   StyleSheet,
   Text,
@@ -47,11 +52,14 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   error,
   containerStyle,
 }) => {
+  // Edge-to-edge otherwise puts this sheet's last control — a Close or a
+  // Cancel — flush against the ||| O < row.
+  const sheetInset = useSheetInset();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
 
   const filtered = options.filter((o) =>
-    o.toLowerCase().includes(search.toLowerCase())
+    o.toLowerCase().includes(search.toLowerCase()),
   );
 
   const handleSelect = (option: string) => {
@@ -75,7 +83,20 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
           hasError && styles.inputError,
           disabled && styles.selectorDisabled,
         ]}
-        onPress={() => !disabled && setIsOpen(true)}
+        onPress={() => {
+          if (disabled) return;
+          /*
+           * Put the keyboard away BEFORE the sheet arrives.
+           *
+           * A React Native <Modal> is its own window, so opening one while a
+           * field is focused dismisses the keyboard underneath it — and the
+           * KeyboardAvoidingView below then resizes mid-gesture, under a
+           * finger that is still down. Doing it first makes the sheet open
+           * against a settled layout instead of a moving one.
+           */
+          Keyboard.dismiss();
+          setIsOpen(true);
+        }}
         activeOpacity={disabled ? 1 : 0.7}
       >
         <Text
@@ -100,83 +121,117 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         animationType="fade"
         onRequestClose={() => setIsOpen(false)}
       >
-        <TouchableOpacity
-          style={styles.overlay}
-          activeOpacity={1}
-          onPress={() => {
-            setIsOpen(false);
-            setSearch("");
-          }}
+        {/*
+          The card is pinned to the bottom and the search field puts a keyboard
+          directly over the options it is filtering. Lifting the whole sheet is
+          the only thing that helps here: the list is already scrollable, but
+          scrolling cannot reveal rows drawn underneath the keyboard.
+        */}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          /*
+           * Android too. `undefined` is a no-op, and the usual reason that is
+           * survivable — windowSoftInputMode adjustResize shrinking the
+           * activity — does not apply inside a React Native <Modal>, which is
+           * its own window and does not resize with the activity. This card is
+           * pinned to the bottom, so "height" lifts it; "padding" would add
+           * space beneath something already at the bottom.
+           */
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-          <View style={styles.modalCard}>
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select {label}</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setIsOpen(false);
-                  setSearch("");
-                }}
-              >
-                <Ionicons name="close" size={22} color="#333333" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Search */}
-            <View style={styles.searchContainer}>
-              <Ionicons name="search-outline" size={16} color="#999999" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder={`Search ${label.toLowerCase()}...`}
-                placeholderTextColor="#999999"
-                value={search}
-                onChangeText={setSearch}
-              />
-              {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch("")}>
-                  <Ionicons name="close-circle" size={16} color="#999999" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Options list */}
-            <FlatList
-              data={filtered}
-              keyExtractor={(item) => item}
-              style={styles.list}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>No results found</Text>
-              }
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.option,
-                    item === value && styles.optionSelected,
-                  ]}
-                  onPress={() => handleSelect(item)}
-                >
-                  <Text
-                    style={[
-                      styles.optionText,
-                      item === value && styles.optionTextSelected,
-                    ]}
-                  >
-                    {item}
-                  </Text>
-                  {item === value && (
-                    <Ionicons
-                      name="checkmark"
-                      size={18}
-                      color={Constants.appThemeColor}
-                    />
-                  )}
-                </TouchableOpacity>
-              )}
+          <View style={styles.overlay}>
+            {/*
+              The dimmed area as its own layer BEHIND the card, not wrapped
+              around it.
+              
+              It used to wrap: a TouchableOpacity containing the card, so every
+              press inside the card that was not itself touchable closed the
+              sheet — and worse, a layout change counted as a press. Opening
+              this picker while another field held the keyboard dismissed that
+              keyboard, the KeyboardAvoidingView resized, the wrapper fired,
+              the sheet closed, the finger was back on the dropdown, and it
+              reopened. That loop is what it looked like: a sheet flickering
+              open and shut as fast as it could render.
+            */}
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => {
+                setIsOpen(false);
+                setSearch("");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
             />
+            <View style={[styles.modalCard, { paddingBottom: sheetInset }]}>
+              {/* Header */}
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select {label}</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setIsOpen(false);
+                    setSearch("");
+                  }}
+                >
+                  <Ionicons name="close" size={22} color="#333333" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Search */}
+              <View style={styles.searchContainer}>
+                <Ionicons name="search-outline" size={16} color="#999999" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder={`Search ${label.toLowerCase()}...`}
+                  placeholderTextColor="#999999"
+                  value={search}
+                  onChangeText={setSearch}
+                />
+                {search.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearch("")}>
+                    <Ionicons name="close-circle" size={16} color="#999999" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Options list */}
+              <FlatList
+                data={filtered}
+                keyExtractor={(item) => item}
+                style={styles.list}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>No results found</Text>
+                }
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.option,
+                      item === value && styles.optionSelected,
+                    ]}
+                    onPress={() => handleSelect(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.optionText,
+                        item === value && styles.optionTextSelected,
+                      ]}
+                    >
+                      {item}
+                    </Text>
+                    {item === value && (
+                      <Ionicons
+                        name="checkmark"
+                        size={18}
+                        color={Constants.appThemeColor}
+                      />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
           </View>
-        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
