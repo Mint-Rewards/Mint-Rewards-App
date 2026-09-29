@@ -101,6 +101,11 @@ const PLACEMENT_TRUST: Record<
   { source: LocationSource; precision: LocationPrecision }
 > = {
   user_placed: { source: "map_pin", precision: "building" },
+  // Their own tap, but made at neighbourhood scale. `area` still counts toward
+  // a zone's signup threshold — density is what that measures — while failing
+  // the routable test, so nobody is dispatched to a guess. Claiming "building"
+  // here is what let an imprecise pin pass as a verified rooftop.
+  user_placed_coarse: { source: "map_pin", precision: "area" },
   derived: { source: "legacy_string", precision: "unknown" },
   default: { source: "legacy_string", precision: "unknown" },
 };

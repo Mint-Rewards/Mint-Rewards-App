@@ -8,6 +8,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +21,7 @@ import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { alertOnce } from "@/utils/alert";
 import { captureError } from "@/utils/sentry";
 import { useAppStore } from "../../store/store";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 
 interface EmailField {
   id: string;
@@ -84,7 +86,13 @@ function referralOutcomeAlert(
 }
 
 const ShareScreen = () => {
-  const { sendReferral, isLoading, error, user } = useAppStore();
+  const { sendReferral, isLoading, error, user, getProfile } = useAppStore();
+
+  // The same data the screen loads on mount, fetched again on a pull.
+  const refreshAll = React.useCallback(async () => {
+    await getProfile();
+  }, [getProfile]);
+  const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
   // Kill switch for the whole invite flow — lets referrals be paused (backend
   // incident, abuse, a mailer outage) without shipping a build.
   //
@@ -297,6 +305,9 @@ const ShareScreen = () => {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5d7481" />
+        }
         showsVerticalScrollIndicator={false}
       >
         {/* The one peak on this screen. Flat navy panel, display type at full

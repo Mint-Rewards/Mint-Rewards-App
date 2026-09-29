@@ -30,3 +30,6 @@ MintRewards.app
 graphify-out/
 docs/
 .env.local
+
+# Generator scratch: the OSM cache is 30MB and rebuildable from the extract.
+scripts/.pak-*.json

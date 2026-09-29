@@ -10,7 +10,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { TownChangeModal } from "@/components/location/TownChangeModal";
 import { LocationPicker } from "@/components/ui/LocationPicker";
@@ -51,6 +51,19 @@ interface Props {
    * anything about scrolling.
    */
   pinRef?: React.RefObject<View | null>;
+  /**
+   * Told when one of these text fields takes the cursor, and which one.
+   *
+   * Same bargain as `pinRef`: the host scrolls, this component does not learn
+   * how. It matters here because the bottom of this block — house number and
+   * street address — is the part of the form an Android keyboard actually
+   * covers. The fields the HOST renders sit above it and are never hidden, so
+   * a host that wired focus handling only to its own inputs fixed the half of
+   * the form that was never broken.
+   */
+  onFieldFocus?: (field: React.RefObject<TextInput | null>) => void;
+  /** Told when the cursor leaves, so the host can give back the room. */
+  onFieldBlur?: () => void;
 }
 
 export function LocationFields({
@@ -62,8 +75,30 @@ export function LocationFields({
   onOpenMap,
   showStreet = true,
   pinRef,
+  onFieldFocus,
+  onFieldBlur,
 }: Props) {
   const { values } = form;
+
+  /**
+   * Whether answering "I've moved" should open the map once the sheet is gone.
+   *
+   * Held rather than acted on immediately: see the comment on `onMoved`.
+   */
+  const [openMapAfterClose, setOpenMapAfterClose] = useState(false);
+
+  // One per text field, so the host is handed something it can measure.
+  const townOtherRef = useRef<TextInput>(null);
+  const subAreaOtherRef = useRef<TextInput>(null);
+  const houseNoRef = useRef<TextInput>(null);
+  const streetRef = useRef<TextInput>(null);
+
+  /** The focus/blur pair every text field below shares. */
+  const focusProps = (ref: React.RefObject<TextInput | null>) => ({
+    ref,
+    onFocus: () => onFieldFocus?.(ref),
+    onBlur: () => onFieldBlur?.(),
+  });
 
   const suggestions = (list: string[], onPick: (v: string) => void) => {
     if (list.length === 0) return null;
@@ -198,6 +233,7 @@ export function LocationFields({
             </Text>
             <View style={styles.row}>
               <TextInput
+                {...focusProps(townOtherRef)}
                 style={[styles.input, styles.rowInput, errors.town && styles.inputError]}
                 value={values.townOther}
                 // Writes to `townOther` but clears the `town` error — both fields
@@ -255,8 +291,22 @@ export function LocationFields({
           currentTown={values.town.trim() || values.townOther.trim()}
           onMoved={() => {
             trackTownChangeResolved("moved");
-            if (form.resolveTownChange(true)) onOpenMap?.();
+            /*
+             * Remember to open the map; do not open it here.
+             *
+             * Answering closes this sheet, and the sheet outlives `visible`
+             * so it can animate out. React Native silently drops a Modal
+             * presented while another is dismissing, so opening the picker in
+             * this handler opened nothing — the sheet went away and the map
+             * never came. `onClosed` below fires once it has actually gone.
+             */
+            if (form.resolveTownChange(true)) setOpenMapAfterClose(true);
             clearError("town");
+          }}
+          onClosed={() => {
+            if (!openMapAfterClose) return;
+            setOpenMapAfterClose(false);
+            onOpenMap?.();
           }}
           onRelabel={() => {
             trackTownChangeResolved("relabelled");
@@ -317,6 +367,7 @@ export function LocationFields({
 
           {form.subAreaIsOther ? (
             <TextInput
+              {...focusProps(subAreaOtherRef)}
               style={[styles.input, styles.stacked]}
               value={values.subAreaOther}
               onChangeText={(v) => {
@@ -351,6 +402,7 @@ export function LocationFields({
           <Text style={styles.asterisk}> *</Text>
         </Text>
         <TextInput
+          {...focusProps(houseNoRef)}
           style={[styles.input, errors.houseNo && styles.inputError]}
           value={values.houseNo}
           onChangeText={(v) => {
@@ -369,6 +421,7 @@ export function LocationFields({
         <View style={styles.group}>
           <Text style={styles.label}>Street Address</Text>
           <TextInput
+            {...focusProps(streetRef)}
             style={styles.input}
             value={values.address}
             onChangeText={(v) => form.setValue("address", v)}

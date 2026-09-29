@@ -2,6 +2,8 @@ import { LocationFields } from "@/components/location/LocationFields";
 import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
 import { useLocationForm } from "@/hooks/useLocationForm";
+import { ANDROID_KEYBOARD_FALLBACK, useKeyboardInset } from "@/hooks/useKeyboardInset";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { alertOnce } from "@/utils/alert";
 import {
@@ -28,7 +30,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -56,6 +57,12 @@ const FOCUS_SCROLL_MARGIN = 24;
  * have been laid out; measuring in the same tick as mount returns zeroes.
  */
 const FOCUS_SETTLE_MS = 350;
+
+/** One frame, so the keyboard animation has begun before we measure. */
+const FIELD_FOCUS_SCROLL_MS = 120;
+
+/** Long enough for the next field's focus to arrive and cancel the blur. */
+const FIELD_BLUR_GRACE_MS = 150;
 
 const EditProfile = () => {
   const {
@@ -86,6 +93,55 @@ const EditProfile = () => {
   const focusTarget = parseProfileFocus(focus);
 
   const scrollRef = useRef<ScrollView>(null);
+  // 0 on iOS, where the prop below does the job.
+  const keyboardInset = useKeyboardInset();
+  /**
+   * Whether a text field currently holds the cursor.
+   *
+   * Drives the scroll room below. Tracked separately from `keyboardInset`
+   * because the room has to be there BEFORE the scroll is attempted, and
+   * because a measured height of zero must not mean "no keyboard".
+   */
+  const [fieldFocused, setFieldFocused] = useState(false);
+  /**
+   * How much room to leave below the form while typing.
+   *
+   * The measured height when Android gives one, and an assumed keyboard when
+   * it does not. Zero once the cursor leaves, so the form does not carry a
+   * screenful of blank space around at rest.
+   */
+  /**
+   * Moving between two fields must not look like leaving the form.
+   *
+   * Android fires blur on the old field before focus on the new one, and
+   * acting on that blur collapses the reserved room and bounces the scroll
+   * between every tap. Deferring the blur lets the incoming focus cancel it;
+   * a real dismissal has nothing to cancel it and lands normally.
+   */
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markFieldFocused = () => {
+    if (blurTimer.current) clearTimeout(blurTimer.current);
+    setFieldFocused(true);
+  };
+  const markFieldBlurred = () => {
+    if (blurTimer.current) clearTimeout(blurTimer.current);
+    blurTimer.current = setTimeout(() => setFieldFocused(false), FIELD_BLUR_GRACE_MS);
+  };
+  useEffect(
+    () => () => {
+      if (blurTimer.current) clearTimeout(blurTimer.current);
+    },
+    [],
+  );
+
+  const keyboardRoom = !fieldFocused
+    ? 0
+    : Platform.OS === "android"
+      ? Math.max(keyboardInset, ANDROID_KEYBOARD_FALLBACK)
+      : keyboardInset;
+  // Edge-to-edge draws under the system bars; this is how far up the
+  // navigation bar reaches.
+  const insets = useSafeAreaInsets();
   const contentRef = useRef<View>(null);
   const userNameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
@@ -244,6 +300,36 @@ const EditProfile = () => {
         }),
       () => {},
     );
+  };
+
+  /**
+   * Puts a newly-focused field near the top of the viewport.
+   *
+   * This is the part that actually rescues a field from under the keyboard,
+   * and it is deliberately independent of how tall the keyboard is: an
+   * Android keyboard never covers the top of the screen, so a field scrolled
+   * up there is visible whatever the keyboard is doing. Both earlier attempts
+   * shrank the viewport by a measured height instead, and both did nothing,
+   * because under edge-to-edge that measurement does not arrive.
+   *
+   * Every failure path is a no-op: a measurement that cannot be taken must
+   * leave the user on a perfectly usable form.
+   */
+  const scrollFieldIntoView = (anchor: React.RefObject<TextInput | null>) => {
+    setTimeout(() => {
+      const target = anchor.current;
+      const content = contentRef.current;
+      if (!target || !content) return;
+      target.measureLayout(
+        content,
+        (_x, y) =>
+          scrollRef.current?.scrollTo({
+            y: Math.max(0, y - FOCUS_SCROLL_MARGIN),
+            animated: true,
+          }),
+        () => {},
+      );
+    }, FIELD_FOCUS_SCROLL_MS);
   };
 
   // Identity is this screen's; everything about the place is `locationSave`'s,
@@ -475,28 +561,80 @@ const EditProfile = () => {
         readOnly={field === "email"}
         maxLength={field === "phone" ? 11 : undefined}
         textAlignVertical="center"
+        onFocus={() => {
+          markFieldFocused();
+          if (inputRef) scrollFieldIntoView(inputRef);
+        }}
+        onBlur={markFieldBlurred}
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
     </View>
   );
 
   return (
-    <View style={styles.container}>
+    /*
+     * The bottom inset is reserved HERE, on the screen, not inside the
+     * scroll content.
+     *
+     * Edge-to-edge (Expo SDK 56, Android) draws the app under the ||| O <
+     * row. Padding the scroll CONTENT only adds scrollable space below the
+     * fold — the viewport still runs to the bottom of the glass, so whatever
+     * is passing under the navigation bar at any moment is still covered by
+     * it. Ending the viewport above the bar is what stops that, and it holds
+     * whether or not anything is scrolled. The home tabs escape this only
+     * because the tab bar happens to occupy the same space.
+     */
+    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <StatusBar style="light" />
       <Navbar user={user} />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      {/*
+        Two mechanisms, one per platform, because there is no prop that does
+        both.
+
+        iOS gets `automaticallyAdjustKeyboardInsets`, which insets the scroll
+        content by the real keyboard height. A KeyboardAvoidingView was here
+        first and did not work: `behavior="padding"` only shrinks the view, so
+        a field already below the fold stayed unreachable.
+
+        That prop is iOS-ONLY and silently ignored on Android, so for a long
+        time this screen was fixed on one platform and untouched on the other
+        — the bottom fields sat behind the Android keyboard while iOS looked
+        perfect, which is the hardest kind of bug to be told about. Android
+        pads by the measured keyboard height instead.
+      */}
+      <ScrollView
+        ref={scrollRef}
+        /*
+         * marginBottom on the SCROLL VIEW, not padding on its content.
+         *
+         * Expo SDK 56 turns edge-to-edge on for Android, so the window no
+         * longer shrinks when the keyboard opens — the app draws underneath
+         * it. Padding the content only added scrollable space below the
+         * fold; the viewport still ran to the bottom of the screen and the
+         * focused field stayed exactly where the keyboard covered it.
+         *
+         * Ending the viewport above the keyboard is what actually lifts it.
+         */
+        style={[styles.content, { marginBottom: keyboardInset }]}
+        /*
+         * Somewhere for a focused field to scroll TO.
+         *
+         * `scrollFieldIntoView` lifts the field to the top of the viewport,
+         * and a ScrollView cannot scroll past the end of its content — so
+         * without this, the last few fields simply have nowhere to go and
+         * stay exactly where the keyboard covers them. The navigation bar is
+         * not accounted for here; the container reserves it.
+         */
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingBottom: 120 + keyboardRoom },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
       >
-        <ScrollView
-          ref={scrollRef}
-          style={styles.content}
-          contentContainerStyle={styles.contentContainer}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
         <View style={styles.formContainer} ref={contentRef}>
           <View style={styles.profileIconContainer}>
             <LinearGradient
@@ -540,6 +678,13 @@ const EditProfile = () => {
                 clearError={clearError}
                 onOpenMap={() => setMapVisible(true)}
                 pinRef={pinRef}
+                /* House number and street address are the bottom of the form
+                   and the fields the keyboard actually covers. */
+                onFieldFocus={(ref) => {
+                  markFieldFocused();
+                  scrollFieldIntoView(ref);
+                }}
+                onFieldBlur={markFieldBlurred}
               />
             </View>
           </View>
@@ -600,8 +745,7 @@ const EditProfile = () => {
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
         </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </View>
   );
 };

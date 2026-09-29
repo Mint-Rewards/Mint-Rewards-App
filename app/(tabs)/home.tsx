@@ -2,6 +2,8 @@ import Navbar from "@/components/ui/navbar";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { useDebouncedNavigation } from "@/hooks/useDebouncedNavigation";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
+import { useInvitations } from "@/hooks/useInvitations";
+import { whenLabel } from "@/utils/collectionDate";
 import {
   TOTAL_POINTS_EARNED,
   TOTAL_WASTE_KG,
@@ -12,6 +14,7 @@ import {
   upcomingStatusLabel,
 } from "@/constants/mockCollectionsData";
 import { co2FromWasteKg, useAppStore } from "@/store/store";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
 import { mergeBrandsWithDeals } from "@/utils/deals";
@@ -30,6 +33,7 @@ import React, { useEffect } from "react";
 import {
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -260,6 +264,27 @@ export default function HomeScreen() {
       : undefined;
   }, [showDemoCollections, scheduledCollection, upcomingCollections]);
 
+  /*
+   * A real collection, if this household has one.
+   *
+   * The card underneath used to fall straight from "you have a booking" to
+   * "collections are going live soon" — which is a reasonable thing to tell
+   * somebody with nothing happening, and the wrong thing to tell somebody
+   * whose van is on its way.
+   *
+   * The most pressing one wins: a van already driving, then a question
+   * waiting for an answer, then a round they have accepted. Nothing changes
+   * for a household with no invitation at all.
+   */
+  const { invitations } = useInvitations();
+  const live = React.useMemo(() => {
+    const rank = (i: (typeof invitations)[number]) =>
+      i.collectionStatus === "IN_PROGRESS" ? 0 : i.state === "answerable" ? 1 : 2;
+    return [...invitations]
+      .filter((i) => i.state !== "declined")
+      .sort((a, b) => rank(a) - rank(b) || a.scheduledDate.localeCompare(b.scheduledDate))[0];
+  }, [invitations]);
+
   // Approved brands are the list; deals are what each one carries. A brand
   // approved in BrandHub appears here even with no live deals yet — tapping it
   // lands on redeem's "Not Eligible Yet!" state rather than nothing at all.
@@ -268,6 +293,24 @@ export default function HomeScreen() {
     [approvedBrands, deals],
   );
   const [co2, setCo2] = React.useState(0);
+
+  /*
+   * Everything this screen shows, fetched again on a pull.
+   *
+   * The same calls the mount effect makes, so a pull is exactly "open this
+   * screen again" and nothing can be refreshed by one path and not the
+   * other. Invitations poll on their own; they are not listed here because
+   * useInvitations already keeps them current by the second.
+   */
+  const refreshAll = React.useCallback(async () => {
+    await Promise.all([
+      wasteToCo2().then((value: number) => setCo2(value)),
+      getDeals(),
+      getBrands(),
+      loadScheduledCollection(),
+    ]);
+  }, [wasteToCo2, getDeals, getBrands, loadScheduledCollection]);
+  const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
 
   useEffect(() => {
     wasteToCo2().then((value: number) => setCo2(value));
@@ -306,7 +349,17 @@ export default function HomeScreen() {
   // ruling — see isProfileComplete; street address is no longer part of it),
   // so the location terms that used to be ANDed here would be restating it.
   const showBrandCards = profileComplete && !locationUpdateNeeded;
-  const canOpenCollections = !!booked || !!(showDemoCollections && nextCollection && nextSlot);
+  /*
+   * Every state this card can show that has somewhere to go.
+   *
+   * `live` was missing, and it is the one that asks to be tapped: the card
+   * read "Collection Wednesday — can we come?" over the words "Tap to
+   * answer", and then handed Pressable an undefined onPress. It said tap and
+   * did nothing. The content gained a branch for a real invitation; this gate
+   * did not, and nothing connected the two.
+   */
+  const canOpenCollections =
+    !!booked || !!live || !!(showDemoCollections && nextCollection && nextSlot);
 
   return (
     <View style={styles.container}>
@@ -320,6 +373,9 @@ export default function HomeScreen() {
           styles.scrollContent,
           { paddingBottom: 40 + tabBarOverflow },
         ]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5d7481" />
+        }
       >
         {/* Stats */}
         <View style={styles.statsContainer}>
@@ -396,6 +452,29 @@ export default function HomeScreen() {
                       {booked.collection.code} · {booked.slot.time}
                     </Text>
                   </>
+                ) : live ? (
+                  /*
+                    A real round, in the order a household cares about: the
+                    van is coming NOW, or they owe an answer, or it is
+                    settled. Anything else falls through to what this card
+                    has always said.
+                  */
+                  <>
+                    <Text style={styles.collectionPrimary}>
+                      {live.collectionStatus === "IN_PROGRESS"
+                        ? `${live.captainName ?? "Your collector"} is on the way`
+                        : live.state === "answerable"
+                          ? `Collection ${whenLabel(live.scheduledDate)} — can we come?`
+                          : `You are on the round ${whenLabel(live.scheduledDate)}`}
+                    </Text>
+                    <Text style={styles.collectionSecondary}>
+                      {live.collectionStatus === "IN_PROGRESS"
+                        ? "Please have your bags out"
+                        : live.state === "answerable"
+                          ? "Tap to answer"
+                          : "Please leave your bags out"}
+                    </Text>
+                  </>
                 ) : showDemoCollections && nextCollection && nextSlot ? (
                   <>
                     <Text style={styles.collectionPrimary}>
@@ -451,6 +530,38 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/*
+          Book a collection — the inverse of being invited to one.
+          Gated on `profileComplete` alone, which is the same single source
+          the deals prompt below uses. The rule behind it is not cosmetic: a
+          household we cannot route to cannot be collected from, so offering
+          the choice would be offering something we cannot deliver. The
+          screen itself re-checks with the server, because completeness here
+          is the app's opinion and routability is operations' fact.
+        */}
+        {profileComplete && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.bookSlotCard}
+              onPress={() => navigateOnce(() => router.push("/bookCollection"))}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              testID="book-collection-card"
+            >
+              <View style={styles.bookSlotIcon}>
+                <Ionicons name="calendar" size={22} color="#0B3B3B" />
+              </View>
+              <View style={styles.bookSlotBody}>
+                <Text style={styles.bookSlotTitle}>Book a collection</Text>
+                <Text style={styles.bookSlotText}>
+                  Pick a date that suits you and we&apos;ll arrange a van.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9FD8C8" />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Coupons */}
         <View style={styles.section}>
@@ -671,6 +782,26 @@ const styles = StyleSheet.create({
   couponName: { fontSize: 26, fontWeight: "700", letterSpacing: -0.3 },
   couponLogoWrapper: { width: 110, height: 110, alignItems: "center", justifyContent: "center" },
   couponLogo: { width: 110, height: 110 },
+  bookSlotCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: "#0E4C4C",
+    borderRadius: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  bookSlotIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#9FD8C8",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bookSlotBody: { flex: 1 },
+  bookSlotTitle: { fontSize: 16.5, fontWeight: "700", color: "#FFFFFF" },
+  bookSlotText: { fontSize: 13.5, color: "#BFE0DA", marginTop: 2, lineHeight: 19 },
   profilePromptCard: {
     flexDirection: "row",
     alignItems: "center",

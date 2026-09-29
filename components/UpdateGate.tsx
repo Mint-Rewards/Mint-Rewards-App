@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   BackHandler,
   Platform,
   StyleSheet,
@@ -42,6 +43,43 @@ try {
 }
 
 const CONFIG_TIMEOUT_MS = 8000;
+
+/**
+ * How long the app must have been away before a resume re-checks for an OTA.
+ *
+ * Without a re-check, an update reaches a device only on a cold start. Android
+ * keeps a backgrounded process alive, so what a tester calls "closing and
+ * reopening the app" is usually a RESUME: no launch, no check, no swap. Two
+ * handsets on the same APK and the same channel then sit on bundles published
+ * a day and a half apart, which is exactly what QA reported — one device
+ * happened to get killed for memory and the other did not.
+ *
+ * Five minutes, so flipping to the camera or a chat and straight back does not
+ * interrupt anything, while coming back to the app later does.
+ */
+const BACKGROUND_RECHECK_MS = 5 * 60 * 1000;
+
+/**
+ * Fetches and applies a waiting update, showing the overlay while it does.
+ *
+ * `reloadAsync` tears down the JS runtime, so nothing after it runs on the
+ * success path. Every failure drops the overlay and leaves the user on the
+ * bundle they have — an update is never worth a broken session.
+ */
+async function applyPendingOta(publish: (next: GateState) => void): Promise<void> {
+  if (!Updates) return;
+  try {
+    const check = await Updates.checkForUpdateAsync();
+    if (!check?.isAvailable) return;
+
+    publish({ kind: "applyingOta" });
+    await Updates.fetchUpdateAsync();
+    await Updates.reloadAsync();
+  } catch (error) {
+    reportFailure("ota_check", error);
+    publish({ kind: "open" });
+  }
+}
 
 /**
  * Duplicated from the module-private `fetchWithTimeout` in store/store.ts
@@ -175,26 +213,8 @@ async function runUpdateChecks(publish: (next: GateState) => void) {
   // --- Step 3: OTA check ----------------------------------------------------
   if (!config.forceOTA || !Updates) return;
 
-  try {
-    const check = await Updates.checkForUpdateAsync();
-    if (!check?.isAvailable) return;
-
-    publish({ kind: "applyingOta" });
-    posthog.capture("update_gate_blocked", { reason: "forced_ota" });
-
-    await Updates.fetchUpdateAsync();
-    // Tears down and relaunches the JS runtime; nothing after this line runs
-    // on the success path, including any state change that would clear the
-    // overlay. That is intentional — the reload replaces this whole tree.
-    await Updates.reloadAsync();
-  } catch (error) {
-    // Includes reloadAsync() failing after a successful fetch. Drop the
-    // overlay and let the user carry on with the bundle they have; the update
-    // will apply on the next cold start via checkAutomatically: "ON_LOAD"
-    // anyway.
-    reportFailure("ota_check", error);
-    publish({ kind: "open" });
-  }
+  posthog.capture("update_gate_blocked", { reason: "forced_ota" });
+  await applyPendingOta(publish);
 }
 
 /**
@@ -224,6 +244,39 @@ export default function UpdateGate() {
     return () => {
       active = false;
     };
+  }, []);
+
+  /**
+   * Re-check when the app comes back after a while away.
+   *
+   * `checkAutomatically: "ON_LOAD"` with `fallbackToCacheTimeout: 0` means a
+   * launch runs the CACHED bundle and downloads the new one behind it, so an
+   * update always lands one launch late — and a resumed Android process never
+   * launches at all. That is how two handsets on the same APK end up a day
+   * and a half apart. This closes it at the one moment the user is already
+   * waiting for the app to come back.
+   *
+   * Deliberately not gated on `forceOTA`: that flag is the emergency "nobody
+   * may continue on an old bundle" lever, and ordinary delivery should not
+   * depend on someone remembering to set it.
+   */
+  const leftAt = useRef<number | null>(null);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next !== "active") {
+        // Record the first departure only; "inactive" then "background" is one
+        // trip away, and overwriting would reset the clock on the way out.
+        leftAt.current ??= Date.now();
+        return;
+      }
+      const away = leftAt.current === null ? 0 : Date.now() - leftAt.current;
+      leftAt.current = null;
+      if (away < BACKGROUND_RECHECK_MS) return;
+      // Same publish contract as the mount check: the overlay goes up only if
+      // there is something to apply, and comes down on any failure.
+      void applyPendingOta(setState);
+    });
+    return () => subscription.remove();
   }, []);
 
   // Swallow the Android hardware back button ONLY while the non-dismissible

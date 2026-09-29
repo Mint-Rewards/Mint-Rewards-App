@@ -7,6 +7,8 @@ import { setUnauthorizedHandler } from "@/utils/session";
 import { addBreadcrumb, captureWarning, setSentryUser } from "@/utils/sentry";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
+import { unregisterDeviceToken } from "@/utils/push";
+import { userFromAuth } from "@/utils/userFromAuth";
 
 const API_URL = API_BASE_URL;
 
@@ -588,33 +590,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const data = await response.json();
 
       if (response.ok) {
-        const user: User = {
-          _id: data.user._id,
+        const user: User = userFromAuth(data.user, {
           token: data.token,
-          email: data.user.email || email,
-          userName: data.user.userName,
-          phone: data.user.phone,
-          isAdmin: data.user.isAdmin || false,
-          avatar: data.user.avatar,
-          address: data.user.address,
-          province: data.user.province,
-          city: data.user.city,
-          town: data.user.town,
-          townOther: data.user.townOther,
-          subArea: data.user.subArea,
-          subAreaOther: data.user.subAreaOther,
-          mintId: data.user.mintId,
-          latitude: data.user.latitude,
-          longitude: data.user.longitude,
-          deviceToken: data.user.deviceToken,
-          points: data.user.points,
-          totalCollections: data.user.totalCollections,
-          totalWasteCollected: data.user.totalWasteCollected,
-          referrals: data.user.referrals,
-          firstTimeLogin: data.user.firstTimeLogin || false,
-          emailVerified: data.user.emailVerified || false,
-          pickupHistory: data.user.pickupHistory,
-        };
+          // This endpoint echoes no email back on some responses, so the
+          // address the person typed stands in.
+          fallbackEmail: email,
+        });
 
         set({ user, isLoading: false, error: null, token: data.token });
 
@@ -783,6 +764,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   signOut: async () => {
+    // Before the token is discarded — it is what authenticates the release.
+    // Without this the next person to sign in on this handset keeps receiving
+    // the previous user's notifications until they happen to register, which
+    // is a privacy problem rather than an inconvenience.
+    const authToken = get().token;
+    if (authToken) await unregisterDeviceToken(authToken);
+
     await SecureStore.deleteItemAsync("userToken");
     await SecureStore.deleteItemAsync("userEmail");
     await SecureStore.deleteItemAsync("userName");

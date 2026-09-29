@@ -20,7 +20,7 @@
  * map that opens is visible, centred somewhere sensible, and can accept a new
  * pin. This proves the wire is connected, not that the light comes on.
  */
-import { describe, expect, it, jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { TouchableOpacity } from "react-native";
@@ -99,6 +99,17 @@ const rehydrateAmbiguous = (api: Api) =>
   });
 
 describe('"I\'ve moved house" opens the map', () => {
+  // The sheet animates out before it reports closing, and the map waits for
+  // that — so this suite has to be able to move time forward.
+  // Braces, not a concise body: `jest.useFakeTimers()` returns the Jest
+  // object, and a hook that returns a non-thenable is a type error.
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it("calls onOpenMap and clears the pin, in that order of consequence", () => {
     const onOpenMap = jest.fn();
     const h = mountFields({ onOpenMap });
@@ -108,11 +119,22 @@ describe('"I\'ve moved house" opens the map', () => {
 
     h.press("town-change-moved");
 
-    expect(onOpenMap).toHaveBeenCalledTimes(1);
-    // Both halves matter: an open map with the old pin still set would let the
-    // user save the stale coordinate by simply closing it again.
+    /*
+     * The pin clears at once; the map opens once the SHEET HAS GONE.
+     *
+     * React Native drops a Modal presented while another is dismissing, so
+     * opening the picker in the same tick as answering opened nothing at all
+     * — the sheet went away and the map never came. The sheet reports itself
+     * closed and the picker follows, which is a beat later.
+     */
     expect(h.api.values.latitude).toBe("");
     expect(h.api.values.town).toBe("Gulshan-e-Iqbal");
+    expect(onOpenMap).not.toHaveBeenCalled();
+
+    act(() => {
+      jest.advanceTimersByTime(400);
+    });
+    expect(onOpenMap).toHaveBeenCalledTimes(1);
   });
 
   it("does not open the map for the relabel answer", () => {
