@@ -110,7 +110,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingHorizontal: 24,
     paddingTop: 28,
-    paddingBottom: 34,
     gap: 12,
   },
   title: { fontSize: 26, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.4 },

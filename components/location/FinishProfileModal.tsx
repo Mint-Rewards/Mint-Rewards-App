@@ -225,7 +225,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingHorizontal: 24,
     paddingTop: 28,
-    paddingBottom: 34,
     gap: 6,
   },
   badgeRow: {

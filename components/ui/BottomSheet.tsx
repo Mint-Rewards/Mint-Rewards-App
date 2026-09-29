@@ -208,16 +208,25 @@ export function BottomSheet({
     <Animated.View
       style={[
         styles.card,
+        style,
         {
           /*
-           * The card runs LIFT_LIMIT past the bottom of the screen and is
-           * pulled back by the same amount, so what comes into view when it
-           * is lifted is more card and not the dimmed area behind it.
+           * AFTER `style`, deliberately.
+           *
+           * It was before, and a caller whose own stylesheet still carried a
+           * `paddingBottom` silently won — discarding the system inset and
+           * putting its buttons back under the ||| O < row. That is not a
+           * caller's mistake to make: the inset is the whole reason this
+           * component computes one. `extraInset` is the supported way to ask
+           * for more room, and it is already folded into `sheetInset`.
+           *
+           * The card also runs LIFT_LIMIT past the bottom of the screen and
+           * is pulled back by the same amount, so what comes into view when
+           * it is lifted is more card and not the dimmed area behind it.
            */
           paddingBottom: sheetInset + LIFT_LIMIT,
           marginBottom: -LIFT_LIMIT,
         },
-        style,
         cardStyle,
       ]}
     >

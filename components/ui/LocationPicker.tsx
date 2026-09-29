@@ -3,9 +3,11 @@ import { useSheetInset } from "@/hooks/useSheetInset";
 import React, { useState } from "react";
 import {
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   StyleProp,
   StyleSheet,
   Text,
@@ -81,7 +83,20 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
           hasError && styles.inputError,
           disabled && styles.selectorDisabled,
         ]}
-        onPress={() => !disabled && setIsOpen(true)}
+        onPress={() => {
+          if (disabled) return;
+          /*
+           * Put the keyboard away BEFORE the sheet arrives.
+           *
+           * A React Native <Modal> is its own window, so opening one while a
+           * field is focused dismisses the keyboard underneath it — and the
+           * KeyboardAvoidingView below then resizes mid-gesture, under a
+           * finger that is still down. Doing it first makes the sheet open
+           * against a settled layout instead of a moving one.
+           */
+          Keyboard.dismiss();
+          setIsOpen(true);
+        }}
         activeOpacity={disabled ? 1 : 0.7}
       >
         <Text
@@ -124,14 +139,29 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
            */
           behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-          <TouchableOpacity
-            style={styles.overlay}
-            activeOpacity={1}
-            onPress={() => {
-              setIsOpen(false);
-              setSearch("");
-            }}
-          >
+          <View style={styles.overlay}>
+            {/*
+              The dimmed area as its own layer BEHIND the card, not wrapped
+              around it.
+              
+              It used to wrap: a TouchableOpacity containing the card, so every
+              press inside the card that was not itself touchable closed the
+              sheet — and worse, a layout change counted as a press. Opening
+              this picker while another field held the keyboard dismissed that
+              keyboard, the KeyboardAvoidingView resized, the wrapper fired,
+              the sheet closed, the finger was back on the dropdown, and it
+              reopened. That loop is what it looked like: a sheet flickering
+              open and shut as fast as it could render.
+            */}
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => {
+                setIsOpen(false);
+                setSearch("");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            />
             <View style={[styles.modalCard, { paddingBottom: sheetInset }]}>
               {/* Header */}
               <View style={styles.modalHeader}>
@@ -200,7 +230,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
                 )}
               />
             </View>
-          </TouchableOpacity>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
     </View>

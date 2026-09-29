@@ -329,6 +329,55 @@ describe("bottom sheets", () => {
     expect(src).toMatch(/\.enabled\(dismissible\)/);
   });
 
+  it("the system inset cannot be overridden by a caller's own style", () => {
+    /*
+     * `style` used to come AFTER the computed padding in the style array, so
+     * any sheet whose own stylesheet still carried a `paddingBottom` silently
+     * won — discarding the inset and putting its buttons back under the
+     * ||| O < row. Two did, and the finish-profile modal shipped that way:
+     * Continue and Not now sat under the Android navigation buttons.
+     *
+     * The inset is the whole point of the component, so it goes last.
+     * `extraInset` is the supported way to ask for more room.
+     */
+    const src = read("components/ui/BottomSheet.tsx");
+    const arr = src.slice(src.indexOf("style={[\n        styles.card"));
+    const styleAt = arr.indexOf("style,");
+    const padAt = arr.indexOf("paddingBottom: sheetInset");
+    expect(styleAt).toBeGreaterThan(-1);
+    expect(padAt).toBeGreaterThan(styleAt);
+  });
+
+  it("no sheet re-declares the padding the component computes", () => {
+    // Belt to the braces above: even with the ordering right, a stray
+    // paddingBottom in a caller's sheet style is a sign someone is fighting
+    // the component rather than passing `extraInset`.
+    for (const file of ON_BOTTOM_SHEET) {
+      const src = read(file);
+      const styleBlock = /\n  (?:sheet|couponSheet|modalSheet): \{[\s\S]*?\n  \},/.exec(src);
+      if (!styleBlock) continue;
+      expect(styleBlock[0]).not.toMatch(/paddingBottom/);
+    }
+  });
+
+  it("the picker's backdrop sits behind its card, not around it", () => {
+    /*
+     * A TouchableOpacity WRAPPING the card closes on any press inside it that
+     * is not itself touchable — and counts a layout change as a press. Open
+     * this picker while another field holds the keyboard: the modal is its own
+     * window, the keyboard dismisses, the KeyboardAvoidingView resizes under a
+     * finger that is still down, the wrapper fires, the sheet shuts, the
+     * finger is back on the dropdown, and it reopens. It flickered as fast as
+     * it could render.
+     */
+    const src = read("components/ui/LocationPicker.tsx");
+    expect(src).toMatch(/<Pressable\s+style=\{StyleSheet\.absoluteFill\}/);
+    expect(src).not.toMatch(/<TouchableOpacity\s+style=\{styles\.overlay\}/);
+    // And the keyboard is put away before the sheet arrives, so it opens
+    // against a settled layout rather than a moving one.
+    expect(src).toMatch(/Keyboard\.dismiss\(\);\s*\n\s*setIsOpen\(true\)/);
+  });
+
   it("every bottom-anchored sheet is accounted for", () => {
     /*
      * The lists above are only as good as their completeness, and a new sheet
