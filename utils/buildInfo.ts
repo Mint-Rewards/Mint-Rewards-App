@@ -105,10 +105,56 @@ export function readBuildInfo(
 }
 
 /** One line, for the foot of a settings screen. Safe to read aloud over a call. */
+/**
+ * When the running bundle was published, as "29 Sep 18:42".
+ *
+ * The update id is a UUID and two of them cannot be compared by eye —
+ * `01a0ec2c` against `01a0df21` says nothing about which is newer. A
+ * timestamp is ordered, which is the actual question being asked: am I on
+ * the latest, and if not how far behind?
+ *
+ * Deliberately not the wall-clock year, and deliberately local time: this is
+ * read aloud over a call while someone looks at a dashboard.
+ */
+function publishedLabel(iso: string | null): string | null {
+  if (!iso) return null;
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return null;
+  return at
+    .toLocaleString("en-GB", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    .replace(",", "");
+}
+
+/** One line, for the foot of a settings screen. Safe to read aloud over a call. */
 export function buildLabel(info: BuildInfo = readBuildInfo()): string {
   const parts = [`v${info.version} (${info.build})`];
   if (info.channel) parts.push(info.channel);
-  if (info.fromMetro) parts.push("from Metro");
-  else parts.push(info.embedded ? "as shipped" : `update ${info.updateId}`);
+
+  if (info.fromMetro) {
+    parts.push("from Metro");
+  } else if (info.embedded) {
+    /*
+     * "as shipped" was true and unhelpful. It is the state a fresh install is
+     * in before its first update lands, and someone checking whether a fix
+     * arrived cannot tell that from a build that simply never checks. Naming
+     * the build says WHICH bundle they are on, which is the thing being
+     * asked.
+     */
+    parts.push(`bundled with ${info.build}`);
+  } else {
+    /*
+     * Time first, id second. The time answers "am I current"; the id is for
+     * quoting back when something is wrong, and is no use for comparing.
+     */
+    const at = publishedLabel(info.publishedAt);
+    parts.push(at ? `update ${at} · ${info.updateId}` : `update ${info.updateId}`);
+  }
+
   return parts.join(" · ");
 }
