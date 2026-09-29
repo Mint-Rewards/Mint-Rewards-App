@@ -32,6 +32,14 @@ interface Props {
   onRelabel: () => void;
   /** Dismissal backs out of the edit entirely rather than picking for the user. */
   onCancel: () => void;
+  /**
+   * Fired once this sheet has actually gone.
+   *
+   * "I've moved" hands off to the map picker, and React Native drops a Modal
+   * presented while another is dismissing — so the caller must wait for this
+   * rather than opening the map in the same breath as answering.
+   */
+  onClosed?: () => void;
 }
 
 export function TownChangeModal({
@@ -40,6 +48,7 @@ export function TownChangeModal({
   onMoved,
   onRelabel,
   onCancel,
+  onClosed,
 }: Props) {
   return (
     /*
@@ -50,6 +59,7 @@ export function TownChangeModal({
     <BottomSheet
       visible={visible}
       onClose={onCancel}
+      onClosed={onClosed}
       style={styles.sheet}
       extraInset={34}
     >

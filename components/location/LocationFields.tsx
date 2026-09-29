@@ -10,7 +10,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { TownChangeModal } from "@/components/location/TownChangeModal";
 import { LocationPicker } from "@/components/ui/LocationPicker";
@@ -79,6 +79,13 @@ export function LocationFields({
   onFieldBlur,
 }: Props) {
   const { values } = form;
+
+  /**
+   * Whether answering "I've moved" should open the map once the sheet is gone.
+   *
+   * Held rather than acted on immediately: see the comment on `onMoved`.
+   */
+  const [openMapAfterClose, setOpenMapAfterClose] = useState(false);
 
   // One per text field, so the host is handed something it can measure.
   const townOtherRef = useRef<TextInput>(null);
@@ -284,8 +291,22 @@ export function LocationFields({
           currentTown={values.town.trim() || values.townOther.trim()}
           onMoved={() => {
             trackTownChangeResolved("moved");
-            if (form.resolveTownChange(true)) onOpenMap?.();
+            /*
+             * Remember to open the map; do not open it here.
+             *
+             * Answering closes this sheet, and the sheet outlives `visible`
+             * so it can animate out. React Native silently drops a Modal
+             * presented while another is dismissing, so opening the picker in
+             * this handler opened nothing — the sheet went away and the map
+             * never came. `onClosed` below fires once it has actually gone.
+             */
+            if (form.resolveTownChange(true)) setOpenMapAfterClose(true);
             clearError("town");
+          }}
+          onClosed={() => {
+            if (!openMapAfterClose) return;
+            setOpenMapAfterClose(false);
+            onOpenMap?.();
           }}
           onRelabel={() => {
             trackTownChangeResolved("relabelled");

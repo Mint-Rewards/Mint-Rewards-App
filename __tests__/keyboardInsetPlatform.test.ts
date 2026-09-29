@@ -318,6 +318,27 @@ describe("bottom sheets", () => {
     expect(src).toMatch(/onRequestClose=\{dismissible \? onClose/);
   });
 
+  it("reports when it has actually gone, not merely when it stops moving", () => {
+    /*
+     * A sheet that hands off to another Modal has to say when it is GONE.
+     * React Native drops a presentation made while another Modal is
+     * dismissing, so "I've moved my house" closed the town sheet, asked for
+     * the map picker in the same tick, and got nothing at all.
+     *
+     * The timer beside the animation callback is the part that matters: a
+     * caller waiting on `onClosed` to open the next screen would otherwise be
+     * stranded by a callback that never arrives. A sheet closing a fraction
+     * late is cosmetic; one that never reports closing is a dead end.
+     */
+    const src = read("components/ui/BottomSheet.tsx");
+    expect(src).toMatch(/onClosed\?: \(\) => void/);
+    expect(src).toMatch(/setTimeout\(finishClose, EXIT_MS \+ \d+\)/);
+    // Idempotent, because the animation and the timer race to call it.
+    expect(src).toMatch(/if \(closedOnce\.current\) return/);
+    // And re-armed, or a sheet reopened after closing never reports again.
+    expect(src).toMatch(/closedOnce\.current = false/);
+  });
+
   it("a pinned sheet cannot be swiped away", () => {
     /*
      * The location gate's hard rule: a household with no pin cannot be

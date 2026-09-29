@@ -20,7 +20,7 @@
  * drag is silently ignored, which is exactly the failure this replaces. It is
  * mounted below, deliberately and with this comment attached to it.
  */
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dimensions,
   Modal,
@@ -111,6 +111,17 @@ interface Props {
   handleFloating?: boolean;
   /** Light for a dark header, dark for a pale one. A bar has to be visible. */
   handleTint?: "dark" | "light";
+  /**
+   * Fired once the exit animation is over and the Modal is gone.
+   *
+   * For a sheet that hands off to ANOTHER modal. This one outlives `visible`
+   * going false so it can animate out, and React Native silently drops a
+   * presentation made while another Modal is still dismissing — so a caller
+   * that opens the next thing in the same tick opens nothing at all. That is
+   * what happened to the map picker after "I've moved my house": the sheet
+   * closed, the picker never appeared.
+   */
+  onClosed?: () => void;
   style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
   testID?: string;
@@ -124,6 +135,7 @@ export function BottomSheet({
   extraInset,
   handleFloating = false,
   handleTint = "dark",
+  onClosed,
   style,
   children,
   testID,
@@ -141,8 +153,35 @@ export function BottomSheet({
   const [rendered, setRendered] = useState(visible);
   const translateY = useSharedValue(screenHeight);
 
+  /*
+   * Unmount first, THEN tell the caller. A caller that opens another Modal
+   * has to do it after this one is gone, not merely after it has stopped
+   * moving — the two overlap otherwise and the second never appears.
+   */
+  const closedRef = useRef(onClosed);
+  closedRef.current = onClosed;
+  /*
+   * Idempotent, because two things race to call it: the exit animation's
+   * completion callback, and a timer that fires slightly later regardless.
+   *
+   * The timer is not belt-and-braces for its own sake. A caller may be
+   * waiting on `onClosed` to open the next screen — the map picker is — and
+   * an animation callback that is dropped, or never scheduled because the
+   * component was unmounted mid-exit, would strand them with nothing. A sheet
+   * that closes a fraction late is a cosmetic fault; one that never reports
+   * closing is a dead end.
+   */
+  const closedOnce = useRef(false);
+  const finishClose = useCallback(() => {
+    if (closedOnce.current) return;
+    closedOnce.current = true;
+    setRendered(false);
+    closedRef.current?.();
+  }, []);
+
   useEffect(() => {
     if (visible) {
+      closedOnce.current = false;
       setRendered(true);
       translateY.value = screenHeight;
       translateY.value = withTiming(0, { duration: ENTER_MS });
@@ -154,9 +193,11 @@ export function BottomSheet({
      * and then leaving.
      */
     translateY.value = withTiming(screenHeight, { duration: EXIT_MS }, (done) => {
-      if (done) runOnJS(setRendered)(false);
+      if (done) runOnJS(finishClose)();
     });
-  }, [visible, screenHeight, translateY]);
+    const failsafe = setTimeout(finishClose, EXIT_MS + 60);
+    return () => clearTimeout(failsafe);
+  }, [visible, screenHeight, translateY, finishClose]);
 
   const cardStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
