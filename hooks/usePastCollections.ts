@@ -27,6 +27,15 @@ export interface PastCollection {
    */
   outcome: "collected" | "missed" | "declined" | "cancelled" | "not_collected";
   weightKg: number;
+  /**
+   * CO₂ saved, computed by operations from the weight above.
+   *
+   * Optional only so an app that updates before the backend does cannot
+   * render NaN: deploy the backend first and it is always present. The app
+   * deliberately does not calculate this — it did, with the wrong constant,
+   * and reported a tenth of every household's real impact.
+   */
+  co2Kg?: number;
   noCollectionReason: string | null;
   resolvedAt: string | null;
   captainName: string | null;
