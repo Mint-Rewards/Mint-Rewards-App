@@ -431,7 +431,9 @@ export default function HomeScreen() {
             style={styles.statCard}
           >
             <Text style={styles.statLabel}>CO₂ Saved</Text>
-            <StatValue value={co2Saved || 0} unit="%" />
+            {/* kg, not %. CO₂ saved is a weight — the card beside it has
+                always said kg for the waste that produced this figure. */}
+            <StatValue value={co2Saved || 0} unit="kg" />
           </LinearGradient>
         </View>
 
