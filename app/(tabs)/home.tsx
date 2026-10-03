@@ -15,6 +15,8 @@ import {
 } from "@/constants/mockCollectionsData";
 import { co2FromWasteKg, useAppStore } from "@/store/store";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import { usePastCollections } from "@/hooks/usePastCollections";
+import { collectionStatsFrom } from "@/utils/collectionStats";
 import { Ionicons } from "@expo/vector-icons";
 import { brandSurface } from "@/utils/brandTheme";
 import { mergeBrandsWithDeals } from "@/utils/deals";
@@ -40,7 +42,7 @@ import {
   TouchableOpacity,
   View,
   Linking,
-  Button
+  Button,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -51,7 +53,7 @@ import Animated, {
 } from "react-native-reanimated";
 import * as Sentry from "@sentry/react-native";
 
-const INSTAGRAM_HANDLE = 'mymintrewards'; // replace with actual handle
+const INSTAGRAM_HANDLE = "mymintrewards"; // replace with actual handle
 
 const CARD_HEIGHT = 160;
 const OVERLAP = CARD_HEIGHT * 0.28;
@@ -100,16 +102,16 @@ const BrandCard = React.memo(({ brand, index, onPress }: BrandCardProps) => {
 
   useEffect(() => {
     const delay = index * 70;
-    offsetY.value = withDelay(delay, withSpring(0, { damping: 14, stiffness: 100 }));
+    offsetY.value = withDelay(
+      delay,
+      withSpring(0, { damping: 14, stiffness: 100 }),
+    );
     entryOpacity.value = withDelay(delay, withTiming(1, { duration: 260 }));
   }, []);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: entryOpacity.value,
-    transform: [
-      { translateY: offsetY.value },
-      { scale: pressScale.value },
-    ],
+    transform: [{ translateY: offsetY.value }, { scale: pressScale.value }],
   }));
 
   // Painted from the normalised colour, never the raw field: a malformed value
@@ -118,7 +120,13 @@ const BrandCard = React.memo(({ brand, index, onPress }: BrandCardProps) => {
   const surface = brandSurface(brand.themeColor);
 
   return (
-    <Animated.View style={[styles.cardWrapper, { zIndex: index, top: index * VISIBLE }, animatedStyle]}>
+    <Animated.View
+      style={[
+        styles.cardWrapper,
+        { zIndex: index, top: index * VISIBLE },
+        animatedStyle,
+      ]}
+    >
       <Pressable
         onPress={onPress}
         onPressIn={() => {
@@ -145,7 +153,10 @@ const BrandCard = React.memo(({ brand, index, onPress }: BrandCardProps) => {
             >
               {brand.category}
             </Text>
-            <Text style={[styles.couponName, { color: surface.onSurface }]} numberOfLines={1}>
+            <Text
+              style={[styles.couponName, { color: surface.onSurface }]}
+              numberOfLines={1}
+            >
               {brand.brandName || brand.companyName}
             </Text>
           </View>
@@ -191,7 +202,6 @@ const StatValue = ({
 export default function HomeScreen() {
   const {
     user,
-    wasteToCo2,
     deals,
     getDeals,
     brands: approvedBrands,
@@ -226,9 +236,7 @@ export default function HomeScreen() {
   // four signals we care about (logs, breadcrumbs, messages, exceptions) so a
   // single tap proves the DSN, transport and source maps all work.
   const sendSentryTestEvent = React.useCallback(() => {
-    Sentry.setUser(
-      user?.email ? { email: user.email, id: user._id } : null,
-    );
+    Sentry.setUser(user?.email ? { email: user.email, id: user._id } : null);
     Sentry.logger.info("Sentry test log from home screen", {
       screen: "home",
       email: user?.email,
@@ -244,9 +252,13 @@ export default function HomeScreen() {
 
   const isDemoUser = isDemoCollectionsUser(user?.email);
   const showDemoCollections = isDemoUser && upcomingCollections.length > 0;
-  const nextCollection = showDemoCollections ? upcomingCollections[0] : undefined;
+  const nextCollection = showDemoCollections
+    ? upcomingCollections[0]
+    : undefined;
   // Collections offer several slots; the teaser shows the soonest one.
-  const nextSlot = nextCollection ? earliestCollectionSlot(nextCollection) : undefined;
+  const nextSlot = nextCollection
+    ? earliestCollectionSlot(nextCollection)
+    : undefined;
   // Once the user has scheduled a pickup on /collections, their booking takes
   // over this card — it is the more useful thing to show than a generic teaser.
   // The store holds only the ids, so resolve them against the same rows the
@@ -279,10 +291,17 @@ export default function HomeScreen() {
   const { invitations } = useInvitations();
   const live = React.useMemo(() => {
     const rank = (i: (typeof invitations)[number]) =>
-      i.collectionStatus === "IN_PROGRESS" ? 0 : i.state === "answerable" ? 1 : 2;
+      i.collectionStatus === "IN_PROGRESS"
+        ? 0
+        : i.state === "answerable"
+          ? 1
+          : 2;
     return [...invitations]
       .filter((i) => i.state !== "declined")
-      .sort((a, b) => rank(a) - rank(b) || a.scheduledDate.localeCompare(b.scheduledDate))[0];
+      .sort(
+        (a, b) =>
+          rank(a) - rank(b) || a.scheduledDate.localeCompare(b.scheduledDate),
+      )[0];
   }, [invitations]);
 
   // Approved brands are the list; deals are what each one carries. A brand
@@ -292,7 +311,9 @@ export default function HomeScreen() {
     () => mergeBrandsWithDeals(approvedBrands, deals),
     [approvedBrands, deals],
   );
-  const [co2, setCo2] = React.useState(0);
+
+  const { collections: pastCollections, reload: reloadPast } =
+    usePastCollections();
 
   /*
    * Everything this screen shows, fetched again on a pull.
@@ -304,19 +325,18 @@ export default function HomeScreen() {
    */
   const refreshAll = React.useCallback(async () => {
     await Promise.all([
-      wasteToCo2().then((value: number) => setCo2(value)),
+      reloadPast(),
       getDeals(),
       getBrands(),
       loadScheduledCollection(),
     ]);
-  }, [wasteToCo2, getDeals, getBrands, loadScheduledCollection]);
+  }, [reloadPast, getDeals, getBrands, loadScheduledCollection]);
   const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
 
   useEffect(() => {
-    wasteToCo2().then((value: number) => setCo2(value));
     getDeals();
     getBrands();
-  }, [wasteToCo2, getDeals, getBrands]);
+  }, [getDeals, getBrands]);
 
   // The booking outlives the session, so pull it back from SecureStore once the
   // user is known — keyed on the id, since the stored schedule is per-user.
@@ -324,14 +344,23 @@ export default function HomeScreen() {
     loadScheduledCollection();
   }, [loadScheduledCollection, user?._id]);
 
-  // Demo accounts have no real pickups on the backend, so user.totalWasteCollected
-  // is empty for them and these two cards would read 0 while /collections and
-  // the profile screen show the mock totals. Read the same figure they do, and
-  // derive CO₂ from it with the store's factor rather than a second copy.
-  const wasteCollectedKg = isDemoUser
-    ? TOTAL_WASTE_KG
-    : user?.totalWasteCollected || 0;
-  const co2Saved = isDemoUser ? co2FromWasteKg(TOTAL_WASTE_KG) : co2;
+  /*
+   * Derived from the rounds this household has actually been through.
+   *
+   * These read `user.totalWasteCollected` — a column inherited from Mongo
+   * that nothing has written since the move to Postgres, so the card showed
+   * 0 kg to a household that had put out 82.6. The history is already
+   * downloaded for the collections tab; this is the same data, summed.
+   *
+   * Demo accounts keep the mock totals: they have no real pickups, and
+   * /collections and the profile screen show those figures too.
+   */
+  const stats = React.useMemo(
+    () => collectionStatsFrom(pastCollections),
+    [pastCollections],
+  );
+  const wasteCollectedKg = isDemoUser ? TOTAL_WASTE_KG : stats.wasteKg;
+  const co2Saved = isDemoUser ? co2FromWasteKg(TOTAL_WASTE_KG) : stats.co2Kg;
   // 100 points per completed pickup for demo accounts, whose points balance on
   // the backend does not reflect the mock pickup history.
   const points = isDemoUser ? TOTAL_POINTS_EARNED : user?.points;
@@ -374,22 +403,37 @@ export default function HomeScreen() {
           { paddingBottom: 40 + tabBarOverflow },
         ]}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5d7481" />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#5d7481"
+          />
         }
       >
         {/* Stats */}
         <View style={styles.statsContainer}>
-          <LinearGradient colors={["#00528A", "#97DBAD"]} style={styles.statCard}>
+          <LinearGradient
+            colors={["#00528A", "#97DBAD"]}
+            style={styles.statCard}
+          >
             <Text style={styles.statLabel}>Mint Rewards</Text>
             <StatValue value={points} />
           </LinearGradient>
-          <LinearGradient colors={["#73C1A6", "#AFDEF2"]} style={styles.statCard}>
+          <LinearGradient
+            colors={["#73C1A6", "#AFDEF2"]}
+            style={styles.statCard}
+          >
             <Text style={styles.statLabel}>Recycled waste collected</Text>
             <StatValue value={wasteCollectedKg} unit="kg" />
           </LinearGradient>
-          <LinearGradient colors={["#82A599", "#C6F2C0"]} style={styles.statCard}>
+          <LinearGradient
+            colors={["#82A599", "#C6F2C0"]}
+            style={styles.statCard}
+          >
             <Text style={styles.statLabel}>CO₂ Saved</Text>
-            <StatValue value={co2Saved || 0} unit="%" />
+            {/* kg, not %. CO₂ saved is a weight — the card beside it has
+                always said kg for the waste that produced this figure. */}
+            <StatValue value={co2Saved || 0} unit="kg" />
           </LinearGradient>
         </View>
 
@@ -503,7 +547,9 @@ export default function HomeScreen() {
                         size={14}
                         color={Constants.appThemeColor}
                       />
-                      <Text style={styles.instagramLinkText}>@mymintrewards</Text>
+                      <Text style={styles.instagramLinkText}>
+                        @mymintrewards
+                      </Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -523,8 +569,8 @@ export default function HomeScreen() {
               <Ionicons name="location-outline" size={28} color="#449EB2" />
               <Text style={styles.locationPromptTitle}>Location not set</Text>
               <Text style={styles.locationPromptText}>
-                Set your exact location so we can schedule waste collections near
-                you.
+                Set your exact location so we can schedule waste collections
+                near you.
               </Text>
               <Text style={styles.locationPromptLink}>Set Location →</Text>
             </TouchableOpacity>
@@ -567,7 +613,10 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Your Deals</Text>
-            <Text style={styles.seeAllText} onPress={() => navigateOnce(() => router.push("/deals"))}>
+            <Text
+              style={styles.seeAllText}
+              onPress={() => navigateOnce(() => router.push("/deals"))}
+            >
               View all deals
             </Text>
           </View>
@@ -582,7 +631,9 @@ export default function HomeScreen() {
               activeOpacity={0.8}
             >
               <Ionicons
-                name={areaAnswered ? "location-outline" : "person-circle-outline"}
+                name={
+                  areaAnswered ? "location-outline" : "person-circle-outline"
+                }
                 size={22}
                 color="#449EB2"
               />
@@ -603,34 +654,39 @@ export default function HomeScreen() {
             >
               <Ionicons name="location-outline" size={22} color="#449EB2" />
               <Text style={styles.profilePromptText}>
-                We're working on bringing collections to your area. Update your location to see available deals.
+                We're working on bringing collections to your area. Update your
+                location to see available deals.
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#449EB2" />
             </TouchableOpacity>
           )}
 
           {showBrandCards && (
-          <View style={{ height: cardsContainerHeight, position: "relative" }}>
-            {brands.map((brand, index) => (
-              <BrandCard
-                key={brand._id}
-                brand={brand}
-                index={index}
-                onPress={() => {
-                  logEvent("BRAND_VIEWED", {
-                    userId: user?._id,
-                    userEmail: user?.email,
-                    extra: {
-                      brandId: brand._id,
-                      brandName: brand.brandName || brand.companyName,
-                      brandCategory: brand.category,
-                    },
-                  });
-                  navigateOnce(() => router.push(`/redeem?brandId=${brand._id}`));
-                }}
-              />
-            ))}
-          </View>
+            <View
+              style={{ height: cardsContainerHeight, position: "relative" }}
+            >
+              {brands.map((brand, index) => (
+                <BrandCard
+                  key={brand._id}
+                  brand={brand}
+                  index={index}
+                  onPress={() => {
+                    logEvent("BRAND_VIEWED", {
+                      userId: user?._id,
+                      userEmail: user?.email,
+                      extra: {
+                        brandId: brand._id,
+                        brandName: brand.brandName || brand.companyName,
+                        brandCategory: brand.category,
+                      },
+                    });
+                    navigateOnce(() =>
+                      router.push(`/redeem?brandId=${brand._id}`),
+                    );
+                  }}
+                />
+              ))}
+            </View>
           )}
         </View>
       </ScrollView>
@@ -655,7 +711,12 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "space-between",
   },
-  statLabel: { color: "#ffffff", fontSize: 12, marginBottom: 8, lineHeight: 16 },
+  statLabel: {
+    color: "#ffffff",
+    fontSize: 12,
+    marginBottom: 8,
+    lineHeight: 16,
+  },
   // Number and unit share a baseline; the number takes the slack so it can
   // shrink rather than push the unit onto its own line.
   statValueRow: {
@@ -663,7 +724,12 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
     alignSelf: "stretch",
   },
-  statValue: { color: "#ffffff", fontSize: 26, fontWeight: "900", flexShrink: 1 },
+  statValue: {
+    color: "#ffffff",
+    fontSize: 26,
+    fontWeight: "900",
+    flexShrink: 1,
+  },
   statUnit: {
     color: "#ffffff",
     fontSize: 14,
@@ -678,7 +744,11 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sectionTitle: { fontSize: 18, fontWeight: "bold", color: "#333333" },
-  seeAllText: { color: Constants.appThemeColor, fontSize: 14, fontWeight: "500" },
+  seeAllText: {
+    color: Constants.appThemeColor,
+    fontSize: 14,
+    fontWeight: "500",
+  },
   collectionCard: {
     backgroundColor: "#ffffff",
     borderRadius: 12,
@@ -780,7 +850,12 @@ const styles = StyleSheet.create({
   couponTextBlock: { flex: 1, justifyContent: "center", gap: 4 },
   couponCategory: { fontSize: 13, fontWeight: "300" },
   couponName: { fontSize: 26, fontWeight: "700", letterSpacing: -0.3 },
-  couponLogoWrapper: { width: 110, height: 110, alignItems: "center", justifyContent: "center" },
+  couponLogoWrapper: {
+    width: 110,
+    height: 110,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   couponLogo: { width: 110, height: 110 },
   bookSlotCard: {
     flexDirection: "row",
@@ -801,7 +876,12 @@ const styles = StyleSheet.create({
   },
   bookSlotBody: { flex: 1 },
   bookSlotTitle: { fontSize: 16.5, fontWeight: "700", color: "#FFFFFF" },
-  bookSlotText: { fontSize: 13.5, color: "#BFE0DA", marginTop: 2, lineHeight: 19 },
+  bookSlotText: {
+    fontSize: 13.5,
+    color: "#BFE0DA",
+    marginTop: 2,
+    lineHeight: 19,
+  },
   profilePromptCard: {
     flexDirection: "row",
     alignItems: "center",

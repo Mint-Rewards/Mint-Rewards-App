@@ -411,14 +411,17 @@ interface DealSlice {
 }
 
 /**
- * CO₂ saved for a given weight of recycled waste, rounded to 2dp. Exported so
- * screens showing a waste figure that did NOT come from `user.totalWasteCollected`
- * (the demo mock totals on home) derive CO₂ with the same factor as
- * `wasteToCo2` instead of keeping their own copy of 0.21.
+ * Re-exported, not defined here.
+ *
+ * It moved to utils/co2.ts so that pure code — utils/collectionStats.ts and
+ * its tests — can derive CO₂ with the same factor without importing this
+ * module, which reads the app configuration at import time and throws
+ * outside a configured build. Existing importers are unaffected.
  */
-export function co2FromWasteKg(wasteKg: number): number {
-  return Math.round((wasteKg * 0.21 + Number.EPSILON) * 100) / 100;
-}
+export { co2FromWasteKg } from "@/utils/co2";
+// Also imported, because `wasteToCo2` below calls it: a re-export forwards
+// the name to importers without binding it in this module's scope.
+import { co2FromWasteKg } from "@/utils/co2";
 
 /**
  * The one upcoming collection the user has scheduled. Demo-only (see

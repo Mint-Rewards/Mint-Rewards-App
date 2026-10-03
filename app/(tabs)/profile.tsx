@@ -1,5 +1,7 @@
 import Navbar from "@/components/ui/navbar";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
+import { usePastCollections } from "@/hooks/usePastCollections";
+import { collectionStatsFrom } from "@/utils/collectionStats";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
 import {
   PICKUPS_COMPLETED_COUNT,
@@ -33,6 +35,11 @@ const ProfileScreen = () => {
   const refreshAll = React.useCallback(async () => {
     await Promise.all([getProfile(), getDeals()]);
   }, [getProfile, getDeals]);
+  const { collections: pastCollections } = usePastCollections();
+  const collectionStats = React.useMemo(
+    () => collectionStatsFrom(pastCollections),
+    [pastCollections],
+  );
   const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
 
   // The "Rewards" stat used to read `campaigns`, which nothing ever populated,
@@ -60,16 +67,22 @@ const ProfileScreen = () => {
   // useSingleFlight wraps the *work*, not the dialog: alertOnce already stops
   // the dialog from stacking, but the confirm button inside it is a second,
   // independent double-tap surface.
-  const { run: confirmLogout, inFlight: loggingOut } = useSingleFlight(leaveForLogin);
+  const { run: confirmLogout, inFlight: loggingOut } =
+    useSingleFlight(leaveForLogin);
 
-  const { run: confirmDelete, inFlight: deleting } = useSingleFlight(async () => {
-    const result = await deleteAccount();
-    if (result.Status === "Success") {
-      await leaveForLogin();
-    } else {
-      alertOnce("Error", result.ErrorMessage || "Account deletion failed. Please try again.");
-    }
-  });
+  const { run: confirmDelete, inFlight: deleting } = useSingleFlight(
+    async () => {
+      const result = await deleteAccount();
+      if (result.Status === "Success") {
+        await leaveForLogin();
+      } else {
+        alertOnce(
+          "Error",
+          result.ErrorMessage || "Account deletion failed. Please try again.",
+        );
+      }
+    },
+  );
 
   const busy = loggingOut || deleting;
 
@@ -132,8 +145,18 @@ const ProfileScreen = () => {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
+            {/*
+              Counted from the rounds this household has been through.
+
+              This read `user.totalCollections?.length` — but that column is
+              TEXT, not an array, so `.length` counted characters: "0"
+              rendered as 1 and an empty value as nothing at all. It has never
+              been a number of collections.
+            */}
             <Text style={styles.statNumber}>
-              {user?.totalCollections?.length}
+              {showDemoCollections
+                ? PICKUPS_COMPLETED_COUNT
+                : collectionStats.collectedCount}
             </Text>
             <Text style={styles.statLabel}>Eco Actions</Text>
           </View>
@@ -144,7 +167,11 @@ const ProfileScreen = () => {
         style={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5d7481" />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#5d7481"
+          />
         }
       >
         {/* Quick Actions */}
@@ -197,7 +224,9 @@ const ProfileScreen = () => {
               onPress={() =>
                 navigateOnce(() =>
                   router.push(
-                    showDemoCollections ? "/collections?section=past" : "/collections",
+                    showDemoCollections
+                      ? "/collections?section=past"
+                      : "/collections",
                   ),
                 )
               }
@@ -217,7 +246,9 @@ const ProfileScreen = () => {
               onPress={() =>
                 navigateOnce(() =>
                   router.push(
-                    showDemoCollections ? "/collections?section=past" : "/collections",
+                    showDemoCollections
+                      ? "/collections?section=past"
+                      : "/collections",
                   ),
                 )
               }
@@ -237,7 +268,9 @@ const ProfileScreen = () => {
               onPress={() =>
                 navigateOnce(() =>
                   router.push(
-                    showDemoCollections ? "/collections?section=rewards" : "/collections",
+                    showDemoCollections
+                      ? "/collections?section=rewards"
+                      : "/collections",
                   ),
                 )
               }
