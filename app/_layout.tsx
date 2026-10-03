@@ -15,7 +15,7 @@ import {
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useRef, useState } from "react";
 import { configureGoogleSignIn } from '@/utils/googleAuth';
-import { logScreenView } from "@/utils/logger";
+import { logError, logScreenView } from "@/utils/logger";
 import { EnvBanner } from "@/components/EnvBanner";
 import LocationGate from "@/components/LocationGate";
 import UpdateGate from "@/components/UpdateGate";
@@ -118,7 +118,25 @@ export default Sentry.wrap(function RootLayout() {
     let alive = true;
 
     registerForPush().then((result) => {
-      if (alive && result.token) registerDeviceToken(result.token, token);
+      if (!alive) return;
+      if (result.token) {
+        registerDeviceToken(result.token, token);
+        return;
+      }
+      /*
+       * Why this phone will never be pushed to.
+       *
+       * Without it, a signed-in user with no device row is ambiguous: they may
+       * have declined the permission, or registration may have broken. Those
+       * need different responses — one is the person's choice, the other is
+       * ours to fix — and the absence of a row says nothing about which.
+       *
+       * The permission, not the token: the token is a credential and does not
+       * belong in a log.
+       */
+      logError("push registration produced no token", {
+        extra: { permission: result.permission },
+      });
     });
     // FCM reissues tokens on reinstall and restore-to-new-device. A token that
     // is never re-sent goes quietly dead, which is indistinguishable from a
