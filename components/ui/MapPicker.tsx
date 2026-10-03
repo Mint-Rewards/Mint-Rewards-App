@@ -6,14 +6,17 @@ import {
   Alert,
   Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import MapView from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isFixWithinCity, resolveSelectionViewport } from "@/utils/locationForm";
+import { searchPlaces, type PlaceSuggestion } from "@/utils/placeSearch";
 import {
   FlowStep,
   trackFlowAbandoned,
@@ -93,6 +96,42 @@ export default function MapPicker({
   // pin placed yet, so the footer can nudge the user toward placing one.
   const [gpsCentered, setGpsCentered] = useState(false);
   const mapRef = useRef<MapView>(null);
+
+  /*
+   * Place search. Answered from the registry the app already ships, so it
+   * costs nothing, needs no network, and can run on every keystroke — and the
+   * person's own city is ranked first, because "Saddar" exists in four cities
+   * and the one under their feet is the one they mean.
+   */
+  const [query, setQuery] = useState("");
+  const suggestions = useMemo<PlaceSuggestion[]>(
+    () => searchPlaces(query, { city, limit: 6 }),
+    [query, city],
+  );
+
+  const goToPlace = (place: PlaceSuggestion) => {
+    if (!place.centre) return;
+    setQuery("");
+    /*
+     * Moves the camera and nothing else — no pin is dropped.
+     *
+     * A pin placed on a town centroid is a household whose "exact location"
+     * is a roundabout, and operations cannot tell that from a real rooftop.
+     * The search gets them to the right neighbourhood; the person still has
+     * to aim.
+     */
+    mapRef.current?.animateToRegion(
+      {
+        latitude: place.centre.latitude,
+        longitude: place.centre.longitude,
+        // Close enough to recognise streets, wide enough to see which part of
+        // the area they have landed in.
+        latitudeDelta: 0.012,
+        longitudeDelta: 0.012,
+      },
+      450,
+    );
+  };
 
   // What the camera opens at, before it has reported anything. A saved pin
   // opens close; anything else — a city centroid, the country — is assumed too
@@ -318,6 +357,60 @@ export default function MapPicker({
           Move the map to put the pin on your rooftop
         </Text>
 
+        {/*
+          Find the place first, then aim.
+          
+          Somebody setting a pin is often not at their door — they are at work
+          or on a bus, finishing a profile they were nagged about. Dragging
+          from the default view to their own street is a minute of pinching;
+          typing the name of their area is seconds.
+          
+          It moves the camera and nothing else. Dropping a pin on a searched
+          town would hand operations a household whose "exact location" is a
+          roundabout, which is the one thing the pin exists to prevent.
+        */}
+        <View style={styles.searchWrap}>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search your area or city"
+            placeholderTextColor="#8A94A6"
+            style={styles.searchInput}
+            autoCorrect={false}
+            autoCapitalize="words"
+            returnKeyType="search"
+            accessibilityLabel="Search for a place"
+          />
+          {query.length > 0 && (
+            <Pressable
+              onPress={() => setQuery("")}
+              hitSlop={10}
+              accessibilityLabel="Clear search"
+            >
+              <Text style={styles.searchClear}>✕</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {suggestions.length > 0 && (
+          <View style={styles.suggestions}>
+            {suggestions.map((place) => (
+              <Pressable
+                key={`${place.kind}:${place.city}:${place.label}`}
+                style={styles.suggestion}
+                onPress={() => goToPlace(place)}
+              >
+                <Text style={styles.suggestionLabel} numberOfLines={1}>
+                  {place.label}
+                </Text>
+                <Text style={styles.suggestionCity} numberOfLines={1}>
+                  {place.city}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
         {/* Map */}
         <View style={{ flex: 1 }}>
           <MapView
@@ -441,6 +534,39 @@ export default function MapPicker({
 }
 
 const styles = StyleSheet.create({
+  // The place search, above the map rather than floating on it: a dropdown
+  // over satellite imagery is unreadable, and a field the keyboard covers is
+  // worse than no field.
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === "ios" ? 10 : 4,
+    backgroundColor: "#F2F4F7",
+    borderRadius: 10,
+  },
+  searchInput: { flex: 1, fontSize: 15, color: "#101828", padding: 0 },
+  searchClear: { fontSize: 16, color: "#667085", paddingHorizontal: 4 },
+  suggestions: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E4E7EC",
+    overflow: "hidden",
+  },
+  suggestion: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E4E7EC",
+  },
+  suggestionLabel: { fontSize: 15, color: "#101828" },
+  suggestionCity: { fontSize: 12, color: "#667085", marginTop: 1 },
   // Centred by inset rather than by measuring the map: the map fills its
   // parent, so its centre is the parent's centre. marginTop lifts the glyph so
   // the POINT of the teardrop is what sits on the coordinate — centring the
