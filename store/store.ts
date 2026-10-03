@@ -567,9 +567,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
           error: null,
         });
       } else {
+        /*
+         * The status, which this used to leave out.
+         *
+         * Without it the log said only "getProfile failed" with an empty
+         * message, and three of those on production were indistinguishable
+         * from each other: a 401 is a token that expired and the sign-out
+         * below is correct, a 500 is ours to fix, a 404 is a client talking
+         * to a backend that has moved. One number separates them.
+         */
         await logError("getProfile failed", {
           userId: get().user?.mintId,
-          // extra: { status: response.status },
+          extra: { status: response.status },
         });
         set({ user: null, isLoading: false, error: data.message });
       }

@@ -314,6 +314,20 @@ export const logError = async (
     userId?: string;
     route?: string;
     error?: unknown;
+    /**
+     * Anything that makes the message answerable.
+     *
+     * Without it every failure logged here arrived as a bare sentence and an
+     * empty errorMessage, because `error` is only populated when there was an
+     * exception — and an API that answers 401 throws nothing. Three
+     * "getProfile failed" rows on production could not be told apart: a 401
+     * is a token that expired, a 500 is ours, a 404 is a client talking to a
+     * backend that moved.
+     *
+     * Merged under the message rather than replacing it, and sanitised by
+     * sendLog like any other extra, so nothing email-shaped escapes.
+     */
+    extra?: Record<string, unknown>;
   }
 ): Promise<void> => {
   // Every error path in store/store.ts already funnels through here, so this
@@ -333,6 +347,9 @@ export const logError = async (
     userId: options?.userId,
     route: options?.route,
     extra: {
+      // Caller's keys first, so `message` and `stack` cannot be shadowed by
+      // an `extra` that happens to use the same names.
+      ...options?.extra,
       message,
       errorMessage:
         options?.error instanceof Error
