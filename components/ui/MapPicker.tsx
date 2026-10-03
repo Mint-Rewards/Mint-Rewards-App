@@ -542,13 +542,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     marginHorizontal: 16,
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === "ios" ? 10 : 4,
-    backgroundColor: "#F2F4F7",
-    borderRadius: 10,
+    // Clear of the hint above it. Flush against that line, the field read as
+    // part of the instruction rather than as something to type into.
+    marginTop: 14,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    // A fixed height rather than padding: Android and iOS size a TextInput's
+    // own box differently, and padding alone left the two platforms visibly
+    // unalike.
+    height: 50,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    // An outline, because a grey field on a white sheet is close to invisible
+    // — which is what it looked like.
+    borderWidth: 1.5,
+    borderColor: "#D0D5DD",
   },
-  searchInput: { flex: 1, fontSize: 15, color: "#101828", padding: 0 },
+  searchInput: { flex: 1, fontSize: 16, color: "#101828", padding: 0 },
   searchClear: { fontSize: 16, color: "#667085", paddingHorizontal: 4 },
   suggestions: {
     marginHorizontal: 16,
