@@ -469,24 +469,30 @@ export default function MapPicker({
           </View>
 
           {/*
-            Says what the map can and cannot be used for at this zoom.
-            Deliberately not a blocker: a user on a slow connection who cannot
-            load close imagery still gets to save where they live, and the pin
-            is recorded as `area` rather than being refused or, worse, recorded
-            as a rooftop it never was.
+            Shown only when the zoom is too far out to mean anything.
+
+            There used to be a green, ticked counterpart saying "Tap your
+            rooftop to place the pin". Two things were wrong with it. A tick on
+            a green banner reads as "done" on a screen where nothing has been
+            done yet — and there IS no tap: the pin is fixed at the centre and
+            the map moves under it, as the header above says. It instructed
+            people to do something that does nothing.
+
+            This half stays because it carries real information: below this
+            zoom the pin is recorded as `area` rather than `building`, and
+            `building` is what makes a household routable. Still not a blocker
+            — somebody on a slow connection who cannot load close imagery
+            should keep being able to save where they live, honestly labelled,
+            rather than be refused or recorded as a rooftop they never saw.
           */}
-          <View style={[styles.zoomHint, tooFarOut ? styles.zoomHintWarn : styles.zoomHintOk]}>
-            <Ionicons
-              name={tooFarOut ? "search-outline" : "checkmark-circle"}
-              size={16}
-              color={tooFarOut ? "#92400E" : "#065F46"}
-            />
-            <Text style={[styles.zoomHintText, { color: tooFarOut ? "#92400E" : "#065F46" }]}>
-              {tooFarOut
-                ? "Zoom in until you can see your roof, then tap it"
-                : "Tap your rooftop to place the pin"}
-            </Text>
-          </View>
+          {tooFarOut && (
+            <View style={[styles.zoomHint, styles.zoomHintWarn]}>
+              <Ionicons name="search-outline" size={16} color="#92400E" />
+              <Text style={[styles.zoomHintText, { color: "#92400E" }]}>
+                Zoom in until you can see your roof
+              </Text>
+            </View>
+          )}
 
           {/* GPS re-center button */}
           <TouchableOpacity
@@ -607,7 +613,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   zoomHintWarn: { backgroundColor: "#FEF3C7" },
-  zoomHintOk: { backgroundColor: "#D1FAE5" },
   zoomHintText: { flex: 1, fontSize: 13, fontWeight: "600" },
 
   container: {
