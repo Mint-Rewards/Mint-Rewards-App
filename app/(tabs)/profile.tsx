@@ -3,7 +3,6 @@ import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { isDemoCollectionsUser } from "@/constants/demoAccounts";
 import {
   PICKUPS_COMPLETED_COUNT,
-  TOTAL_POINTS_EARNED,
   TOTAL_WASTE_KG,
 } from "@/constants/mockCollectionsData";
 import { useDebouncedNavigation } from "@/hooks/useDebouncedNavigation";
@@ -15,7 +14,7 @@ import { buildLabel } from "@/utils/buildInfo";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect } from "react";
+import React from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -26,20 +25,15 @@ import {
 } from "react-native";
 
 const ProfileScreen = () => {
-  const { signOut, deleteAccount, user, deals, getDeals, getProfile } =
-    useAppStore();
+  const { signOut, deleteAccount, user, getProfile } = useAppStore();
 
-  // The same data the screen loads on mount, fetched again on a pull.
+  // The same data the screen loads on mount, fetched again on a pull. Deals
+  // were fetched here only to count them in a stat that no longer exists; the
+  // Deals tab loads its own.
   const refreshAll = React.useCallback(async () => {
-    await Promise.all([getProfile(), getDeals()]);
-  }, [getProfile, getDeals]);
+    await getProfile();
+  }, [getProfile]);
   const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
-
-  // The "Rewards" stat used to read `campaigns`, which nothing ever populated,
-  // so it always rendered 0. Fetch the deals it now counts.
-  useEffect(() => {
-    getDeals();
-  }, [getDeals]);
   // 0 on Android, where the tab bar sits in the layout flow; on iOS the bar is
   // absolutely positioned, so the scroll has to clear it by its full height.
   const tabBarOverflow = useBottomTabOverflow();
@@ -116,29 +110,16 @@ const ProfileScreen = () => {
       {/* Header with glassmorphism effect */}
       <Navbar user={user} />
 
-      {/* Simple Profile Stats */}
-      <View style={styles.profileSection}>
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>
-              {showDemoCollections ? TOTAL_POINTS_EARNED : user?.points || 0}
-            </Text>
-            <Text style={styles.statLabel}>Points</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{deals.length}</Text>
-            <Text style={styles.statLabel}>Rewards</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>
-              {user?.totalCollections?.length}
-            </Text>
-            <Text style={styles.statLabel}>Eco Actions</Text>
-          </View>
-        </View>
-      </View>
+      {/*
+        Points, Rewards and Eco Actions were here and are gone.
+        
+        Points is the first card on the home tab, and a number shown twice is
+        a number that can disagree with itself. "Rewards" counted the deals
+        catalogue — how many offers exist, not how many this person has taken —
+        so it read the same for everybody. "Eco Actions" called `.length` on
+        `totalCollections`, which is TEXT: it was counting characters, so a
+        household with 12 collections scored 2.
+      */}
 
       <ScrollView
         style={styles.content}
@@ -298,52 +279,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-  },
-  profileSection: {
-    alignItems: "center",
-    marginTop: -20,
-    marginBottom: 20,
-    marginHorizontal: 20,
-    zIndex: 5,
-  },
-  statsContainer: {
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "#f0f0f0",
-    flexDirection: "row",
-    alignItems: "center",
-    width: "100%",
-  },
-  statItem: {
-    alignItems: "center",
-    flex: 1,
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: "#e0e0e0",
-    marginHorizontal: 10,
-  },
-  statNumber: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#00528A",
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: "#666666",
-    fontWeight: "500",
   },
   section: {
     marginBottom: 24,
