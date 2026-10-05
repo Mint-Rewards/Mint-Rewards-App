@@ -419,7 +419,13 @@ export default function HomeScreen() {
           </LinearGradient>
           <LinearGradient colors={["#82A599", "#C6F2C0"]} style={styles.statCard}>
             <Text style={styles.statLabel}>CO₂ Saved</Text>
-            <StatValue value={co2Saved || 0} unit="%" />
+            {/*
+              Kilograms, not a percentage. It has read "%" since the figure was
+              first put on this card and it was never true — a percentage of
+              what was never answerable. The number beside it is a weight of
+              CO₂ the warehouse computed from what was actually in each bag.
+            */}
+            <StatValue value={co2Saved || 0} unit="kg" />
           </LinearGradient>
         </View>
 
