@@ -27,7 +27,7 @@ import {
 } from "@/utils/profile";
 import { Constants } from "../../utils/constants";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
 import {
@@ -191,6 +191,7 @@ const StatValue = ({
 export default function HomeScreen() {
   const {
     user,
+    getProfile,
     wasteToCo2,
     deals,
     getDeals,
@@ -304,12 +305,23 @@ export default function HomeScreen() {
    */
   const refreshAll = React.useCallback(async () => {
     await Promise.all([
+      /*
+       * The profile, because the two numbers at the top of this screen live on
+       * it — points and total waste — and both now change long after the van
+       * has gone. A household's bags are weighed at the warehouse, and that is
+       * when they are paid; nothing on the phone knows it has happened.
+       *
+       * Without this the push says "2,310 points" and the screen behind it
+       * still shows yesterday's figure, which reads as though the message was
+       * wrong.
+       */
+      getProfile(),
       wasteToCo2().then((value: number) => setCo2(value)),
       getDeals(),
       getBrands(),
       loadScheduledCollection(),
     ]);
-  }, [wasteToCo2, getDeals, getBrands, loadScheduledCollection]);
+  }, [getProfile, wasteToCo2, getDeals, getBrands, loadScheduledCollection]);
   const { refreshing, onRefresh } = usePullToRefresh(refreshAll);
 
   useEffect(() => {
@@ -317,6 +329,24 @@ export default function HomeScreen() {
     getDeals();
     getBrands();
   }, [wasteToCo2, getDeals, getBrands]);
+
+  /*
+   * And again whenever they come back to this screen.
+   *
+   * Points and total waste are credited by the warehouse hours after the
+   * collection, so the moment a household is most likely to look — they have
+   * just been told — is a moment nothing else would have refetched. Focus is
+   * that moment.
+   *
+   * Only the profile. The deals and brands above are fetched once because they
+   * change daily at most, and refetching the lot on every tab switch would
+   * spend a request a household gains nothing from.
+   */
+  useFocusEffect(
+    React.useCallback(() => {
+      getProfile();
+    }, [getProfile]),
+  );
 
   // The booking outlives the session, so pull it back from SecureStore once the
   // user is known — keyed on the id, since the stored schedule is per-user.

@@ -51,11 +51,27 @@ function outcome(c: PastCollection): {
 } {
   switch (c.outcome) {
     case "collected":
+      /*
+       * Three states, not two.
+       *
+       * A weight only exists once every one of this household's bags has been
+       * weighed at the warehouse, which happens after the van gets back. Until
+       * then the honest thing to show is what we actually know: how many bags
+       * were taken. Showing "0.0 kg" in that window — which is what a plain
+       * `weightKg > 0` check used to produce — reads as though their recycling
+       * was worthless, and it is the kind of thing somebody screenshots.
+       */
       return {
         icon: "checkmark-circle",
         tint: "#0E9F6E",
         background: "#E9F7F1",
-        text: c.weightKg > 0 ? `Collected · ${c.weightKg.toFixed(1)} kg` : "Collected",
+        text:
+          c.weightKg !== null && c.weightKg > 0
+            ? `Collected · ${c.weightKg.toFixed(1)} kg`
+            : c.bagCount > 0
+              ? `Collected · ${c.bagCount} ${c.bagCount === 1 ? "bag" : "bags"}` +
+                (c.awaitingWeight ? " · being weighed" : "")
+              : "Collected",
       };
     case "missed":
       return {

@@ -26,7 +26,27 @@ export interface PastCollection {
    * to disagree about the same evening.
    */
   outcome: "collected" | "missed" | "declined" | "cancelled" | "not_collected";
-  weightKg: number;
+  /**
+   * How many bags were collected, and how many have reached a scale.
+   *
+   * Captains carry no scales — a bag is weighed at the warehouse, against the
+   * code stuck to it — so between the doorstep and the bench there is a bag
+   * count and nothing else. That is what the card shows, because three bags
+   * collected is a true and reassuring thing to read and "0.0 kg" is not.
+   */
+  bagCount: number;
+  bagsWeighed: number;
+  /** True while bags of theirs are still waiting to be weighed. */
+  awaitingWeight: boolean;
+  /**
+   * Null, not zero, until every bag has been weighed.
+   *
+   * Nullable so there is no way to render a figure that does not exist yet.
+   * Zero would be a claim that their recycling counted for nothing.
+   */
+  weightKg: number | null;
+  /** The saving, summed per material by the server. Null while waiting. */
+  co2Kg: number | null;
   noCollectionReason: string | null;
   resolvedAt: string | null;
   captainName: string | null;
