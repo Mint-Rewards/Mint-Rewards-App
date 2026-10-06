@@ -21,6 +21,7 @@ import {
 import Svg, { Path } from "react-native-svg";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
 import { PASSWORD_MAX_LENGTH } from "../utils/password";
+import { alertOnce } from "@/utils/alert";
 import * as SecureStore from 'expo-secure-store';
 import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
 
@@ -50,6 +51,24 @@ const LoginScreen = () => {
   const googleSignInEnabled = useFeatureFlag("google-signin-enabled") !== false;
   const appleSignInEnabled = useFeatureFlag("apple-signin-enabled") !== false;
 
+  /*
+   * Someone who has proved they own an address we have never seen.
+   *
+   * Not an error: they have done nothing wrong, they are simply not a user
+   * yet. Offering the way forward rather than "sign-in failed" is the
+   * difference between a dead end and a signup — they would otherwise tap the
+   * same button again and get the same refusal.
+   */
+  const offerSignUp = (message?: string) =>
+    alertOnce(
+      "No account yet",
+      message ?? "No Mint Rewards account uses this address yet. Create one from Sign Up.",
+      [
+        { text: "Not now", style: "cancel" as const },
+        { text: "Sign up", onPress: () => router.push("/register") },
+      ],
+    );
+
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     try {
@@ -59,10 +78,19 @@ const LoginScreen = () => {
       if (result.success && result.data) {
         const { idToken } = result.data;
 
+        /*
+         * `intent: 'login'`, so this cannot create an account.
+         *
+         * Both Google buttons posted the same payload to the same route, which
+         * does find-or-create — so a person who had never registered was signed
+         * UP by a button saying sign IN, skipping the signup screen entirely.
+         * The server now refuses to create for this intent and tells them where
+         * to go.
+         */
         const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken }),
+          body: JSON.stringify({ idToken, intent: 'login' }),
         });
 
         const data = await res.json();
@@ -89,6 +117,8 @@ const LoginScreen = () => {
           posthog.capture('user_logged_in_google', { mint_id: userData.mintId });
 
           router.replace('/(tabs)/home');
+        } else if (data.ErrorCode === 'NO_ACCOUNT') {
+          offerSignUp(data.ErrorMessage);
         } else {
           Constants.showDialog(data.ErrorMessage || 'Google Sign-In failed.');
         }
@@ -123,15 +153,28 @@ const LoginScreen = () => {
         body: JSON.stringify({
           identityToken: credential.identityToken,
           fullName,
+          // See the Google handler: signing IN must not sign somebody UP.
+          intent: 'login',
         }),
       });
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Server error ${res.status}: ${text}`);
+      /*
+       * Read the body before judging the status.
+       *
+       * "No account yet" arrives as a 404 with a reason in it, and throwing on
+       * !res.ok first turned that into "Server error 404" — a stack trace shown
+       * to somebody whose only mistake was not having registered.
+       */
+      const data = await res.json().catch(() => null);
+
+      if (data?.ErrorCode === 'NO_ACCOUNT') {
+        offerSignUp(data.ErrorMessage);
+        return;
       }
 
-      const data = await res.json();
+      if (!res.ok || !data) {
+        throw new Error(`Server error ${res.status}`);
+      }
 
       if (data.Status === 'Success') {
         const userData = data.data;

@@ -59,7 +59,25 @@ const ProfileScreen = () => {
   const { run: confirmDelete, inFlight: deleting } = useSingleFlight(async () => {
     const result = await deleteAccount();
     if (result.Status === "Success") {
+      /*
+       * Leave first, then say so.
+       *
+       * Deleting answered with silence: the login screen simply appeared, which
+       * is the same thing the app does when a session expires, so there was no
+       * way to tell "we removed your account" from "something logged you out".
+       *
+       * The order matters. Confirming first and navigating from the button
+       * would strand anyone who dismisses the dialog with the Android back
+       * button — no button fires, and they would sit on a profile belonging to
+       * an account that no longer exists. Navigating first makes leaving
+       * unconditional, and the alert is native so it shows over the login
+       * screen regardless.
+       */
       await leaveForLogin();
+      alertOnce(
+        "Account deleted",
+        "Your account and everything in it have been removed. We're sorry to see you go.",
+      );
     } else {
       alertOnce("Error", result.ErrorMessage || "Account deletion failed. Please try again.");
     }
