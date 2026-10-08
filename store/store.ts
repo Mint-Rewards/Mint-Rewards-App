@@ -113,6 +113,8 @@ export interface User {
   longitude?: string;
   deviceToken?: string;
   points?: number;
+  /** CO₂ avoided, summed per material by the warehouse. Never derived here. */
+  totalCo2Kg?: number;
   /**
    * When the server opened this user's profile-completion bonus window, stamped
    * on their first app open by GET /api/users/my-profile. Serialised as an ISO
@@ -411,10 +413,17 @@ interface DealSlice {
 }
 
 /**
- * CO₂ saved for a given weight of recycled waste, rounded to 2dp. Exported so
- * screens showing a waste figure that did NOT come from `user.totalWasteCollected`
- * (the demo mock totals on home) derive CO₂ with the same factor as
- * `wasteToCo2` instead of keeping their own copy of 0.21.
+ * CO₂ for a weight of waste — for DEMO ACCOUNTS ONLY.
+ *
+ * Real households no longer come near this. Their figure is `totalCo2Kg` on
+ * the profile, summed per material by the warehouse that weighed each bag,
+ * because paper and aluminium are not worth the same and only the bench knows
+ * which was which.
+ *
+ * 0.21 is kept rather than corrected because it is now a property of the mock,
+ * not a claim about recycling: the demo totals were chosen to look right beside
+ * it, and changing the factor would make the demo's own numbers disagree with
+ * each other. Nothing derived from it ever reaches a real household.
  */
 export function co2FromWasteKg(wasteKg: number): number {
   return Math.round((wasteKg * 0.21 + Number.EPSILON) * 100) / 100;
@@ -567,9 +576,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
           error: null,
         });
       } else {
+        /*
+         * The status, which this used to leave out.
+         *
+         * Without it the log said only "getProfile failed" with an empty
+         * message, and three of those on production were indistinguishable
+         * from each other: a 401 is a token that expired and the sign-out
+         * below is correct, a 500 is ours to fix, a 404 is a client talking
+         * to a backend that has moved. One number separates them.
+         */
         await logError("getProfile failed", {
           userId: get().user?.mintId,
-          // extra: { status: response.status },
+          extra: { status: response.status },
         });
         set({ user: null, isLoading: false, error: data.message });
       }
@@ -969,11 +987,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
   clearError: () => set({ error: null }),
 
   wasteToCo2: async () => {
-    const user = get().user;
-    if (user?.totalWasteCollected) {
-      return co2FromWasteKg(parseFloat(user.totalWasteCollected));
-    }
-    return 0;
+    /*
+     * The server's figure, not ours.
+     *
+     * This used to be `waste x 0.21`, a factor belonging to nothing: it agreed
+     * with neither the blended rate the collections service uses nor the
+     * per-material sum the warehouse records, so one kilo of recycling was
+     * worth three different numbers depending on which screen was asked.
+     *
+     * The service that knows what was in each bag owns the answer now. This
+     * stays async because every caller awaits it.
+     */
+    return get().user?.totalCo2Kg ?? 0;
   },
 
   // ========================================================================

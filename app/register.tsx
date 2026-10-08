@@ -61,10 +61,13 @@ const RegisterScreen = () => {
       if (result.success && result.data) {
         const { idToken } = result.data;
 
+        // `signup`, so this screen keeps its find-or-create behaviour: a
+        // person who already has an account and taps Sign Up with Google is
+        // signed in rather than refused.
         const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idToken }),
+          body: JSON.stringify({ idToken, intent: "signup" }),
         });
 
         const data = await res.json();
@@ -82,14 +85,35 @@ const RegisterScreen = () => {
           await SecureStore.setItemAsync("userName", userData.userName);
           await SecureStore.setItemAsync("userPoints", String(userData.points || 0));
 
-          posthog.identify(userData._id, {
-            $set: { userName: userData.userName, mintId: userData.mintId },
-            $set_once: { first_signup_date: new Date().toISOString(), signup_method: 'google' },
-          });
-          posthog.capture('user_signed_up_google', {
-            mint_id: userData.mintId,
-            is_first_time_login: userData.firstTimeLogin,
-          });
+          /*
+           * What happened, not which screen it happened on.
+           *
+           * This screen always reported a signup and the login screen always
+           * reported a login, while both ran the same find-or-create. So an
+           * existing user tapping Sign Up was counted as a new one, and — far
+           * more commonly — a new user who started on the login screen was
+           * never counted as a signup at all. The server now says which it
+           * was.
+           */
+          if (userData.created) {
+            posthog.identify(userData._id, {
+              $set: { userName: userData.userName, mintId: userData.mintId },
+              $set_once: {
+                first_signup_date: new Date().toISOString(),
+                signup_method: 'google',
+              },
+            });
+            posthog.capture('user_signed_up_google', {
+              mint_id: userData.mintId,
+              is_first_time_login: userData.firstTimeLogin,
+            });
+          } else {
+            posthog.identify(userData._id, {
+              $set: { userName: userData.userName, mintId: userData.mintId },
+              $set_once: { first_login_date: new Date().toISOString() },
+            });
+            posthog.capture('user_logged_in_google', { mint_id: userData.mintId });
+          }
 
           router.replace("/(tabs)/home");
         } else {
@@ -125,6 +149,7 @@ const RegisterScreen = () => {
         body: JSON.stringify({
           identityToken: credential.identityToken,
           fullName,
+          intent: 'signup',
         }),
       });
 
@@ -149,14 +174,27 @@ const RegisterScreen = () => {
         await SecureStore.setItemAsync('userName', userData.userName);
         await SecureStore.setItemAsync('userPoints', String(userData.points || 0));
 
-        posthog.identify(userData._id, {
-          $set: { userName: userData.userName, mintId: userData.mintId },
-          $set_once: { first_signup_date: new Date().toISOString(), signup_method: 'apple' },
-        });
-        posthog.capture('user_signed_up_apple', {
-          mint_id: userData.mintId,
-          is_first_time_login: userData.firstTimeLogin,
-        });
+        // What happened, not which screen it happened on — see the Google
+        // handler above.
+        if (userData.created) {
+          posthog.identify(userData._id, {
+            $set: { userName: userData.userName, mintId: userData.mintId },
+            $set_once: {
+              first_signup_date: new Date().toISOString(),
+              signup_method: 'apple',
+            },
+          });
+          posthog.capture('user_signed_up_apple', {
+            mint_id: userData.mintId,
+            is_first_time_login: userData.firstTimeLogin,
+          });
+        } else {
+          posthog.identify(userData._id, {
+            $set: { userName: userData.userName, mintId: userData.mintId },
+            $set_once: { first_login_date: new Date().toISOString() },
+          });
+          posthog.capture('user_logged_in_apple', { mint_id: userData.mintId });
+        }
 
         router.replace('/(tabs)/home');
       } else {

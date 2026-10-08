@@ -21,7 +21,11 @@ const BASE: PastCollection = {
   collectionStatus: "COMPLETED",
   status: "COLLECTED",
   outcome: "collected",
+  bagCount: 2,
+  bagsWeighed: 2,
+  awaitingWeight: false,
   weightKg: 4.25,
+  co2Kg: 9.35,
   noCollectionReason: null,
   resolvedAt: "2026-09-20T09:12:00.000Z",
   captainName: "Abdul Qudoos",
@@ -72,9 +76,38 @@ describe("a past collection", () => {
   it("does not claim a weight it does not have", () => {
     // A collected stop with nothing recorded against it should not read
     // "0.0 kg", which looks like an empty bin rather than a missing number.
-    const text = textOf(render({ weightKg: 0 }));
+    const text = textOf(render({ weightKg: 0, bagCount: 0 }));
     expect(text).toMatch(/Collected/);
     expect(text).not.toMatch(/0\.0 kg/);
+  });
+
+  it("counts the bags while they are still being weighed", () => {
+    /*
+     * The normal state of a round that finished an hour ago. Captains have no
+     * scales, so the weight arrives later from the warehouse — and until it
+     * does, what the household gave us is a number of bags.
+     */
+    const text = textOf(
+      render({ weightKg: null, co2Kg: null, bagCount: 3, bagsWeighed: 0, awaitingWeight: true }),
+    );
+    expect(text).toMatch(/Collected · 3 bags/);
+    expect(text).toMatch(/being weighed/);
+    expect(text).not.toMatch(/kg/);
+  });
+
+  it("says one bag, not 1 bags", () => {
+    const text = textOf(
+      render({ weightKg: null, co2Kg: null, bagCount: 1, bagsWeighed: 0, awaitingWeight: true }),
+    );
+    expect(text).toMatch(/Collected · 1 bag ·/);
+  });
+
+  it("drops the bag count once the weight is real", () => {
+    // The weight is the better answer the moment it exists, and showing both
+    // would make a card about one pickup read like two facts in competition.
+    const text = textOf(render({ weightKg: 6, bagCount: 3, bagsWeighed: 3, awaitingWeight: false }));
+    expect(text).toMatch(/Collected · 6\.0 kg/);
+    expect(text).not.toMatch(/bags/);
   });
 
   it("names every other ending plainly", () => {
