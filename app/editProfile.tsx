@@ -1,6 +1,7 @@
 import { LocationFields } from "@/components/location/LocationFields";
 import MapPicker from "@/components/ui/MapPicker";
 import Navbar from "@/components/ui/navbar";
+import { useDirtySnapshot } from "@/hooks/useDirtySnapshot";
 import { useLocationForm } from "@/hooks/useLocationForm";
 import { ANDROID_KEYBOARD_FALLBACK, useKeyboardInset } from "@/hooks/useKeyboardInset";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -103,6 +104,8 @@ const EditProfile = () => {
    * because a measured height of zero must not mean "no keyboard".
    */
   const [fieldFocused, setFieldFocused] = useState(false);
+  /** Set once the form has been filled from the stored profile. */
+  const [seeded, setSeeded] = useState(false);
   /**
    * How much room to leave below the form while typing.
    *
@@ -255,8 +258,24 @@ const EditProfile = () => {
         latitude: user.latitude || "",
         longitude: user.longitude || "",
       });
+      setSeeded(true);
     }
   }, []);
+
+  /*
+   * Whether anything has actually been edited.
+   *
+   * Update Profile was always enabled, so the screen offered to save a form
+   * nobody had touched — a request that rewrites the same values, and on a
+   * profile that was already complete, no feedback to distinguish "saved" from
+   * "there was nothing to save".
+   *
+   * `seeded` rather than `user` as the gate: `form.reset` normalises what it
+   * is given — it prefers the registry whenever it recognises the city — so a
+   * baseline taken from the raw user record would show a form as dirty the
+   * moment it opened.
+   */
+  const dirty = useDirtySnapshot({ identity, values: form.values }, seeded);
 
   useEffect(() => {
     return () => { setProfileError(null); };
@@ -714,13 +733,20 @@ const EditProfile = () => {
           )}
 
           <TouchableOpacity
-            style={[styles.submitButton, (isProfileLoading || submitting) && styles.buttonDisabled]}
+            style={[
+              styles.submitButton,
+              (isProfileLoading || submitting || !dirty) && styles.buttonDisabled,
+            ]}
             onPress={handleSubmit}
-            disabled={isProfileLoading || submitting}
+            disabled={isProfileLoading || submitting || !dirty}
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={(isProfileLoading || submitting) ? ["#a0aec0", "#718096"] : ["#00528A", "#00528A"]}
+              colors={
+                isProfileLoading || submitting || !dirty
+                  ? ["#a0aec0", "#718096"]
+                  : ["#00528A", "#00528A"]
+              }
               style={styles.submitGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
