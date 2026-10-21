@@ -9,6 +9,7 @@ import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 import { unregisterDeviceToken } from "@/utils/push";
 import { userFromAuth } from "@/utils/userFromAuth";
+import { signOutGoogle } from "@/utils/googleAuth";
 
 const API_URL = API_BASE_URL;
 
@@ -788,6 +789,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // is a privacy problem rather than an inconvenience.
     const authToken = get().token;
     if (authToken) await unregisterDeviceToken(authToken);
+
+    /*
+     * The Google session is separate from ours and outlives it.
+     *
+     * Clearing our token logs the user out of Mint Rewards; it does nothing to
+     * the native GoogleSignin session, which kept the last-used account
+     * indefinitely. That is how a deleted account could sign back in with one
+     * tap, and how the next person to use the handset was offered somebody
+     * else's identity.
+     *
+     * deleteAccount() routes through here too — profile.tsx calls
+     * leaveForLogin() on success — so deletion clears it by the same path
+     * rather than needing its own.
+     */
+    await signOutGoogle();
 
     await SecureStore.deleteItemAsync("userToken");
     await SecureStore.deleteItemAsync("userEmail");

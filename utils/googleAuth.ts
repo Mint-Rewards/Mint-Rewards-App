@@ -35,6 +35,29 @@ export const signInWithGoogle = async () => {
   }
   try {
     await GoogleSignin.hasPlayServices();
+    /*
+     * Clear the SDK's own session before asking, so the account chooser shows.
+     *
+     * GoogleSignin keeps a cached sign-in that outlives ours entirely — it is
+     * native state, and nothing in this app was clearing it. The effect was
+     * that tapping "Sign up with Google" silently reused whichever account had
+     * been picked last: no chooser, no way to make a second account on a
+     * handset with several Gmail addresses, and no way to stop a deleted
+     * account signing straight back in.
+     *
+     * Done here rather than only on logout because this is the moment the user
+     * is explicitly choosing an identity. Someone who taps a Google button is
+     * answering "which account?", and the answer must be theirs to give even
+     * if they never signed out of the previous one.
+     *
+     * Its failure is swallowed: there may be no session to clear, which throws
+     * on some versions, and that is the state we wanted anyway.
+     */
+    try {
+      await GoogleSignin.signOut();
+    } catch {
+      // No cached session, which is the outcome this call was for.
+    }
     const response = await GoogleSignin.signIn();
     return { success: true, data: response.data };
   } catch (error: any) {
