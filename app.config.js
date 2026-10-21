@@ -203,6 +203,24 @@ module.exports = () => ({
       : "./assets/images/logo-fixed.png",
     scheme: isDev ? "mint-rewards-dev" : "mint-rewards",
     userInterfaceStyle: "automatic",
+    /*
+     * Portrait only, on every screen.
+     *
+     * Expo's default is "default", which lets the device decide — so the app
+     * has been rotating freely while nothing in it was laid out for landscape.
+     * The brand cards on home are a fixed 160px, roughly a quarter of a
+     * portrait viewport and over forty percent of a landscape one, which is
+     * how the banner came to cover the deals beneath it.
+     *
+     * Locking is the fix rather than making that one screen responsive: the
+     * same question would otherwise be open on the auth screens, the map
+     * picker and the collection flow, each needing its own landscape pass and
+     * its own QA. Nothing here benefits from a wide viewport — it is a
+     * phone-held-upright app.
+     *
+     * Native configuration, so it needs a build. An OTA cannot carry it.
+     */
+    orientation: "portrait",
     // Runtime version gates which builds an OTA update is allowed to land on.
     // Declared here rather than per-profile in eas.json — EAS rejects
     // `runtimeVersion` inside a build profile — which also makes it uniform
