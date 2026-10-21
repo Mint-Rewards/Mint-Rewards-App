@@ -265,6 +265,17 @@ const ProfileScreen = () => {
               <Text style={styles.logoutButtonText}>Logout</Text>
             </TouchableOpacity>
 
+            {/*
+              A line and a gap between leaving and being deleted.
+              
+              These were two full-width buttons twelve pixels apart, one of
+              which ends the account. They already looked different — solid
+              against outlined, navy against red — but difference in colour
+              does not help a thumb that lands slightly low. The separation
+              has to be physical.
+            */}
+            <View style={styles.dangerDivider} />
+
             <TouchableOpacity
               style={[styles.deleteButton, busy && styles.actionButtonBusy]}
               onPress={handleDeleteAccount}
@@ -369,7 +380,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: "center",
-    marginBottom: 12,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -383,6 +393,14 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  dangerDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#E5E7EB",
+    // Asymmetric on purpose: more room below than above, so the line reads as
+    // the top of the destructive area rather than as a gap between two peers.
+    marginTop: 10,
+    marginBottom: 22,
   },
   deleteButton: {
     backgroundColor: "#ffffff",
