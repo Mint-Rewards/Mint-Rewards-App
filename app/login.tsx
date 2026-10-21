@@ -4,9 +4,10 @@ import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import AppleSignInButton from "@/components/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
+  AppState,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -19,6 +20,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
 import { PASSWORD_MAX_LENGTH } from "../utils/password";
 import { alertOnce } from "@/utils/alert";
@@ -38,9 +40,31 @@ const LoginScreen = () => {
   const { height } = useWindowDimensions();
   const isSmallScreen = height < 700;
 
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [hidePassword, setHidePassword] = useState(true);
+
+  /*
+   * Re-mask the password whenever the app leaves the foreground.
+   *
+   * Everything on this screen is ordinary component state, and pressing Back
+   * on Android backgrounds the app rather than closing it — the screen stays
+   * mounted and comes back exactly as it was. For the typed password that is
+   * fine, because the field is masked. For the eye toggle it is not: reveal
+   * the password, take a call, and it is still in plain text on return, for
+   * whoever is holding the phone. The Android recents snapshot captures it
+   * too.
+   *
+   * Only the toggle is reset. Clearing what they typed would punish anyone
+   * who checks a notification mid-login, and masked text leaks nothing.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") setHidePassword(true);
+    });
+    return () => sub.remove();
+  }, []);
   const [loading, setLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -253,7 +277,13 @@ const LoginScreen = () => {
       {/* Green Header Section */}
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ flexGrow: 1 }}
+        /*
+         * flexGrow fills the viewport; the padding keeps the last
+         * control clear of the fixed footer below it. Without it the
+         * Google button sat flush against the "Already have an
+         * account?" bar and its rounded bottom read as cut off.
+         */
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -282,7 +312,7 @@ const LoginScreen = () => {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="Enter Your Email"
+                placeholder="Enter your email"
                 placeholderTextColor="#999999"
               />
             </View>
@@ -298,7 +328,7 @@ const LoginScreen = () => {
                 maxLength={PASSWORD_MAX_LENGTH}
                 onChangeText={setPassword}
                 secureTextEntry={hidePassword}
-                placeholder="Enter Your Password"
+                placeholder="Enter your password"
                 placeholderTextColor="#999999"
               />
               <TouchableOpacity
@@ -391,10 +421,24 @@ const LoginScreen = () => {
       </ScrollView>
 
       {/* Bottom Register Link */}
-      <View style={styles.bottomSection}>
+      <View
+        style={[
+          styles.bottomSection,
+          /*
+           * The system navigation bar, not a guess at its height.
+           *
+           * Android draws this app edge to edge, so the window bottom is
+           * UNDER the nav bar and a fixed padding measured from it is
+           * spent on pixels nobody can see — the link ended up flat
+           * against the bar. insets.bottom is what the bar actually
+           * occupies on this device, gesture or three-button.
+           */
+          { paddingBottom: insets.bottom + 16 },
+        ]}
+      >
         <View style={styles.registerContainer}>
           <Text style={styles.registerText}>
-            Don&apos;t Have An Account?{" "}
+            Don&apos;t have an account?{" "}
           </Text>
           <TouchableOpacity onPress={() => router.push("/register")}>
             <Text style={styles.registerLinkText}>Sign up</Text>
