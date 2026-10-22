@@ -663,6 +663,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
         body: JSON.stringify({
           email,
           password,
+          /*
+            The same value twice, deliberately, and it is worth knowing why.
+
+            The API requires `confirmPassword` and rejects a mismatch, which
+            reads like a guard this app is subject to. It is not: there is no
+            second field on the signup screen, so the comparison is between a
+            value and itself and can never fail.
+
+            That is the decided behaviour, not an oversight (ClickUp
+            z8x1tu2c83). A typed password is checked by revealing it with the
+            eye toggle rather than by typing it twice — the modern guidance,
+            and one fewer field on a form people abandon. If a confirm field
+            is ever added, this line is what has to change with it, or the
+            server-side check stays decorative.
+          */
           confirmPassword: password,
           userName,
           phone,

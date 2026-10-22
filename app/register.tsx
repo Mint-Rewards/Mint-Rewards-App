@@ -9,6 +9,7 @@ import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
   AppState,
   ActivityIndicator,
+  Linking,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -377,6 +378,40 @@ const RegisterScreen = () => {
             )}
           </TouchableOpacity>
 
+          {/*
+            Consent, stated where it is given.
+            
+            This screen asked for a name, an email, a phone number and then —
+            a step later — a precise home location, with no mention of what
+            any of it is for and nothing to read before agreeing. The links
+            are the minimum: a person signing up can see the terms they are
+            accepting.
+            
+            Stated rather than ticked. A blocking checkbox is the stricter
+            reading and the control is easy to add on top of this if legal
+            asks for it; what could not stay is there being nothing to read
+            at all.
+          */}
+          <Text style={styles.legalText}>
+            By creating an account you agree to our{" "}
+            <Text
+              style={styles.legalLink}
+              onPress={() => Linking.openURL("https://www.mintrewards.app/terms")}
+              accessibilityRole="link"
+            >
+              Terms of Service
+            </Text>{" "}
+            and{" "}
+            <Text
+              style={styles.legalLink}
+              onPress={() => Linking.openURL("https://www.mintrewards.app/privacy")}
+              accessibilityRole="link"
+            >
+              Privacy Policy
+            </Text>
+            .
+          </Text>
+
           {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
@@ -545,6 +580,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginTop: 10,
+  },
+  legalText: {
+    marginTop: 14,
+    textAlign: "center",
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#667085",
+  },
+  legalLink: {
+    color: "#00528A",
+    textDecorationLine: "underline",
   },
   signUpButtonText: {
     color: "#ffffff",
