@@ -272,6 +272,21 @@ export interface Deal {
 interface UserSlice {
   user: User | null;
   token: string | null;
+  /**
+   * What this account can sign in with, straight from my-profile. Booleans
+   * only — the server computes them in SQL, so no credential is carried.
+   *
+   * Null until a profile has been fetched. Screens reading it must treat null
+   * as "not known yet" rather than "no", or a slow first load shows the wrong
+   * options to somebody who has them.
+   */
+  credentials: {
+    hasPassword: boolean;
+    hasPin: boolean;
+    hasPhone: boolean;
+    hasEmail: boolean;
+    hasSecurityQuestion: boolean;
+  } | null;
   isLoading: boolean;
   error: string | null;
   /**
@@ -508,6 +523,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // ========================================================================
   user: null,
   token: null,
+  credentials: null,
   isLoading: false,
   error: null,
   locationPromptShown: false,
@@ -582,6 +598,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         set({
           user: data.user,
+          // Additive on the server, so a response without it leaves the
+          // previous value rather than clobbering it with null.
+          credentials: data.credentials ?? get().credentials,
           token: token,
           isLoading: false,
           error: null,
@@ -875,6 +894,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({
       user: null,
       token: null,
+      credentials: null,
       error: null,
       scheduledCollection: null,
       locationPromptShown: false,
