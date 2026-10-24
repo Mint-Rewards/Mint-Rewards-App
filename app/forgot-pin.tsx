@@ -81,6 +81,12 @@ const ForgotPin = () => {
        */
       if (data.code === "NO_SECURITY_QUESTION") {
         Constants.showDialog(data.error);
+        // Nothing on this screen can help them, so hand them straight to the
+        // one route that can, with the number already filled in.
+        router.push({
+          pathname: "/contact-support",
+          params: { phone: parsed.national },
+        });
         return;
       }
 

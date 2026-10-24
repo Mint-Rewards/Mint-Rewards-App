@@ -162,6 +162,33 @@ const ProfileScreen = () => {
               <Ionicons name="chevron-forward" size={20} color="#999999" />
             </TouchableOpacity>
 
+            {/*
+              * Security question.
+              *
+              * Shown to everybody, but it means different things to the two
+              * kinds of account. An account made from an email address can
+              * always fall back on a reset link; one made from a phone number
+              * has NO ADDRESS, so this question and a support ticket are the
+              * entire recovery story. Hence the warning tint for those users —
+              * a neutral menu row would not say how much is riding on it.
+              */}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => router.push("/security-question")}
+              activeOpacity={0.7}
+            >
+              <View style={styles.menuContent}>
+                <Text style={styles.menuTitle}>Security Question</Text>
+                {!user?.email && (
+                  <Text style={styles.menuSubtitleWarning}>
+                    The only way to recover your PIN
+                  </Text>
+                )}
+              </View>
+
+              <Ionicons name="chevron-forward" size={20} color="#999999" />
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => router.push("/deals")}
@@ -291,6 +318,11 @@ const ProfileScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  menuSubtitleWarning: {
+    fontSize: 12,
+    color: "#b8761f",
+    marginTop: 3,
+  },
   container: {
     flex: 1,
     backgroundColor: "#ffffff",
