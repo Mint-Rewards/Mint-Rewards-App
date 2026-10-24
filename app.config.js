@@ -197,7 +197,15 @@ module.exports = () => ({
     // Deliberately identical across variants: both builds live under one EAS
     // project.
     slug: "mint-rewards",
-    version: "2.2.2",
+    // 2.3.0, not 2.2.3: this release adds a whole sign-in method (phone +
+    // PIN) rather than fixing the existing one.
+    //
+    // THE VERSION IS ALSO THE RUNTIME VERSION — see `runtimeVersion` below,
+    // policy "appVersion". So changing this number orphans every install on
+    // the old one from future OTAs: updates simply stop arriving, with no
+    // error anywhere. Builds for BOTH platforms have to follow a bump, or the
+    // platform that does not get rebuilt goes quietly stale.
+    version: "2.3.0",
     icon: isDev
       ? "./assets/images/icon-dev.png"
       : "./assets/images/logo-fixed.png",
