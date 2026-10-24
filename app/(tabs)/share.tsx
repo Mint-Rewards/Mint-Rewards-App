@@ -314,7 +314,7 @@ const ShareScreen = () => {
             strength — home.tsx's card radius and shadow, none of its gradients. */}
         <View style={styles.introPanel}>
           <Text style={styles.title} allowFontScaling>
-            Invite friends
+            Invite Friends
           </Text>
           <Text style={styles.subtitle}>
             Send an invitation and they can start collecting points for

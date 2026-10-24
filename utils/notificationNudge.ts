@@ -58,3 +58,23 @@ export function shouldNudgeForNotifications(
   if (!input.onHome) return false;
   return input.dismissals < input.maxDismissals;
 }
+
+/**
+ * Whether the sheet should offer Settings rather than a prompt.
+ *
+ * Here rather than inside the gate because it is the part that was wrong and
+ * the part worth pinning. The gate used to remember this from the last
+ * prompt's result, which made it React state that died with the component —
+ * kill the app from recents, reopen, and it offered "Allow notifications"
+ * again even though Android had stopped showing the runtime dialog. The
+ * button did nothing and the sheet returned every launch.
+ *
+ * Deriving it from the permission survives a restart because the permission
+ * does. "denied" means the system has already been asked and said no, by
+ * dialog or by settings toggle, and Settings is the only way back from
+ * either. "undetermined" means nobody has been asked, so the prompt is still
+ * worth offering.
+ */
+export function needsSettingsFor(permission: NotificationNudgeInput["permission"]): boolean {
+  return permission === "denied";
+}

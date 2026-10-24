@@ -15,7 +15,10 @@ import { usePathname } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Linking } from "react-native";
 import { NotificationNudgeModal } from "@/components/NotificationNudgeModal";
-import { shouldNudgeForNotifications } from "@/utils/notificationNudge";
+import {
+  needsSettingsFor,
+  shouldNudgeForNotifications,
+} from "@/utils/notificationNudge";
 import { isProfileComplete } from "@/utils/profile";
 import { posthog } from "@/utils/posthog";
 import { checkPushPermission, promptForPush, type PushPermission } from "@/utils/push";
@@ -58,9 +61,27 @@ export default function NotificationGate() {
   const refresh = useCallback(async () => {
     const next = await checkPushPermission();
     setPermission(next);
-    // A permission that came back re-arms the prompt path: whatever made
-    // Settings necessary before no longer applies.
-    if (next === "granted" || next === "provisional") setNeedsSettings(false);
+    /*
+     * Derived from the permission, not remembered from the last tap.
+     *
+     * It used to be set only by the prompt's result, which made it React
+     * state that died with the component. Kill the app from recents, reopen,
+     * and the sheet offered "Allow notifications" again — but Android stops
+     * showing the runtime dialog once it has been refused, so that button
+     * silently did nothing and the sheet came back every launch. That is the
+     * bug this comment's predecessor was written to prevent.
+     *
+     * "denied" is the whole answer. The system has already been asked and
+     * told no, whether that was the runtime dialog or the settings toggle,
+     * and Settings is the only route back in either case. "undetermined"
+     * means nobody has been asked yet, so the prompt is still worth a tap.
+     *
+     * Settings is sometimes offered where a second dialog would still have
+     * appeared — Android allows one more refusal before it stops. That is the
+     * right way to be wrong: Settings always works, and a button that does
+     * nothing is what was reported.
+     */
+    setNeedsSettings(needsSettingsFor(next));
   }, []);
 
   useEffect(() => {
@@ -134,8 +155,10 @@ export default function NotificationGate() {
         needs_settings: result.needsSettings,
       });
       setPermission(result.permission);
-      // Remember that asking is spent, so the next showing offers Settings
-      // instead of a button that would silently do nothing.
+      // Still set here for this visit, so a refusal switches the sheet to
+      // Settings immediately rather than after the next foreground. refresh()
+      // derives the same thing on every launch, which is what survives a
+      // restart.
       setNeedsSettings(result.needsSettings);
     });
   };

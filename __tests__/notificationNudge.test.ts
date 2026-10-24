@@ -9,7 +9,7 @@
  * a household is never told a van is coming and is out when it arrives.
  */
 import { describe, expect, it } from "@jest/globals";
-import { shouldNudgeForNotifications } from "@/utils/notificationNudge";
+import { needsSettingsFor, shouldNudgeForNotifications } from "@/utils/notificationNudge";
 import type { PushPermission } from "@/utils/push";
 
 const BASE = {
@@ -89,5 +89,37 @@ describe("the notification nudge", () => {
         }),
       ).toBe(false);
     }
+  });
+});
+
+/*
+ * The regression behind ClickUp z8x1tu0vv8: the sheet offered "Allow
+ * notifications" again after the app was killed and reopened, because the
+ * gate remembered "asking is spent" in React state. Android had already
+ * stopped showing the runtime dialog, so the button did nothing and the sheet
+ * came back every launch. Deriving it from the permission is what survives a
+ * restart, and these pin that it is derived.
+ */
+describe("needsSettingsFor", () => {
+  it("sends a refused user to Settings", () => {
+    // The runtime dialog is spent, or the toggle is off. Either way the only
+    // way back is Settings.
+    expect(needsSettingsFor("denied")).toBe(true);
+  });
+
+  it("offers the prompt when nobody has been asked yet", () => {
+    expect(needsSettingsFor("undetermined")).toBe(false);
+  });
+
+  it("does not send a granted user anywhere", () => {
+    expect(needsSettingsFor("granted")).toBe(false);
+    expect(needsSettingsFor("provisional")).toBe(false);
+  });
+
+  it("does not offer Settings where there is nothing to enable", () => {
+    // A simulator or a build with no native module. Settings would lead
+    // nowhere, and shouldNudgeForNotifications already declines to show the
+    // sheet at all in this state.
+    expect(needsSettingsFor("unsupported")).toBe(false);
   });
 });
