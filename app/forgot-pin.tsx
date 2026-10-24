@@ -30,7 +30,7 @@ import {
 import { Constants, API_BASE_URL } from "../utils/constants";
 import { normalizePhone, pinShapeError, PIN_LENGTH } from "../utils/phoneNumber";
 
-type Step = "phone" | "answer" | "newPin";
+type Step = "phone" | "answer" | "newPin" | "code";
 
 const ForgotPin = () => {
   const [step, setStep] = useState<Step>("phone");
@@ -43,6 +43,7 @@ const ForgotPin = () => {
   const [recoveryToken, setRecoveryToken] = useState("");
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
+  const [supportCode, setSupportCode] = useState("");
   const [hidePin, setHidePin] = useState(true);
 
   const post = async (path: string, body: Record<string, unknown>) => {
@@ -121,6 +122,54 @@ const ForgotPin = () => {
       // says how long is left, and somebody who does not know that will keep
       // trying.
       Constants.showDialog(data.error || "That answer is not correct.");
+    } catch {
+      Constants.showDialog("An error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const redeemPressed = async () => {
+    if (supportCode.length !== 6) {
+      Constants.showDialog("Enter the 6-digit code from support.");
+      return;
+    }
+    const shape = pinShapeError(pin);
+    if (shape) {
+      Constants.showDialog(shape);
+      return;
+    }
+    if (pin !== confirmPin) {
+      Constants.showDialog("The PINs do not match.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { res, data } = await post("/api/users/pin-recovery/redeem", {
+        phone: e164,
+        code: supportCode,
+        newPin: pin,
+      });
+
+      if (res.ok && data.success) {
+        Constants.showDialog(data.message || "Your PIN has been reset.");
+        router.replace("/login");
+        return;
+      }
+
+      /*
+       * A burnt code cannot be retried, so say so rather than leaving someone
+       * typing the same six digits into a field that will never accept them
+       * again.
+       */
+      if (data.code === "ATTEMPTS_EXHAUSTED") {
+        Constants.showDialog(data.error);
+        setSupportCode("");
+        return;
+      }
+
+      Constants.showDialog(data.error || "That code is not valid.");
     } catch {
       Constants.showDialog("An error occurred. Please try again.");
     } finally {
@@ -223,6 +272,102 @@ const ForgotPin = () => {
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
                 <Text style={styles.buttonText}>Continue</Text>
+              )}
+            </TouchableOpacity>
+
+            {/*
+              * For somebody already on the phone to support. They have a code
+              * in hand and no reason to be asked a security question they have
+              * by definition failed — this skips straight to spending it.
+              */}
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => {
+                const parsed = normalizePhone(phone);
+                if (!parsed.ok) {
+                  Constants.showDialog(parsed.message);
+                  return;
+                }
+                setE164(parsed.e164);
+                setStep("code");
+              }}
+            >
+              <Text style={styles.secondaryButtonText}>
+                I have a code from support
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {step === "code" && (
+          <>
+            <Text style={styles.subtitle}>
+              Enter the code the support agent read out, then choose a new
+              {" "}{PIN_LENGTH}-digit PIN. The code expires 30 minutes after it
+              was issued.
+            </Text>
+
+            <Text style={styles.label}>Code from support</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={supportCode}
+                onChangeText={(t) => setSupportCode(t.replace(/[^0-9]/g, ""))}
+                keyboardType="number-pad"
+                maxLength={6}
+                placeholder="6 digits"
+                placeholderTextColor="#999999"
+              />
+            </View>
+
+            <Text style={[styles.label, styles.labelSpaced]}>New PIN</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={pin}
+                onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ""))}
+                keyboardType="number-pad"
+                secureTextEntry={hidePin}
+                maxLength={PIN_LENGTH}
+                placeholder={`${PIN_LENGTH} digits`}
+                placeholderTextColor="#999999"
+              />
+              <TouchableOpacity
+                style={styles.eye}
+                onPress={() => setHidePin(!hidePin)}
+                accessibilityLabel={hidePin ? "Show PIN" : "Hide PIN"}
+              >
+                <Ionicons
+                  name={hidePin ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#999999"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.label, styles.labelSpaced]}>Confirm PIN</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={confirmPin}
+                onChangeText={(t) => setConfirmPin(t.replace(/[^0-9]/g, ""))}
+                keyboardType="number-pad"
+                secureTextEntry={hidePin}
+                maxLength={PIN_LENGTH}
+                placeholder="Type it again"
+                placeholderTextColor="#999999"
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.button}
+              onPress={redeemPressed}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Text style={styles.buttonText}>Set new PIN</Text>
               )}
             </TouchableOpacity>
           </>
@@ -331,6 +476,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 26, fontWeight: "bold", color: "#1f1f1f", marginBottom: 10 },
   subtitle: { fontSize: 15, color: "#5c6368", lineHeight: 22, marginBottom: 26 },
   label: { fontSize: 14, fontWeight: "600", color: "#1f1f1f", marginBottom: 8 },
+  labelSpaced: { marginTop: 20 },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -351,6 +497,12 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   buttonText: { color: "#ffffff", fontSize: 16, fontWeight: "600" },
+  secondaryButton: { paddingVertical: 16, alignItems: "center", marginTop: 4 },
+  secondaryButtonText: {
+    color: Constants.appThemeColor,
+    fontSize: 15,
+    fontWeight: "600",
+  },
 });
 
 export default ForgotPin;
