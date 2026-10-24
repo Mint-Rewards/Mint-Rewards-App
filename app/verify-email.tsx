@@ -62,7 +62,12 @@ const VerifyEmailScreen = () => {
 
       if (result.Status === "Success") {
         AccessibilityInfo.announceForAccessibility("Email verified successfully.");
-        router.replace("/(tabs)/home");
+        // Sign-up ends at the login screen on both tabs. The address is
+        // carried across so only the password is left to type.
+        router.replace({
+          pathname: "/login",
+          params: { email, justSignedUp: "1" },
+        });
         return;
       }
 

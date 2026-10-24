@@ -3,7 +3,7 @@ import { userFromAuth } from '@/utils/userFromAuth';
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import AppleSignInButton from "@/components/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
@@ -21,6 +21,7 @@ import {
 import Svg, { Path } from "react-native-svg";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
 import { PASSWORD_MAX_LENGTH } from "../utils/password";
+import { normalizePhone, pinShapeError, PIN_LENGTH } from "../utils/phoneNumber";
 import { alertOnce } from "@/utils/alert";
 import * as SecureStore from 'expo-secure-store';
 import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
@@ -38,14 +39,106 @@ const LoginScreen = () => {
   const { height } = useWindowDimensions();
   const isSmallScreen = height < 700;
 
-  const [email, setEmail] = useState("");
+  const params = useLocalSearchParams<{
+    phone?: string;
+    email?: string;
+    justSignedUp?: string;
+  }>();
+
+  const [email, setEmail] = useState(
+    typeof params.email === "string" ? params.email : "",
+  );
   const [password, setPassword] = useState("");
   const [hidePassword, setHidePassword] = useState(true);
   const [loading, setLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const { signIn } = useAppStore();
+  const { signIn, signInWithPin } = useAppStore();
+
+  /*
+   * Phone is the default tab, matching the sign-up screen. Somebody arriving
+   * from a phone sign-up is also sent here with their number already filled
+   * in, so the only thing left to type is the PIN they just chose.
+   */
+  /*
+   * Phone by default, but whichever tab they ARRIVED from wins. Somebody sent
+   * here by email verification must not land on a phone form holding an email
+   * address — the screen would be asking for a credential they did not just
+   * create.
+   */
+  const [authTab, setAuthTab] = useState<"phone" | "email">(
+    typeof params.email === "string" && params.email ? "email" : "phone",
+  );
+  const [phone, setPhone] = useState(
+    typeof params.phone === "string" ? params.phone : "",
+  );
+  const [pin, setPin] = useState("");
+  const [hidePin, setHidePin] = useState(true);
+  const [pinLoading, setPinLoading] = useState(false);
+
+  const phoneSignInPressed = async () => {
+    const parsed = normalizePhone(phone);
+    if (!parsed.ok) {
+      Constants.showDialog(parsed.message);
+      return;
+    }
+
+    /*
+     * Shape only, and NOT the full rule. `validatePin` on the server refuses
+     * sequences, dates and common PINs — but those apply to CHOOSING a PIN,
+     * not to typing an existing one. Enforcing them here would lock somebody
+     * out of their own account if the rules ever tightened after they set it.
+     */
+    const shape = pinShapeError(pin);
+    if (shape) {
+      Constants.showDialog(shape);
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      const result = await signInWithPin(parsed.e164, pin);
+      if (result.Status === "Success") {
+        const storeUser = useAppStore.getState().user;
+        if (storeUser?._id) {
+          posthog.identify(storeUser._id, {
+            $set: {
+              userName: storeUser.userName ?? null,
+              mintId: storeUser.mintId ?? null,
+              city: storeUser.city ?? null,
+            },
+            $set_once: { first_login_date: new Date().toISOString() },
+          });
+        }
+        posthog.capture("user_logged_in", { method: "phone" });
+        router.replace("/(tabs)/home");
+        return;
+      }
+
+      /*
+       * A locked account is a different situation from a wrong PIN and has to
+       * read as one: the server says how long is left, and somebody who does
+       * not know that will keep trying and keep failing.
+       */
+      const code = (result as { code?: string }).code;
+      if (code === "PIN_LOCKED") {
+        Constants.showDialog(
+          result.ErrorMessage || "Too many incorrect attempts. Try again later.",
+        );
+        return;
+      }
+
+      Constants.showDialog(result.ErrorMessage || "Incorrect mobile number or PIN.");
+    } catch (error) {
+      posthog.captureException(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      Constants.showDialog("An error occurred. Please try again.");
+    } finally {
+      setPinLoading(false);
+    }
+  };
   const posthog = usePostHog();
   // Default to enabled (!== false) so buttons don't flicker/hide while flags are still loading.
   const googleSignInEnabled = useFeatureFlag("google-signin-enabled") !== false;
@@ -269,6 +362,103 @@ const LoginScreen = () => {
 
       {/* White Content Section */}
       <View style={[styles.contentSection, isSmallScreen && styles.contentSectionSmall]}>
+          <View style={styles.authTabs}>
+            <TouchableOpacity
+              style={[styles.authTab, authTab === "phone" && styles.authTabActive]}
+              onPress={() => setAuthTab("phone")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: authTab === "phone" }}
+            >
+              <Text style={[styles.authTabText, authTab === "phone" && styles.authTabTextActive]}>
+                Phone
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.authTab, authTab === "email" && styles.authTabActive]}
+              onPress={() => setAuthTab("email")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: authTab === "email" }}
+            >
+              <Text style={[styles.authTabText, authTab === "email" && styles.authTabTextActive]}>
+                Email
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {authTab === "phone" && (
+            <>
+              {params.justSignedUp === "1" && (
+                <Text style={styles.justSignedUpNote} accessibilityLiveRegion="polite">
+                  Your account is ready. Sign in with the PIN you just chose.
+                </Text>
+              )}
+
+              <View style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}>
+                <Text style={styles.inputLabel}>Mobile number</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.textInput}
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                    autoCorrect={false}
+                    placeholder="03XX XXXXXXX"
+                    placeholderTextColor="#999999"
+                    maxLength={20}
+                  />
+                </View>
+              </View>
+
+              <View style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}>
+                <Text style={styles.inputLabel}>PIN</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.passwordTextInput}
+                    value={pin}
+                    onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ""))}
+                    keyboardType="number-pad"
+                    secureTextEntry={hidePin}
+                    maxLength={PIN_LENGTH}
+                    placeholder={`${PIN_LENGTH} digits`}
+                    placeholderTextColor="#999999"
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIconButton}
+                    onPress={() => setHidePin(!hidePin)}
+                    accessibilityLabel={hidePin ? "Show PIN" : "Hide PIN"}
+                  >
+                    <Ionicons
+                      name={hidePin ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color="#999999"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.forgotPasswordContainer, isSmallScreen && styles.forgotPasswordContainerSmall]}
+                onPress={() => router.push("/forgot-pin")}
+              >
+                <Text style={styles.forgotPasswordText}>Forgot PIN?</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.loginButton}
+                onPress={phoneSignInPressed}
+                disabled={pinLoading || loading}
+              >
+                {pinLoading ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.loginButtonText}>Login</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+
+          {authTab === "email" && (
+          <>
           {/* Email Input */}
           <View style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}>
             <Text style={styles.inputLabel}>Email</Text>
@@ -387,6 +577,8 @@ const LoginScreen = () => {
               />
             </View>
           )}
+          </>
+          )}
         </View>
       </ScrollView>
 
@@ -406,6 +598,41 @@ const LoginScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  authTabs: {
+    flexDirection: "row",
+    backgroundColor: "#f2f4f5",
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 20,
+  },
+  authTab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  authTabActive: {
+    backgroundColor: "#ffffff",
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  authTabText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#7a8287",
+  },
+  authTabTextActive: {
+    color: Constants.appThemeColor,
+  },
+  justSignedUpNote: {
+    fontSize: 14,
+    color: Constants.appThemeColor,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
   container: {
     flex: 1,
     backgroundColor: "#ffffff",

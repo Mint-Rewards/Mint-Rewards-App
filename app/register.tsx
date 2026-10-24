@@ -20,6 +20,7 @@ import {
 import Svg, { Path } from "react-native-svg";
 import * as SecureStore from "expo-secure-store";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
+import { normalizePhone, pinShapeError, PIN_LENGTH } from "../utils/phoneNumber";
 import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
@@ -45,6 +46,20 @@ const RegisterScreen = () => {
   const [loading, setLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  /*
+   * Phone is the default tab. Most new users have a number and no email, and
+   * the tab somebody lands on is the one most of them will use.
+   *
+   * `name` is shared across both tabs on purpose: switching tabs to compare
+   * them should not throw away something already typed.
+   */
+  const [authTab, setAuthTab] = useState<"phone" | "email">("phone");
+  const [phone, setPhone] = useState("");
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [hidePin, setHidePin] = useState(true);
+  const [phoneLoading, setPhoneLoading] = useState(false);
 
   const { signUp } = useAppStore();
   const posthog = usePostHog();
@@ -208,6 +223,77 @@ const RegisterScreen = () => {
     }
   };
 
+  const handlePhoneSignUp = async () => {
+    if (name.trim() === "") {
+      Constants.showDialog("Please enter your name");
+      return;
+    }
+
+    const parsed = normalizePhone(phone);
+    if (!parsed.ok) {
+      Constants.showDialog(parsed.message);
+      return;
+    }
+
+    /*
+     * Shape only. The server also refuses sequences, repeats, dates and a
+     * denylist of common PINs, and returns a message worth showing — checking
+     * those here would mean two copies of a list that will change.
+     */
+    const shape = pinShapeError(pin);
+    if (shape) {
+      Constants.showDialog(shape);
+      return;
+    }
+
+    if (pin !== confirmPin) {
+      Constants.showDialog("The PINs do not match.");
+      return;
+    }
+
+    setPhoneLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/phone-signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userName: name.trim(),
+          phone: parsed.e164,
+          pin,
+          confirmPin,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 201 && data.success) {
+        posthog.capture("user_signed_up", { method: "phone" });
+        /*
+         * No session is established here, and that is the whole point: the
+         * endpoint returns no token, and the new account signs in with the PIN
+         * it just chose. The number is carried across so they do not retype it.
+         */
+        router.replace({
+          pathname: "/login",
+          params: { phone: parsed.national, justSignedUp: "1" },
+        });
+        return;
+      }
+
+      if (res.status === 429) {
+        Constants.showDialog(
+          data.error || "Too many attempts. Please try again later.",
+        );
+        return;
+      }
+
+      Constants.showDialog(data.error || "Registration failed");
+    } catch {
+      Constants.showDialog("An error occurred. Please try again.");
+    } finally {
+      setPhoneLoading(false);
+    }
+  };
+
   const handleSignUp = async () => {
     if (name.trim() === "") {
       Constants.showDialog("Please enter your name");
@@ -268,6 +354,163 @@ const RegisterScreen = () => {
       </View>
 
       <View style={styles.contentSection}>
+          {/*
+            * Two ways to make an account, and they are not the same account.
+            *
+            * A phone sign-up has NO EMAIL ADDRESS — the column is nullable and
+            * the credential check is satisfied by the number. That means the
+            * usual "email me a reset link" route does not exist for it, and
+            * the security question set during profile completion is the only
+            * way back in short of contacting support. The copy under the PIN
+            * field says so, because the moment to learn it is now and not when
+            * locked out.
+            */}
+          <View style={styles.authTabs}>
+            <TouchableOpacity
+              style={[
+                styles.authTab,
+                authTab === "phone" && styles.authTabActive,
+              ]}
+              onPress={() => setAuthTab("phone")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: authTab === "phone" }}
+            >
+              <Text
+                style={[
+                  styles.authTabText,
+                  authTab === "phone" && styles.authTabTextActive,
+                ]}
+              >
+                Phone
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.authTab,
+                authTab === "email" && styles.authTabActive,
+              ]}
+              onPress={() => setAuthTab("email")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: authTab === "email" }}
+            >
+              <Text
+                style={[
+                  styles.authTabText,
+                  authTab === "email" && styles.authTabTextActive,
+                ]}
+              >
+                Email
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {authTab === "phone" && (
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Name</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.textInput}
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    placeholder="Your name"
+                    placeholderTextColor="#999999"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Mobile number</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.textInput}
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                    autoCorrect={false}
+                    placeholder="03XX XXXXXXX"
+                    placeholderTextColor="#999999"
+                    maxLength={20}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>PIN</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.passwordTextInput}
+                    value={pin}
+                    onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ""))}
+                    keyboardType="number-pad"
+                    secureTextEntry={hidePin}
+                    maxLength={PIN_LENGTH}
+                    placeholder={`${PIN_LENGTH} digits`}
+                    placeholderTextColor="#999999"
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIconButton}
+                    onPress={() => setHidePin(!hidePin)}
+                    accessibilityLabel={hidePin ? "Show PIN" : "Hide PIN"}
+                  >
+                    <Ionicons
+                      name={hidePin ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color="#999999"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Confirm PIN</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.passwordTextInput}
+                    value={confirmPin}
+                    onChangeText={(t) =>
+                      setConfirmPin(t.replace(/[^0-9]/g, ""))
+                    }
+                    keyboardType="number-pad"
+                    secureTextEntry={hidePin}
+                    maxLength={PIN_LENGTH}
+                    placeholder="Type it again"
+                    placeholderTextColor="#999999"
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.passwordHint,
+                    confirmPin.length > 0 &&
+                      confirmPin !== pin &&
+                      styles.passwordHintError,
+                  ]}
+                  accessibilityLiveRegion="polite"
+                >
+                  {confirmPin.length > 0 && confirmPin !== pin
+                    ? "The PINs do not match."
+                    : "You will sign in with your number and this PIN. Keep it somewhere safe — without an email address we cannot send you a reset link."}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.signUpButton}
+                onPress={handlePhoneSignUp}
+                disabled={phoneLoading || loading}
+              >
+                {phoneLoading ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.signUpButtonText}>Create Account</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+
+          {authTab === "email" && (
+          <>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Name</Text>
             <View style={styles.inputContainer}>
@@ -399,6 +642,8 @@ const RegisterScreen = () => {
               />
             </View>
           )}
+          </>
+          )}
         </View>
       </ScrollView>
 
@@ -418,6 +663,37 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#ffffff",
+  },
+  authTabs: {
+    flexDirection: "row",
+    backgroundColor: "#f2f4f5",
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 20,
+  },
+  authTab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  authTabActive: {
+    backgroundColor: "#ffffff",
+    // Enough lift to read as the selected tab without competing with the
+    // Create Account button below it.
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  authTabText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#7a8287",
+  },
+  authTabTextActive: {
+    color: Constants.appThemeColor,
   },
   headerSection: {
     backgroundColor: Constants.appThemeColor,
