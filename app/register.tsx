@@ -2,6 +2,7 @@ import { useAppStore } from "@/store/store";
 import { userFromAuth } from "@/utils/userFromAuth";
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import AppleSignInButton from "@/components/AppleSignInButton";
+import OtpInput from "@/components/OtpInput";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -83,7 +84,6 @@ const RegisterScreen = () => {
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [hidePin, setHidePin] = useState(true);
   const [phoneLoading, setPhoneLoading] = useState(false);
 
   const { signUp } = useAppStore();
@@ -470,47 +470,27 @@ const RegisterScreen = () => {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>PIN</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.passwordTextInput}
-                    value={pin}
-                    onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ""))}
-                    keyboardType="number-pad"
-                    secureTextEntry={hidePin}
-                    maxLength={PIN_LENGTH}
-                    placeholder={`${PIN_LENGTH} digits`}
-                    placeholderTextColor="#999999"
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeIconButton}
-                    onPress={() => setHidePin(!hidePin)}
-                    accessibilityLabel={hidePin ? "Show PIN" : "Hide PIN"}
-                  >
-                    <Ionicons
-                      name={hidePin ? "eye-off-outline" : "eye-outline"}
-                      size={20}
-                      color="#999999"
-                    />
-                  </TouchableOpacity>
-                </View>
+                <OtpInput
+                  value={pin}
+                  onChange={setPin}
+                  secure
+                  autoComplete="off"
+                  autoFocus={false}
+                  disabled={phoneLoading || loading}
+                />
               </View>
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Confirm PIN</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.passwordTextInput}
-                    value={confirmPin}
-                    onChangeText={(t) =>
-                      setConfirmPin(t.replace(/[^0-9]/g, ""))
-                    }
-                    keyboardType="number-pad"
-                    secureTextEntry={hidePin}
-                    maxLength={PIN_LENGTH}
-                    placeholder="Type it again"
-                    placeholderTextColor="#999999"
-                  />
-                </View>
+                <OtpInput
+                  value={confirmPin}
+                  onChange={setConfirmPin}
+                  secure
+                  autoComplete="off"
+                  autoFocus={false}
+                  error={confirmPin.length === PIN_LENGTH && confirmPin !== pin}
+                  disabled={phoneLoading || loading}
+                />
                 <Text
                   style={[
                     styles.passwordHint,
@@ -928,13 +908,26 @@ const styles = StyleSheet.create({
     opacity: 0.38,
   },
   bottomSection: {
+    /*
+     * Symmetrical breathing room.
+     *
+     * This had paddingBottom: 30 and nothing on top, while the row inside it
+     * adds another marginBottom: 20 — so the text sat flush against the
+     * scrolling content above it and 50px clear of the screen edge below.
+     * It read as stuck to the Apple button.
+     *
+     * The background is not decoration either: this bar is a sibling of the
+     * ScrollView, so without it the last control scrolling past shows through
+     * and the two appear to overlap.
+     */
+    paddingTop: 18,
     paddingBottom: 30,
     alignItems: "center",
+    backgroundColor: "#ffffff",
   },
   loginContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
   },
   loginText: {
     fontSize: 16,

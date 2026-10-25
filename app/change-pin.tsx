@@ -12,6 +12,7 @@
  * than deciding for itself.
  */
 import { Ionicons } from "@expo/vector-icons";
+import OtpInput from "@/components/OtpInput";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -42,7 +43,6 @@ const ChangePin = () => {
   const [currentPin, setCurrentPin] = useState("");
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [hidePin, setHidePin] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const savePressed = async () => {
@@ -136,61 +136,39 @@ const ChangePin = () => {
         {!settingFirst && (
           <>
             <Text style={styles.label}>Current PIN</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={currentPin}
-                onChangeText={(t) => setCurrentPin(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-                secureTextEntry
-                maxLength={PIN_LENGTH}
-                placeholder={`${PIN_LENGTH} digits`}
-                placeholderTextColor="#999999"
-              />
-            </View>
+            <OtpInput
+              value={currentPin}
+              onChange={setCurrentPin}
+              secure
+              autoComplete="off"
+              autoFocus={false}
+              disabled={loading}
+            />
           </>
         )}
 
         <Text style={[styles.label, !settingFirst && styles.labelSpaced]}>
           {settingFirst ? "PIN" : "New PIN"}
         </Text>
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            value={pin}
-            onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ""))}
-            keyboardType="number-pad"
-            secureTextEntry={hidePin}
-            maxLength={PIN_LENGTH}
-            placeholder={`${PIN_LENGTH} digits`}
-            placeholderTextColor="#999999"
-          />
-          <TouchableOpacity
-            style={styles.eye}
-            onPress={() => setHidePin(!hidePin)}
-            accessibilityLabel={hidePin ? "Show PIN" : "Hide PIN"}
-          >
-            <Ionicons
-              name={hidePin ? "eye-off-outline" : "eye-outline"}
-              size={20}
-              color="#999999"
-            />
-          </TouchableOpacity>
-        </View>
+        <OtpInput
+          value={pin}
+          onChange={setPin}
+          secure
+          autoComplete="off"
+          autoFocus={false}
+          disabled={loading}
+        />
 
         <Text style={[styles.label, styles.labelSpaced]}>Confirm PIN</Text>
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            value={confirmPin}
-            onChangeText={(t) => setConfirmPin(t.replace(/[^0-9]/g, ""))}
-            keyboardType="number-pad"
-            secureTextEntry={hidePin}
-            maxLength={PIN_LENGTH}
-            placeholder="Type it again"
-            placeholderTextColor="#999999"
-          />
-        </View>
+        <OtpInput
+          value={confirmPin}
+          onChange={setConfirmPin}
+          secure
+          autoComplete="off"
+          autoFocus={false}
+          error={confirmPin.length === PIN_LENGTH && confirmPin !== pin}
+          disabled={loading}
+        />
 
         <TouchableOpacity style={styles.button} onPress={savePressed} disabled={loading}>
           {loading ? (
@@ -223,7 +201,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   input: { flex: 1, paddingVertical: 14, fontSize: 16, color: "#1f1f1f" },
-  eye: { padding: 6 },
   button: {
     backgroundColor: Constants.appThemeColor,
     borderRadius: 10,

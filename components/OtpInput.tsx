@@ -9,6 +9,18 @@ interface OtpInputProps {
   disabled?: boolean;
   error?: boolean;
   autoFocus?: boolean;
+  /**
+   * Masks each digit. Off by default, because the original caller is an
+   * emailed verification code — something the user is reading off a screen
+   * and wants to see. A PIN is a secret they already know, so it is masked.
+   */
+  secure?: boolean;
+  /**
+   * `oneTimeCode` lets iOS autofill a code from Messages. Harmless for an
+   * OTP and wrong for a PIN, which will never arrive by SMS — offering to
+   * autofill one invites the wrong value into the field.
+   */
+  autoComplete?: "one-time-code" | "off";
 }
 
 const OtpInput = ({
@@ -18,6 +30,8 @@ const OtpInput = ({
   disabled = false,
   error = false,
   autoFocus = true,
+  secure = false,
+  autoComplete = "one-time-code",
 }: OtpInputProps) => {
   const inputRefs = useRef<(TextInput | null)[]>([]);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -80,7 +94,8 @@ const OtpInput = ({
             onFocus={() => setFocusedIndex(index)}
             onBlur={() => setFocusedIndex((prev) => (prev === index ? null : prev))}
             keyboardType="number-pad"
-            textContentType="oneTimeCode"
+            secureTextEntry={secure}
+            textContentType={autoComplete === "one-time-code" ? "oneTimeCode" : "none"}
             maxLength={length}
             textAlign="center"
             selectTextOnFocus

@@ -14,6 +14,7 @@
  * is the 409, and the only honest thing to do is send them to a human.
  */
 import { Ionicons } from "@expo/vector-icons";
+import OtpInput from "@/components/OtpInput";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -44,7 +45,6 @@ const ForgotPin = () => {
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [supportCode, setSupportCode] = useState("");
-  const [hidePin, setHidePin] = useState(true);
 
   const post = async (path: string, body: Record<string, unknown>) => {
     const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -308,56 +308,33 @@ const ForgotPin = () => {
             </Text>
 
             <Text style={styles.label}>Code from support</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={supportCode}
-                onChangeText={(t) => setSupportCode(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-                maxLength={6}
-                placeholder="6 digits"
-                placeholderTextColor="#999999"
-              />
-            </View>
+            <OtpInput
+              value={supportCode}
+              onChange={setSupportCode}
+              autoComplete="off"
+              autoFocus={false}
+              disabled={loading}
+            />
 
-            <Text style={[styles.label, styles.labelSpaced]}>New PIN</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={pin}
-                onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-                secureTextEntry={hidePin}
-                maxLength={PIN_LENGTH}
-                placeholder={`${PIN_LENGTH} digits`}
-                placeholderTextColor="#999999"
-              />
-              <TouchableOpacity
-                style={styles.eye}
-                onPress={() => setHidePin(!hidePin)}
-                accessibilityLabel={hidePin ? "Show PIN" : "Hide PIN"}
-              >
-                <Ionicons
-                  name={hidePin ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color="#999999"
-                />
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.label}>New PIN</Text>
+            <OtpInput
+              value={pin}
+              onChange={(t) => setPin(t)}
+              secure
+              autoComplete="off"
+              autoFocus={false}
+              disabled={loading}
+            />
 
-            <Text style={[styles.label, styles.labelSpaced]}>Confirm PIN</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={confirmPin}
-                onChangeText={(t) => setConfirmPin(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-                secureTextEntry={hidePin}
-                maxLength={PIN_LENGTH}
-                placeholder="Type it again"
-                placeholderTextColor="#999999"
-              />
-            </View>
+            <Text style={styles.label}>Confirm PIN</Text>
+            <OtpInput
+              value={confirmPin}
+              onChange={setConfirmPin}
+              secure
+              autoComplete="off"
+              autoFocus={false}
+              disabled={loading}
+            />
 
             <TouchableOpacity
               style={styles.button}
@@ -413,43 +390,25 @@ const ForgotPin = () => {
             </Text>
 
             <Text style={styles.label}>New PIN</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={pin}
-                onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-                secureTextEntry={hidePin}
-                maxLength={PIN_LENGTH}
-                placeholder={`${PIN_LENGTH} digits`}
-                placeholderTextColor="#999999"
-              />
-              <TouchableOpacity
-                style={styles.eye}
-                onPress={() => setHidePin(!hidePin)}
-                accessibilityLabel={hidePin ? "Show PIN" : "Hide PIN"}
-              >
-                <Ionicons
-                  name={hidePin ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color="#999999"
-                />
-              </TouchableOpacity>
-            </View>
+            <OtpInput
+              value={pin}
+              onChange={setPin}
+              secure
+              autoComplete="off"
+              autoFocus={false}
+              disabled={loading}
+            />
 
-            <Text style={styles.label}>Confirm PIN</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={confirmPin}
-                onChangeText={(t) => setConfirmPin(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-                secureTextEntry={hidePin}
-                maxLength={PIN_LENGTH}
-                placeholder="Type it again"
-                placeholderTextColor="#999999"
-              />
-            </View>
+            <Text style={[styles.label, styles.labelSpaced]}>Confirm PIN</Text>
+            <OtpInput
+              value={confirmPin}
+              onChange={setConfirmPin}
+              secure
+              autoComplete="off"
+              autoFocus={false}
+              error={confirmPin.length === PIN_LENGTH && confirmPin !== pin}
+              disabled={loading}
+            />
 
             <TouchableOpacity
               style={styles.button}
@@ -487,7 +446,6 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   input: { flex: 1, paddingVertical: 14, fontSize: 16, color: "#1f1f1f" },
-  eye: { padding: 6 },
   hint: { fontSize: 13, color: "#7a8287", marginTop: -8, marginBottom: 20 },
   button: {
     backgroundColor: Constants.appThemeColor,

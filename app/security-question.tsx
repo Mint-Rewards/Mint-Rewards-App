@@ -14,6 +14,7 @@
  */
 import { useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
+import OtpInput from "@/components/OtpInput";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
@@ -215,18 +216,14 @@ const SecurityQuestion = () => {
             <Text style={[styles.label, styles.labelSpaced]}>
               Confirm with your PIN
             </Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={currentPin}
-                onChangeText={(t) => setCurrentPin(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-                secureTextEntry
-                maxLength={PIN_LENGTH}
-                placeholder={`${PIN_LENGTH} digits`}
-                placeholderTextColor="#999999"
-              />
-            </View>
+            <OtpInput
+              value={currentPin}
+              onChange={setCurrentPin}
+              secure
+              autoComplete="off"
+              autoFocus={false}
+              disabled={saving}
+            />
             <Text style={styles.hint}>
               You already have a question set, so changing it needs your current
               PIN.
