@@ -9,6 +9,7 @@ import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 import { unregisterDeviceToken } from "@/utils/push";
 import { userFromAuth } from "@/utils/userFromAuth";
+import { signOutGoogle } from "@/utils/googleAuth";
 
 const API_URL = API_BASE_URL;
 
@@ -662,6 +663,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
         body: JSON.stringify({
           email,
           password,
+          /*
+            The same value twice, deliberately, and it is worth knowing why.
+
+            The API requires `confirmPassword` and rejects a mismatch, which
+            reads like a guard this app is subject to. It is not: there is no
+            second field on the signup screen, so the comparison is between a
+            value and itself and can never fail.
+
+            That is the decided behaviour, not an oversight (ClickUp
+            z8x1tu2c83). A typed password is checked by revealing it with the
+            eye toggle rather than by typing it twice — the modern guidance,
+            and one fewer field on a form people abandon. If a confirm field
+            is ever added, this line is what has to change with it, or the
+            server-side check stays decorative.
+          */
           confirmPassword: password,
           userName,
           phone,
@@ -788,6 +804,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // is a privacy problem rather than an inconvenience.
     const authToken = get().token;
     if (authToken) await unregisterDeviceToken(authToken);
+
+    /*
+     * The Google session is separate from ours and outlives it.
+     *
+     * Clearing our token logs the user out of Mint Rewards; it does nothing to
+     * the native GoogleSignin session, which kept the last-used account
+     * indefinitely. That is how a deleted account could sign back in with one
+     * tap, and how the next person to use the handset was offered somebody
+     * else's identity.
+     *
+     * deleteAccount() routes through here too — profile.tsx calls
+     * leaveForLogin() on success — so deletion clears it by the same path
+     * rather than needing its own.
+     */
+    await signOutGoogle();
 
     await SecureStore.deleteItemAsync("userToken");
     await SecureStore.deleteItemAsync("userEmail");
