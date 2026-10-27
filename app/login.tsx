@@ -169,6 +169,10 @@ const LoginScreen = () => {
   const googleSignInEnabled = useFeatureFlag("google-signin-enabled") !== false;
   const appleSignInEnabled = useFeatureFlag("apple-signin-enabled") !== false;
 
+  /** Both buttons share a row, so each gets half the width and a short label. */
+  const bothSocialsShown =
+    googleSignInEnabled && Platform.OS === "ios" && appleSignInEnabled;
+
   /*
    * Someone who has proved they own an address we have never seen.
    *
@@ -574,10 +578,16 @@ const LoginScreen = () => {
           )}
 
           {/* Google Sign-In Button */}
+          {/* Side by side, not stacked — see the equivalent note on the sign-up
+              screen. Two full-width buttons cost 124pt at the bottom of a form
+              that is already taller than the screen; a row costs 62pt. The row
+              collapses to full width on Android, where Apple is absent. */}
+          <View style={styles.socialRow}>
           {googleSignInEnabled && (
             <TouchableOpacity
               style={[
                 styles.googleButton,
+                styles.socialItem,
                 (loading || googleLoading) && styles.googleButtonDisabled,
               ]}
               onPress={handleGoogleSignIn}
@@ -596,7 +606,7 @@ const LoginScreen = () => {
                     ]}
                     numberOfLines={1}
                   >
-                    Sign in with Google
+                    {bothSocialsShown ? "Google" : "Sign in with Google"}
                   </Text>
                 </View>
               )}
@@ -605,7 +615,7 @@ const LoginScreen = () => {
 
           {/* Apple Sign-In is iOS-only */}
           {Platform.OS === "ios" && appleSignInEnabled && (
-            <View style={styles.appleButtonContainer}>
+            <View style={[styles.appleButtonContainer, styles.socialItem]}>
               <AppleSignInButton
                 onCredential={handleAppleSignIn}
                 onError={(e) => {
@@ -616,6 +626,7 @@ const LoginScreen = () => {
               />
             </View>
           )}
+          </View>
           </>
           )}
         </View>
@@ -812,6 +823,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#999999",
   },
+  socialRow: { flexDirection: "row", gap: 10, alignItems: "stretch" },
+  socialItem: { flex: 1 },
   appleButtonContainer: {
     width: "100%",
     maxWidth: 400,

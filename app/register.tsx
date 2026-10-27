@@ -158,6 +158,10 @@ const RegisterScreen = () => {
   const googleSignInEnabled = useFeatureFlag("google-signin-enabled") !== false;
   const appleSignInEnabled = useFeatureFlag("apple-signin-enabled") !== false;
 
+  /** Both buttons share a row, so each gets half the width and a short label. */
+  const bothSocialsShown =
+    googleSignInEnabled && Platform.OS === "ios" && appleSignInEnabled;
+
   const handleGoogleSignUp = async () => {
     setGoogleLoading(true);
     try {
@@ -733,73 +737,6 @@ const RegisterScreen = () => {
 
           {authTab === "email" && (
           <>
-          {/*
-            * SOCIAL SIGN-UP COMES FIRST, and that is a hierarchy decision
-            * as much as a spacing one.
-            *
-            * It is ONE TAP. The form below it is four fields and a
-            * password rule. Underneath the form, the fast path was off the
-            * bottom of every handset but the largest — the slow path was
-            * hiding the quick one.
-            *
-            * The divider now reads downward into the form rather than up
-            * out of it, so the order on screen matches the order of
-            * effort.
-            */}
-          {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              {/* Names what is below it now that it reads downward into the
-                  form, rather than a bare "or" between two equals. */}
-              <Text style={styles.dividerText}>or sign up with email</Text>
-              <View style={styles.dividerLine} />
-            </View>
-          )}
-
-          {/* Google Sign-Up Button */}
-          {googleSignInEnabled && (
-            <TouchableOpacity
-              style={[
-                styles.googleButton,
-                (loading || googleLoading) && styles.googleButtonDisabled,
-              ]}
-              onPress={handleGoogleSignUp}
-              disabled={loading || appleLoading || googleLoading}
-              activeOpacity={0.9}
-            >
-              {googleLoading ? (
-                <ActivityIndicator color="#1f1f1f" size="small" />
-              ) : (
-                <View style={styles.googleButtonContent}>
-                  <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
-                  <Text
-                    style={[
-                      styles.googleButtonText,
-                      loading && styles.googleButtonTextDisabled,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    Sign up with Google
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          )}
-
-          {/* Apple Sign-Up is iOS-only */}
-          {Platform.OS === "ios" && appleSignInEnabled && (
-            <View style={styles.appleButtonContainer}>
-              <AppleSignInButton
-                onCredential={handleAppleSignUp}
-                onError={(e: unknown) => {
-                  console.warn('Apple Sign-Up error', e);
-                  Constants.showDialog('Apple Sign-Up failed. Please try again.');
-                }}
-                disabled={loading || appleLoading || googleLoading}
-                buttonType={AppleAuthenticationButtonType.SIGN_UP}
-              />
-            </View>
-          )}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Name</Text>
             <View style={styles.inputContainer}>
@@ -913,6 +850,73 @@ const RegisterScreen = () => {
             .
           </Text>
 
+          {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
+            <View style={styles.dividerContainer}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+          )}
+
+          {/* Google Sign-Up Button */}
+          {/*
+            * SIDE BY SIDE, not stacked.
+            *
+            * Two full-width buttons cost 124pt at the bottom of a form that
+            * was already taller than the screen. Next to each other they cost
+            * 62pt, and the pair reads as one choice — "or sign in another
+            * way" — rather than two separate offers.
+            *
+            * The row collapses gracefully: on Android, where Apple is absent,
+            * the single remaining button takes the full width through
+            * `flex: 1` and keeps its longer label.
+            */}
+          <View style={styles.socialRow}>
+          {googleSignInEnabled && (
+            <TouchableOpacity
+              style={[
+                styles.googleButton,
+                styles.socialItem,
+                (loading || googleLoading) && styles.googleButtonDisabled,
+              ]}
+              onPress={handleGoogleSignUp}
+              disabled={loading || appleLoading || googleLoading}
+              activeOpacity={0.9}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#1f1f1f" size="small" />
+              ) : (
+                <View style={styles.googleButtonContent}>
+                  <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
+                  <Text
+                    style={[
+                      styles.googleButtonText,
+                      loading && styles.googleButtonTextDisabled,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {bothSocialsShown ? "Google" : "Sign up with Google"}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Apple Sign-Up is iOS-only */}
+          {Platform.OS === "ios" && appleSignInEnabled && (
+            <View style={[styles.appleButtonContainer, styles.socialItem]}>
+              <AppleSignInButton
+                onCredential={handleAppleSignUp}
+                onError={(e: unknown) => {
+                  console.warn('Apple Sign-Up error', e);
+                  Constants.showDialog('Apple Sign-Up failed. Please try again.');
+                }}
+                disabled={loading || appleLoading || googleLoading}
+                buttonType={AppleAuthenticationButtonType.SIGN_UP}
+              />
+            </View>
+          )}
+          </View>
           </>
           )}
         </View>
@@ -1110,6 +1114,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#999999",
   },
+  socialRow: { flexDirection: "row", gap: 10, alignItems: "stretch" },
+  socialItem: { flex: 1 },
   appleButtonContainer: {
     width: "100%",
     maxWidth: 400,
