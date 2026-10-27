@@ -12,6 +12,14 @@
  *
  * An account with no security question cannot be recovered here at all — that
  * is the 409, and the only honest thing to do is send them to a human.
+ *
+ * AN ACCOUNT WHOSE ANSWER HAS BEEN FORGOTTEN NEEDS THE SAME ROUTE, and for a
+ * long time it had none. Support was reachable only from that 409, so somebody
+ * who HAD a question and could not remember its answer got five wrong-answer
+ * alerts, then a fifteen-minute lockout, and no route anywhere — there is no
+ * help row, no phone number and no email anywhere else in the app. The screen
+ * offered "I have a code from support" while hiding the only thing that
+ * produces one.
  */
 import { Ionicons } from "@expo/vector-icons";
 import OtpInput from "@/components/OtpInput";
@@ -39,6 +47,10 @@ const ForgotPin = () => {
 
   const [phone, setPhone] = useState("");
   const [e164, setE164] = useState("");
+  // Kept so the support screen can be reached from any step with the number
+  // already filled in, rather than making somebody who is locked out retype it.
+  const [national, setNational] = useState("");
+  const [lockedOut, setLockedOut] = useState(false);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [recoveryToken, setRecoveryToken] = useState("");
@@ -53,6 +65,22 @@ const ForgotPin = () => {
       body: JSON.stringify(body),
     });
     return { res, data: await res.json().catch(() => ({})) };
+  };
+
+  /*
+   * The way out when the question itself is what they cannot get past.
+   *
+   * `national` is captured the moment the question is fetched, so it is always
+   * set by the time this is reachable. The parse is a fallback for a state that
+   * should not occur, not a path anybody is expected to take.
+   */
+  const goToSupport = () => {
+    let carried = national;
+    if (!carried) {
+      const parsed = normalizePhone(phone);
+      if (parsed.ok) carried = parsed.national;
+    }
+    router.push({ pathname: "/contact-support", params: { phone: carried } });
   };
 
   const startPressed = async () => {
@@ -70,6 +98,7 @@ const ForgotPin = () => {
 
       if (res.ok && data.questionPrompt) {
         setE164(parsed.e164);
+        setNational(parsed.national);
         setQuestion(data.questionPrompt);
         setStep("answer");
         return;
@@ -114,13 +143,25 @@ const ForgotPin = () => {
 
       if (res.ok && data.recoveryToken) {
         setRecoveryToken(data.recoveryToken);
+        setLockedOut(false);
         setStep("newPin");
         return;
       }
 
-      // A lockout is not a wrong answer and must not read as one — the server
-      // says how long is left, and somebody who does not know that will keep
-      // trying.
+      /*
+       * A lockout is not a wrong answer and must not read as one — the server
+       * says how long is left, and somebody who does not know that will keep
+       * trying.
+       *
+       * It also changes what the support link below is WORTH, which is why the
+       * flag exists rather than the alert being left to say everything:
+       * `pin-recovery/redeem` never consults the PIN lock, and `setUserPin`
+       * clears `pinLockedUntil` outright, so a code from an agent works during
+       * the fifteen minutes. Telling somebody to sit and wait when they do not
+       * have to is the thing this screen used to do by saying nothing.
+       */
+      if (data.code === "PIN_LOCKED") setLockedOut(true);
+
       Constants.showDialog(data.error || "That answer is not correct.");
     } catch {
       Constants.showDialog("An error occurred. Please try again.");
@@ -289,6 +330,7 @@ const ForgotPin = () => {
                   return;
                 }
                 setE164(parsed.e164);
+                setNational(parsed.national);
                 setStep("code");
               }}
             >
@@ -380,6 +422,36 @@ const ForgotPin = () => {
                 <Text style={styles.buttonText}>Continue</Text>
               )}
             </TouchableOpacity>
+
+            {/*
+              * Says the wait is optional, because it is. Without this the
+              * server's own "try again in 15 minutes" is the last word, and
+              * waiting is the only thing it suggests.
+              */}
+            {lockedOut && (
+              <Text style={styles.lockedNote}>
+                Too many attempts, so the question is closed for a short while.
+                You do not have to wait — support can confirm who you are and
+                get you back in now.
+              </Text>
+            )}
+
+            {/*
+              * HERE AND NOT ON THE PHONE STEP, deliberately. At that point
+              * nobody has failed anything yet, and a support link sitting
+              * beside a number field invites a ticket instead of an answer —
+              * every one of those costs an agent a phone call. After a failure
+              * it is earned.
+              */}
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={goToSupport}
+              accessibilityLabel="Contact support because you cannot remember your answer"
+            >
+              <Text style={styles.secondaryButtonText}>
+                I cannot remember my answer
+              </Text>
+            </TouchableOpacity>
           </>
         )}
 
@@ -456,6 +528,15 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: "#ffffff", fontSize: 16, fontWeight: "600" },
   secondaryButton: { paddingVertical: 16, alignItems: "center", marginTop: 4 },
+  lockedNote: {
+    fontSize: 13,
+    color: "#8a5a00",
+    backgroundColor: "#fff6e5",
+    borderRadius: 10,
+    padding: 12,
+    lineHeight: 19,
+    marginTop: 18,
+  },
   secondaryButtonText: {
     color: Constants.appThemeColor,
     fontSize: 15,
