@@ -1,7 +1,34 @@
 import React, { useRef, useState } from "react";
-import { StyleSheet, TextInput, View } from "react-native";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 import { Constants } from "@/utils/constants";
 
+/**
+ * A row of code boxes: ONE REAL FIELD, and boxes that only draw it.
+ *
+ * It used to be one `TextInput` per box, each `maxLength={length}` so a pasted
+ * or autofilled code arrived whole and could be spread across them. The cost
+ * was a box able to hold six characters, and letters pasted into one stayed
+ * visible there: the handler stripped non-digits, which left the code
+ * unchanged, so React had no prop change to push and the native field kept
+ * what had been pasted.
+ *
+ * React Native does try to undo exactly this — `TextInput` keeps the last
+ * native text in state and a layout effect re-sends `props.value` whenever the
+ * two disagree (Libraries/Components/TextInput/TextInput.js). But that command
+ * carries `mostRecentEventCount`, and native drops it when the count is stale,
+ * which is why stuck text was intermittent rather than impossible.
+ *
+ * So the boxes are no longer inputs. A single field holds the code, sanitised
+ * on every change, and each box draws one character of `value`. One digit per
+ * box is then not a rule being enforced — there is nowhere else for a
+ * character to be, whether it arrives by keystroke, paste or autofill, and
+ * whether or not native honours a correction.
+ *
+ * Two bugs went with the old shape:
+ *   - letters pasted into a box stayed on screen (above);
+ *   - a digit typed into a box with empty boxes before it jumped to the front,
+ *     because the code was `digits.join("")` and the gaps simply collapsed.
+ */
 interface OtpInputProps {
   length?: number;
   value: string;
@@ -13,6 +40,13 @@ interface OtpInputProps {
    * Masks each digit. Off by default, because the original caller is an
    * emailed verification code — something the user is reading off a screen
    * and wants to see. A PIN is a secret they already know, so it is masked.
+   *
+   * Masking is now drawing a bullet instead of the character, rather than
+   * `secureTextEntry` on the field. The field's text is transparent either
+   * way, so nothing is revealed; and leaving `secureTextEntry` off keeps the
+   * number pad from being replaced by iOS's password UI. Digits typed on a
+   * number pad with autocorrect off are not learned, so the
+   * keyboard-dictionary argument for it does not apply.
    */
   secure?: boolean;
   /**
@@ -22,16 +56,20 @@ interface OtpInputProps {
    */
   autoComplete?: "one-time-code" | "off";
   /**
-   * Fired when any box takes focus.
+   * Fired when the field takes focus.
    *
    * Android's KeyboardAvoidingView does nothing without a `behavior`, and
    * `padding` misbehaves there, so screens that sit low in a long form scroll
-   * themselves into view instead. The boxes are the only control on the sign-up
-   * form with no TextInput of its own for the screen to measure, so it has to
-   * be told.
+   * themselves into view instead. The boxes are the only control on the
+   * sign-up form with no TextInput of its own for the screen to measure, so it
+   * has to be told.
    */
   onFocus?: () => void;
 }
+
+/** Digits only, never longer than the row. The one place input is narrowed. */
+const sanitize = (text: string, length: number): string =>
+  text.replace(/\D/g, "").slice(0, length);
 
 const OtpInput = ({
   length = 6,
@@ -44,89 +82,107 @@ const OtpInput = ({
   autoComplete = "one-time-code",
   onFocus,
 }: OtpInputProps) => {
-  const inputRefs = useRef<(TextInput | null)[]>([]);
-  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
-  const digits = Array.from({ length }, (_, i) => value[i] ?? "");
+  const inputRef = useRef<TextInput>(null);
+  const [focused, setFocused] = useState(false);
 
-  const setCode = (next: string) => {
-    onChange(next.slice(0, length));
-  };
+  /*
+   * Sanitised on the way out as well as on the way in.
+   *
+   * The field can only ever hand up digits, so this is for the parent: a
+   * screen that restores a draft or prefills from a route param should not be
+   * able to put a letter in a box either.
+   */
+  const code = sanitize(value ?? "", length);
+  const characters = Array.from({ length }, (_, i) => code[i] ?? "");
 
-  const handleChangeText = (text: string, index: number) => {
-    const cleaned = text.replace(/\D/g, "");
-
-    if (cleaned.length > 1) {
-      // Pasted or autofilled full code
-      const merged = (value.slice(0, index) + cleaned).slice(0, length);
-      setCode(merged);
-      const nextIndex = Math.min(merged.length, length - 1);
-      inputRefs.current[nextIndex]?.focus();
-      return;
-    }
-
-    const nextDigits = [...digits];
-    nextDigits[index] = cleaned;
-    setCode(nextDigits.join(""));
-
-    if (cleaned && index < length - 1) {
-      inputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === "Backspace" && !digits[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-      const nextDigits = [...digits];
-      nextDigits[index - 1] = "";
-      setCode(nextDigits.join(""));
-    }
-  };
+  // The box the next character lands in, drawn with the focus ring so it reads
+  // as a caret. Clamped, so a full code highlights its last box.
+  const cursor = Math.min(code.length, length - 1);
 
   return (
-    <View style={styles.container} accessibilityRole="none">
-      {digits.map((digit, index) => {
-        const isFocused = focusedIndex === index;
-        return (
-          <TextInput
-            key={index}
-            ref={(ref) => {
-              inputRefs.current[index] = ref;
-            }}
-            style={[
-              styles.box,
-              digit && !error && styles.boxFilled,
-              isFocused && !error && !disabled && styles.boxFocused,
-              error && styles.boxError,
-              disabled && styles.boxDisabled,
-            ]}
-            value={digit}
-            onChangeText={(text) => handleChangeText(text, index)}
-            onKeyPress={(e) => handleKeyPress(e, index)}
-            onFocus={() => {
-              setFocusedIndex(index);
-              onFocus?.();
-            }}
-            onBlur={() => setFocusedIndex((prev) => (prev === index ? null : prev))}
-            keyboardType="number-pad"
-            secureTextEntry={secure}
-            textContentType={autoComplete === "one-time-code" ? "oneTimeCode" : "none"}
-            maxLength={length}
-            textAlign="center"
-            selectTextOnFocus
-            editable={!disabled}
-            autoFocus={autoFocus && index === 0}
-            accessibilityLabel={`Digit ${index + 1} of ${length}`}
-            placeholder="•"
-            placeholderTextColor="#C6C6C6"
-          />
-        );
-      })}
+    <View style={styles.container}>
+      <View style={styles.row} pointerEvents="none">
+        {characters.map((character, index) => {
+          const filled = character !== "";
+          const atCursor = focused && !disabled && index === cursor;
+
+          return (
+            <View
+              key={index}
+              style={[
+                styles.box,
+                filled && !error && styles.boxFilled,
+                atCursor && !error && styles.boxFocused,
+                error && styles.boxError,
+                disabled && styles.boxDisabled,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.character,
+                  !filled && styles.placeholder,
+                  filled && error && styles.characterError,
+                  filled && disabled && styles.characterDisabled,
+                ]}
+              >
+                {filled ? (secure ? "•" : character) : "•"}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      {/*
+       * Last in the tree, so it sits above the boxes and takes the taps.
+       *
+       * Transparent rather than `opacity: 0`: an invisible-by-opacity input has
+       * a history of not raising the keyboard on some Android versions, and
+       * there is nothing to gain by risking it. Nothing shows through — text,
+       * caret and selection are all transparent.
+       */}
+      <TextInput
+        ref={inputRef}
+        style={styles.field}
+        value={code}
+        onChangeText={(text) => onChange(sanitize(text, length))}
+        onFocus={() => {
+          setFocused(true);
+          onFocus?.();
+        }}
+        onBlur={() => setFocused(false)}
+        keyboardType="number-pad"
+        /*
+         * Caps the FIELD, not a box, so a longer paste is truncated rather
+         * than refused — somebody pasting a code with a trailing space or a
+         * stray character still gets their six digits.
+         */
+        maxLength={length}
+        textContentType={
+          autoComplete === "one-time-code" ? "oneTimeCode" : "none"
+        }
+        /*
+         * Always "off", which is an Android-only prop. The only value Android
+         * offers for a code is "sms-otp", and ours arrive by EMAIL — claiming
+         * otherwise sends the platform looking for a text message that is
+         * never sent. iOS autofill is unaffected: `textContentType` above is
+         * what drives it there, and it reads Mail as well as Messages.
+         */
+        autoComplete="off"
+        autoCorrect={false}
+        spellCheck={false}
+        caretHidden
+        selectionColor="transparent"
+        editable={!disabled}
+        autoFocus={autoFocus}
+        accessibilityLabel={`Enter the ${length}-digit code`}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  container: { position: "relative" },
+  row: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
@@ -137,10 +193,18 @@ const styles = StyleSheet.create({
     borderColor: "#E0E0E0",
     borderRadius: 12,
     backgroundColor: "#FAFAFA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  character: {
     fontSize: 22,
     fontWeight: "600",
     color: "#333333",
+    textAlign: "center",
   },
+  placeholder: { color: "#C6C6C6" },
+  characterError: { color: "#B3261E" },
+  characterDisabled: { color: "#999999" },
   boxFilled: {
     borderColor: "rgba(68, 158, 178, 0.5)",
     backgroundColor: "#ffffff",
@@ -153,13 +217,28 @@ const styles = StyleSheet.create({
   boxError: {
     borderColor: "#D32F2F",
     backgroundColor: "#FDECEA",
-    color: "#B3261E",
   },
   boxDisabled: {
     borderColor: "#E0E0E0",
     backgroundColor: "#F0F0F0",
-    color: "#999999",
     opacity: 0.7,
+  },
+  /*
+   * Covers the whole row. The text is invisible and the caret is hidden, so
+   * what the user sees is the boxes behind it; what they touch is this.
+   */
+  field: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    color: "transparent",
+    backgroundColor: "transparent",
+    // Keeps the invisible text from being laid out taller than the row on
+    // Android, which would make the touch target drift.
+    fontSize: 22,
+    textAlign: "center",
   },
 });
 
