@@ -294,14 +294,31 @@ export function resolveLocationGate(input: {
     "securityQuestion",
     "emailVerification",
   ];
-  const recovery = missingFields(user, credentials).filter((field) =>
+  const outstanding = missingFields(user, credentials);
+  const recovery = outstanding.filter((field) =>
     RECOVERY_FIELDS.includes(field),
   );
   if (recovery.length > 0) {
+    /*
+     * THIS MODAL ALWAYS OFFERS A WAY OUT, whatever the dismissal count says.
+     *
+     * Every other row is something a person can always finish: type a name,
+     * pick a city, drop a pin, answer a question. Verifying an email is the
+     * only one that depends on a third party — if the mail provider's quota is
+     * spent, the step CANNOT be completed. Letting the count turn the modal
+     * non-dismissible would trap somebody in it over an outage that is not
+     * theirs, with no way into the app at all. Under a "hard" mode it would
+     * trap them from the first launch.
+     *
+     * The pressure to finish lives elsewhere and is the better lever: brands
+     * and deals stay locked until the account can be recovered — see
+     * isProfileComplete. Nag, but never trap.
+     */
+    const onlyRecoveryLeft = outstanding.length === recovery.length;
     return {
       show: "finish",
-      dismissible,
-      missing: missingFields(user, credentials),
+      dismissible: onlyRecoveryLeft ? true : dismissible,
+      missing: outstanding,
     };
   }
 

@@ -111,6 +111,12 @@ describe("province removal keeps isProfileComplete satisfiable", () => {
     expect(town).toBeDefined();
     expect(
       isProfileComplete({
+        // Required since recoverability became part of completeness: an
+        // account whose owner cannot prove it is theirs is not finished. This
+        // case is about the PROVINCE change, so it is satisfied rather than
+        // tested here.
+        email: "ayesha@example.com",
+        emailVerified: true,
         phone: "03001234567",
         province: resolveProvinceForPayload(city),
         city,

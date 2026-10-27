@@ -145,6 +145,12 @@ export interface User {
   referrals?: string[];
   firstTimeLogin?: boolean;
   emailVerified?: boolean;
+  /**
+   * Whether a security question is set. A boolean the server derives in SQL —
+   * the answer hash never leaves the database. Used alongside `emailVerified`
+   * to decide whether this account can be recovered at all.
+   */
+  hasSecurityQuestion?: boolean;
   pickupHistory?: any[];
   token?: string;
 }
@@ -212,6 +218,12 @@ export interface Brand {
   status?: "PENDING" | "APPROVED" | "REJECTED";
   role?: string;
   emailVerified?: boolean;
+  /**
+   * Whether a security question is set. A boolean the server derives in SQL —
+   * the answer hash never leaves the database. Used alongside `emailVerified`
+   * to decide whether this account can be recovered at all.
+   */
+  hasSecurityQuestion?: boolean;
 }
 
 export interface BrandTheme {

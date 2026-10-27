@@ -97,10 +97,51 @@ export function isDeliveryPointSet(user: User | null | undefined): boolean {
  * caller can say WHICH half is missing when it writes a prompt; they are not
  * alternative gates, and using one alone to decide access would reintroduce
  * exactly the split this function exists to close.
+ *
+ * It now also asks whether the account can be RECOVERED — see
+ * `canBeRecovered`. An account whose owner cannot prove it is theirs is not a
+ * finished profile, and brands and deals should not open for it however much
+ * of the address is filled in.
  */
 export function isProfileComplete(user: User | null | undefined): boolean {
   const hasHouseNo = !!user?.structuredAddress?.houseNo?.trim();
-  return isAreaAnswered(user) && isDeliveryPointSet(user) && hasHouseNo;
+  return (
+    isAreaAnswered(user) &&
+    isDeliveryPointSet(user) &&
+    hasHouseNo &&
+    canBeRecovered(user)
+  );
+}
+
+/**
+ * Whether this account's owner could get back into it.
+ *
+ * Part of completion, and therefore of what unlocks brands and deals, because
+ * an account nobody can prove they own is not finished however much of the
+ * address is filled in. An unverified address is not a way back in — a reset
+ * link sent there reaches whoever really owns it — and an account made from a
+ * mobile number has no address at all, so for it the security question is the
+ * whole story.
+ *
+ * THIS IS WHERE THE PRESSURE TO VERIFY LIVES, deliberately, rather than in a
+ * modal somebody cannot dismiss. Verifying depends on a mail provider, so it
+ * is the one step a person can be unable to complete through no fault of their
+ * own; trapping them in a dialog over that would be punishing an outage.
+ * Withholding the rewards until it is done costs them nothing they already
+ * had, and the gate's modal still tells them what to do.
+ *
+ * Mirrors `hasAWayBackIn` in the backend's evaluateProfileCompletion, which
+ * decides the same question for the completion bonus. The two are deliberately
+ * the same rule: a profile the server will not pay for should not be one the
+ * app treats as finished.
+ */
+export function canBeRecovered(user: User | null | undefined): boolean {
+  if (!user) return false;
+  // An absent flag is NOT proof — these fields are optional on the record, and
+  // reading "not loaded" as verified would unlock exactly the accounts this
+  // exists to catch.
+  if (!!user.email?.trim() && user.emailVerified === true) return true;
+  return user.hasSecurityQuestion === true;
 }
 
 /**
