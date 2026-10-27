@@ -20,6 +20,7 @@ import {
   type GateMode,
   type LocationGateConfig,
   type MissingField,
+  type GateCredentials,
 } from "@/utils/locationGate";
 
 type TestUser = User & { locationVersion?: number };
@@ -490,5 +491,119 @@ describe("resolveLocationGate — precedence", () => {
       show: "none",
       reason: "already confirmed",
     });
+  });
+});
+
+/*
+ * THE SECURITY QUESTION AS A CHECKLIST ROW.
+ *
+ * It is outstanding only for an account with NO EMAIL ADDRESS. Those
+ * households have no reset link, so the question and a support ticket are the
+ * entire way back into the account — and bulk onboarding now creates such
+ * accounts for people who never chose their own PIN.
+ *
+ * An account that can be sent a reset link is never asked, because under a
+ * hard gate the modal cannot be dismissed and it would hold those users over
+ * something they do not need.
+ */
+describe("the security question row", () => {
+  const complete = () =>
+    pinned({ structuredAddress: { houseNo: "12-C" } } as Partial<TestUser>);
+
+  const creds = (over: Partial<GateCredentials> = {}): GateCredentials => ({
+    hasEmail: false,
+    hasPhone: true,
+    hasSecurityQuestion: false,
+    ...over,
+  });
+
+  it("is outstanding for a phone-only account without one", () => {
+    const decision = resolve({ user: complete(), credentials: creds() });
+    expect(decision.show).toBe("finish");
+    if (decision.show === "finish") {
+      expect(decision.missing).toContain("securityQuestion");
+    }
+  });
+
+  it("is satisfied once that account has one", () => {
+    const decision = resolve({
+      user: complete(),
+      credentials: creds({ hasSecurityQuestion: true }),
+    });
+    if (decision.show === "finish") {
+      expect(decision.missing).not.toContain("securityQuestion");
+    }
+  });
+
+  it("is never asked of an account with an email address", () => {
+    const decision = resolve({
+      user: complete(),
+      credentials: creds({ hasEmail: true }),
+    });
+    if (decision.show === "finish") {
+      expect(decision.missing).not.toContain("securityQuestion");
+    }
+  });
+
+  /*
+   * FAILS OPEN ON THE USER. `credentials` is null until my-profile answers,
+   * and under a hard gate an outstanding row cannot be dismissed. Treating
+   * "not loaded yet" as "missing" would hold somebody in a modal over a
+   * question we do not yet know they need.
+   */
+  it("adds nothing while the credentials are still unknown", () => {
+    for (const credentials of [null, undefined]) {
+      const decision = resolve({ user: complete(), credentials });
+      if (decision.show === "finish") {
+        expect(decision.missing).not.toContain("securityQuestion");
+      }
+    }
+  });
+
+  /*
+   * THE ORDERING BUG THIS NEARLY SHIPPED WITH.
+   *
+   * Everything else in the gate is about an address: a confirmed location
+   * switches it off, and a dropped pin routes to the confirm modal instead of
+   * the checklist. If the security question were checked after those, the one
+   * group that must be asked would be exactly the group never asked — anybody
+   * who finished their address first would never see the row again, and could
+   * never complete their profile or earn the bonus.
+   */
+  it("still asks after the location has been confirmed", () => {
+    const decision = resolve({
+      user: { ...complete(), locationVersion: 99 } as TestUser,
+      credentials: creds(),
+    });
+    expect(decision.show).toBe("finish");
+    if (decision.show === "finish") {
+      expect(decision.missing).toContain("securityQuestion");
+    }
+  });
+
+  it("still asks a user who has dropped a map pin", () => {
+    // A pin normally routes to the confirm modal, which has no checklist.
+    const decision = resolve({ user: pinned(), credentials: creds() });
+    expect(decision.show).toBe("finish");
+  });
+
+  it("goes back to the usual behaviour once the question is set", () => {
+    // The check must not leak: with nothing outstanding the original ordering
+    // runs untouched, so a pinned user still gets the confirm modal.
+    const decision = resolve({
+      user: pinned(),
+      credentials: creds({ hasSecurityQuestion: true }),
+    });
+    expect(decision.show).toBe("confirm");
+  });
+
+  it("does not ask an account that cannot sign in by phone at all", () => {
+    const decision = resolve({
+      user: complete(),
+      credentials: creds({ hasPhone: false }),
+    });
+    if (decision.show === "finish") {
+      expect(decision.missing).not.toContain("securityQuestion");
+    }
   });
 });

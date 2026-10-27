@@ -202,34 +202,10 @@ const ProfileScreen = () => {
               </TouchableOpacity>
             )}
 
-            {/*
-              * Security question.
-              *
-              * Shown to everybody, but it means different things to the two
-              * kinds of account. An account made from an email address can
-              * always fall back on a reset link; one made from a phone number
-              * has NO ADDRESS, so this question and a support ticket are the
-              * entire recovery story. Hence the warning tint for those users —
-              * a neutral menu row would not say how much is riding on it.
-              */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => router.push("/security-question")}
-              activeOpacity={0.7}
-            >
-              <View style={styles.menuContent}>
-                <Text style={styles.menuTitle}>Security Question</Text>
-                {credentials && !credentials.hasEmail && (
-                  <Text style={styles.menuSubtitleWarning}>
-                    {credentials.hasSecurityQuestion
-                      ? "Your only way to recover your PIN"
-                      : "Not set — your only way to recover your PIN"}
-                  </Text>
-                )}
-              </View>
-
-              <Ionicons name="chevron-forward" size={20} color="#999999" />
-            </TouchableOpacity>
+            {/* Security question moved into Edit Profile — it is part of
+                finishing a profile, and for a phone-only household it counts
+                toward the completion bonus, so it belongs on the form the
+                checklist sends people to rather than in a separate menu. */}
 
             <TouchableOpacity
               style={styles.menuItem}

@@ -74,6 +74,7 @@ const EditProfile = () => {
     isProfileLoading,
     profileError,
     setProfileError,
+    credentials,
   } = useAppStore();
 
   const [identity, setIdentity] = useState<IdentityFields>({
@@ -151,6 +152,7 @@ const EditProfile = () => {
   const phoneRef = useRef<TextInput>(null);
   const addressRef = useRef<View>(null);
   const pinRef = useRef<View>(null);
+  const securityQuestionRef = useRef<View>(null);
 
   /**
    * Brings a target into view, and puts the cursor in it where there is one.
@@ -178,6 +180,7 @@ const EditProfile = () => {
       phone: phoneRef,
       address: addressRef,
       pin: pinRef,
+      securityQuestion: securityQuestionRef,
     };
     // One frame's delay so the anchors have been laid out and can be measured.
     const timer = setTimeout(() => {
@@ -706,6 +709,55 @@ const EditProfile = () => {
                 onFieldBlur={markFieldBlurred}
               />
             </View>
+
+            {/*
+              * Security question — moved here from the profile menu, because
+              * this is the screen a person opens when told to finish their
+              * profile, and for a phone-only household it is as much a part of
+              * the profile as the address.
+              *
+              * It navigates rather than editing inline: choosing a question and
+              * answering it is its own flow, with its own validation, and
+              * folding it into this form would mean two save buttons meaning
+              * different things.
+              *
+              * The warning tint is shown only to accounts with no email. They
+              * have no reset link, so this question and a support ticket are
+              * the whole recovery story. A neutral row would not say that.
+              */}
+            <View ref={securityQuestionRef} style={styles.securityRow}>
+              <TouchableOpacity
+                style={styles.securityTouchable}
+                onPress={() => router.push("/security-question")}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  credentials?.hasSecurityQuestion
+                    ? "Security question, already set. Opens the security question screen."
+                    : "Security question, not set. Opens the security question screen."
+                }
+              >
+                <View style={styles.securityText}>
+                  <Text style={styles.label}>Security Question</Text>
+                  <Text
+                    style={
+                      credentials && !credentials.hasEmail
+                        ? styles.securitySubtitleWarning
+                        : styles.securitySubtitle
+                    }
+                  >
+                    {credentials && !credentials.hasEmail
+                      ? credentials.hasSecurityQuestion
+                        ? "Your only way to recover your PIN"
+                        : "Not set — your only way to recover your PIN"
+                      : credentials?.hasSecurityQuestion
+                        ? "Set"
+                        : "Not set"}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#999999" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <MapPicker
@@ -861,6 +913,21 @@ const styles = StyleSheet.create({
   headerGradient: { borderRadius: 20, padding: 15, borderWidth: 1, borderColor: "rgba(255,255,255,0.2)" },
   headerContent: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
+  securityRow: { marginTop: 18 },
+  securityTouchable: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E8E8E8",
+  },
+  securityText: { flex: 1 },
+  securitySubtitle: { fontSize: 13, color: "#777777", marginTop: 2 },
+  securitySubtitleWarning: { fontSize: 13, color: "#C2410C", marginTop: 2 },
   headerTitle: { fontSize: 20, fontWeight: "bold", color: "#ffffff" },
   placeholder: { width: 40 },
 });

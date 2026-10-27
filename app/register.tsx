@@ -24,6 +24,9 @@ import Svg, { Path } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
+import SecurityQuestionFields, {
+  type SecurityQuestion,
+} from "@/components/SecurityQuestionFields";
 import { normalizePhone, pinShapeError, PIN_LENGTH } from "../utils/phoneNumber";
 import {
   PASSWORD_MAX_LENGTH,
@@ -85,6 +88,27 @@ const RegisterScreen = () => {
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [phoneLoading, setPhoneLoading] = useState(false);
+
+  /*
+   * SIGNING UP WITH A NUMBER IS TWO STEPS, and the second one is not optional.
+   *
+   * A phone-number account has no email address, so if its owner forgets the
+   * PIN there is no reset link to send — the security question is the only
+   * recovery route that does not need a human on the other end. Asking for it
+   * before the account is created means an account never exists that its owner
+   * cannot get back into.
+   *
+   * It is collected here rather than after signing in because there is no
+   * session yet by design: this endpoint returns no token, and the new account
+   * proves itself at the login screen with the PIN it just chose. Everything
+   * goes to the server in ONE request, which writes account, PIN and question
+   * in a single transaction.
+   */
+  const [phoneStep, setPhoneStep] = useState<"details" | "question">("details");
+  const [questions, setQuestions] = useState<SecurityQuestion[]>([]);
+  const [questionsError, setQuestionsError] = useState(false);
+  const [questionId, setQuestionId] = useState<string | null>(null);
+  const [answer, setAnswer] = useState("");
 
   const { signUp } = useAppStore();
   const posthog = usePostHog();
@@ -248,6 +272,34 @@ const RegisterScreen = () => {
     }
   };
 
+  /**
+   * The question list, fetched rather than carried.
+   *
+   * The ids are stored against the account and matched on recovery, so a copy
+   * in the client would disagree with the server the first time either
+   * changed. This endpoint serves the prompts to anyone — there is no session
+   * at this point in signing up — and a selection only to a caller that proved
+   * who it is.
+   *
+   * A failure is recoverable rather than fatal: the step shows a retry, and
+   * the account has not been created, so nothing is in a half state.
+   */
+  const loadQuestions = async () => {
+    setQuestionsError(false);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/security-question`);
+      const data = await res.json().catch(() => ({}));
+      const list = Array.isArray(data?.questions) ? data.questions : [];
+      if (!res.ok || list.length === 0) {
+        setQuestionsError(true);
+        return;
+      }
+      setQuestions(list);
+    } catch {
+      setQuestionsError(true);
+    }
+  };
+
   const handlePhoneSignUp = async () => {
     if (name.trim() === "") {
       Constants.showDialog("Please enter your name");
@@ -276,6 +328,26 @@ const RegisterScreen = () => {
       return;
     }
 
+    /*
+     * Step one ends here. Nothing has been sent yet — the account is created
+     * by the single request at the end of step two, so backing out now leaves
+     * no trace.
+     */
+    if (phoneStep === "details") {
+      setPhoneStep("question");
+      void loadQuestions();
+      return;
+    }
+
+    if (!questionId) {
+      Constants.showDialog("Choose a security question.");
+      return;
+    }
+    if (answer.trim().length < 2) {
+      Constants.showDialog("Enter an answer you will remember.");
+      return;
+    }
+
     setPhoneLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/users/phone-signup`, {
@@ -286,6 +358,9 @@ const RegisterScreen = () => {
           phone: parsed.e164,
           pin,
           confirmPin,
+          // Written in the same transaction as the account and the PIN.
+          questionId,
+          answer: answer.trim(),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -435,7 +510,62 @@ const RegisterScreen = () => {
             </TouchableOpacity>
           </View>
 
-          {authTab === "phone" && (
+          {/*
+            * Step two: the security question, shown in place of the details.
+            *
+            * Nothing has been sent yet. "Back" returns to the form with every
+            * field still filled in, because none of this is submitted until
+            * the one request at the end.
+            */}
+          {authTab === "phone" && phoneStep === "question" && (
+            <View style={styles.questionStep}>
+              <Text style={styles.questionStepTitle}>
+                One last thing
+              </Text>
+              <Text style={styles.questionStepBody}>
+                Your account has no email address, so if you ever forget your
+                PIN this is how we confirm it is you. Without it you would have
+                to contact support.
+              </Text>
+
+              {questionsError ? (
+                <>
+                  <Text style={styles.questionStepBody}>
+                    The questions could not be loaded.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => void loadQuestions()}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.questionStepRetry}>Try again</Text>
+                  </TouchableOpacity>
+                </>
+              ) : questions.length === 0 ? (
+                <ActivityIndicator color={Constants.appThemeColor} />
+              ) : (
+                <SecurityQuestionFields
+                  questions={questions}
+                  selectedId={questionId}
+                  onSelect={setQuestionId}
+                  answer={answer}
+                  onChangeAnswer={setAnswer}
+                  disabled={phoneLoading}
+                />
+              )}
+
+              <TouchableOpacity
+                onPress={() => setPhoneStep("details")}
+                disabled={phoneLoading}
+                accessibilityRole="button"
+              >
+                <Text style={styles.questionStepBack}>
+                  Back to your details
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {authTab === "phone" && phoneStep === "details" && (
             <>
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Name</Text>
@@ -506,18 +636,34 @@ const RegisterScreen = () => {
                 </Text>
               </View>
 
-              <TouchableOpacity
-                style={styles.signUpButton}
-                onPress={handlePhoneSignUp}
-                disabled={phoneLoading || loading}
-              >
-                {phoneLoading ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <Text style={styles.signUpButtonText}>Create Account</Text>
-                )}
-              </TouchableOpacity>
             </>
+          )}
+
+          {/*
+            * One button for both steps, outside them, so step two is not left
+            * without a way forward.
+            *
+            * The label tells the truth about what pressing it does. On step one
+            * NOTHING is created — the account, the PIN and the security
+            * question all go in a single request at the end of step two — and a
+            * button saying "Create Account" there would be a promise the screen
+            * does not keep.
+            */}
+          {authTab === "phone" && (
+            <TouchableOpacity
+              style={styles.signUpButton}
+              onPress={handlePhoneSignUp}
+              disabled={phoneLoading || loading}
+              accessibilityRole="button"
+            >
+              {phoneLoading ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Text style={styles.signUpButtonText}>
+                  {phoneStep === "details" ? "Continue" : "Create Account"}
+                </Text>
+              )}
+            </TouchableOpacity>
           )}
 
           {authTab === "email" && (
@@ -932,6 +1078,31 @@ const styles = StyleSheet.create({
   loginText: {
     fontSize: 16,
     color: "#666666",
+  },
+  questionStep: { marginBottom: 4 },
+  questionStepTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1f1f1f",
+    marginBottom: 8,
+  },
+  questionStepBody: {
+    fontSize: 14,
+    color: "#5b6368",
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  questionStepRetry: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Constants.appThemeColor,
+    marginBottom: 18,
+  },
+  questionStepBack: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Constants.appThemeColor,
+    marginTop: 18,
   },
   loginLinkText: {
     fontSize: 16,

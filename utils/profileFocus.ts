@@ -20,12 +20,17 @@
  * person ("where do we collect from"), four inputs on screen. `pin` is separate
  * because it is its own interaction. `email` is absent on purpose: it comes
  * from signup, is read-only on the form, and can never be the outstanding item.
+ *
+ * `securityQuestion` opens its own screen rather than editing anything inline,
+ * so the form scrolls to the row and the row navigates. It is only ever
+ * outstanding for an account with no email address — see locationGate.
  */
 export const PROFILE_FOCUS_TARGETS = [
   "userName",
   "phone",
   "address",
   "pin",
+  "securityQuestion",
 ] as const;
 
 export type ProfileFocusTarget = (typeof PROFILE_FOCUS_TARGETS)[number];

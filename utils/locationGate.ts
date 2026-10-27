@@ -44,7 +44,24 @@ export type MissingField =
   | "town"
   | "subArea"
   | "houseNo"
-  | "pin";
+  | "pin"
+  /**
+   * Only ever outstanding for an account with NO EMAIL ADDRESS.
+   *
+   * For those households the security question is not a nicety — with no
+   * address to send a reset link to, it and a support ticket are the entire
+   * way back into the account. An account that can receive a reset email is
+   * never asked, because for them it would be a non-dismissible modal over
+   * something they do not need.
+   */
+  | "securityQuestion";
+
+/** What the gate needs to know about how an account can be signed into. */
+export interface GateCredentials {
+  hasEmail: boolean;
+  hasPhone: boolean;
+  hasSecurityQuestion: boolean;
+}
 
 export type GateDecision =
   | { show: "none"; reason: string }
@@ -121,8 +138,30 @@ function hasPin(user: User): boolean {
  * checklist needs to name each unsatisfied row, and it additionally demands
  * `province`, which this gate never asks a user for.
  */
-function missingFields(user: User): MissingField[] {
+function missingFields(
+  user: User,
+  credentials: GateCredentials | null,
+): MissingField[] {
   const missing: MissingField[] = [];
+
+  /*
+   * FAILS CLOSED ON THE ROW, OPEN ON THE USER.
+   *
+   * `credentials` is null until /api/users/my-profile has answered, and under
+   * a hard gate an outstanding row cannot be dismissed. Treating "not loaded
+   * yet" as "missing" would hold a user in a modal over a question we do not
+   * yet know they need — including email users, who never need it. So an
+   * unknown state adds nothing, and the row appears on the next render once
+   * the answer is in.
+   */
+  if (
+    credentials &&
+    credentials.hasPhone &&
+    !credentials.hasEmail &&
+    !credentials.hasSecurityQuestion
+  ) {
+    missing.push("securityQuestion");
+  }
 
   const city = user.city?.trim() || "";
   const town = user.town?.trim() || "";
@@ -155,8 +194,15 @@ export function resolveLocationGate(input: {
   dismissals: number;
   platform: "ios" | "android" | "web";
   build: number | null;
+  /**
+   * How this account signs in. Optional, and null while it is still loading —
+   * see missingFields for why an unknown state must not become an outstanding
+   * row.
+   */
+  credentials?: GateCredentials | null;
 }): GateDecision {
   const { user, config, dismissals, platform, build } = input;
+  const credentials = input.credentials ?? null;
 
   if (!user) return { show: "none", reason: "no user" };
 
@@ -191,21 +237,52 @@ export function resolveLocationGate(input: {
     return { show: "none", reason: "city not activated" };
   }
 
-  const locationVersion =
-    (user as UserWithLocationVersion).locationVersion ?? 0;
-  if (locationVersion >= LOCATION_COMPLETION_VERSION) {
-    return { show: "none", reason: "already confirmed" };
-  }
-
   // "hard" is never dismissible whatever the count says — that is what makes it
   // hard. See the `GateDecision` comment: this offers a skip, it does not
   // decide whether the modal appears.
   const dismissible =
     effectiveMode === "soft" && dismissals < config.maxDismissals;
 
+  /*
+   * THE SECURITY QUESTION OUTLIVES THE LOCATION GATE.
+   *
+   * Everything below this point is about an address: a confirmed location
+   * switches the gate off, and a dropped pin routes to the confirm modal
+   * instead of the checklist. Both were right when the checklist only ever
+   * asked for address fields.
+   *
+   * The security question is not an address field. It is now part of profile
+   * completion — it pays the bonus and marks a household collectable — and a
+   * phone-only account has no reset link, so without it the owner is one
+   * forgotten PIN away from needing a human to get back in. Leaving it below
+   * those returns would mean the one group who must be asked is exactly the
+   * group never asked: anybody who finished their address first would never
+   * see the row again, and could never complete their profile.
+   *
+   * So it is checked FIRST, and only when it is genuinely outstanding. For
+   * every other user this changes nothing — `outstanding` is false and the
+   * original ordering runs untouched.
+   */
+  const recovery = missingFields(user, credentials).filter(
+    (field) => field === "securityQuestion",
+  );
+  if (recovery.length > 0) {
+    return {
+      show: "finish",
+      dismissible,
+      missing: missingFields(user, credentials),
+    };
+  }
+
+  const locationVersion =
+    (user as UserWithLocationVersion).locationVersion ?? 0;
+  if (locationVersion >= LOCATION_COMPLETION_VERSION) {
+    return { show: "none", reason: "already confirmed" };
+  }
+
   // A pin sends the user to the confirm modal even with other gaps: they fill
   // the house number inline there rather than being sent round the whole form.
   if (hasPin(user)) return { show: "confirm", dismissible };
 
-  return { show: "finish", dismissible, missing: missingFields(user) };
+  return { show: "finish", dismissible, missing: missingFields(user, credentials) };
 }

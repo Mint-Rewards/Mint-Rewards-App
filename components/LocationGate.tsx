@@ -72,7 +72,8 @@ function currentBuild(): number | null {
 }
 
 export default function LocationGate() {
-  const { user, token, updateProfile, setLocationEvaluation } = useAppStore();
+  const { user, token, credentials, updateProfile, setLocationEvaluation } =
+    useAppStore();
   const pathname = usePathname();
 
   const [config, setConfig] = useState<LocationGateConfig | null>(null);
@@ -235,6 +236,7 @@ export default function LocationGate() {
     dismissals,
     platform: currentPlatform(),
     build: currentBuild(),
+    credentials,
   });
 
   if (decision.show === "none") return null;
@@ -277,6 +279,9 @@ export default function LocationGate() {
         dismissible={decision.dismissible}
         onContinue={() => goToProfile()}
         onSelectRow={(focus) => goToProfile(focus)}
+        securityQuestionApplies={Boolean(
+          credentials && credentials.hasPhone && !credentials.hasEmail,
+        )}
         onDismiss={dismiss}
         bonus={bonus}
       />

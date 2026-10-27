@@ -48,6 +48,8 @@ const ROWS: {
    * that can never be outstanding, so they are never tappable.
    */
   focus: ProfileFocusTarget | null;
+  /** Hidden entirely for accounts that can receive a reset email. */
+  appliesOnlyWithoutEmail?: boolean;
 }[] = [
   { key: "userName", label: "Name", covers: ["userName"], focus: "userName" },
   // Read-only on the form and set at signup: it has no gap to route to.
@@ -60,6 +62,20 @@ const ROWS: {
     focus: "address",
   },
   { key: "pin", label: "Map pin", covers: ["pin"], focus: "pin" },
+  /*
+   * Only shown to accounts that need it — see `securityQuestionApplies`.
+   *
+   * It is filtered out rather than rendered as already-done for everybody
+   * else, because a ticked "Security question" on an account that has never
+   * set one would be a lie, and the count underneath would be wrong with it.
+   */
+  {
+    key: "securityQuestion",
+    label: "Security question",
+    covers: ["securityQuestion"],
+    focus: "securityQuestion",
+    appliesOnlyWithoutEmail: true,
+  },
 ];
 
 interface Props {
@@ -73,6 +89,15 @@ interface Props {
    * gap the user pointed at so the form can open on it.
    */
   onSelectRow: (focus: ProfileFocusTarget) => void;
+  /**
+   * Whether this account has no email address, and so depends on a security
+   * question to get back in. False hides that row completely.
+   *
+   * Defaults to false: an account whose credentials have not loaded shows the
+   * checklist it has always shown, rather than briefly growing a row and then
+   * dropping it.
+   */
+  securityQuestionApplies?: boolean;
   onDismiss: () => void;
   /**
    * The live bonus, or null when there is none to promise. Null is the default
@@ -90,8 +115,11 @@ export function FinishProfileModal({
   onSelectRow,
   onDismiss,
   bonus = null,
+  securityQuestionApplies = false,
 }: Props) {
-  const rows = ROWS.map((row) => ({
+  const rows = ROWS.filter(
+    (row) => !row.appliesOnlyWithoutEmail || securityQuestionApplies,
+  ).map((row) => ({
     ...row,
     done: !row.covers.some((field) => missing.includes(field)),
   }));
