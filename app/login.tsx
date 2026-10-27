@@ -382,7 +382,25 @@ const LoginScreen = () => {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-      <View style={[styles.headerSection, isSmallScreen && styles.headerSectionSmall]}>
+      {/*
+        * TOP PADDING COMES FROM THE DEVICE, not a guess.
+        *
+        * This was `paddingTop: 100`, a number eyeballed to clear a notch on
+        * one handset. It is not the inset — it is a constant ADDED to whatever
+        * the device already reserves, so on anything with a smaller status
+        * area the heading sat behind a band of empty colour.
+        *
+        * `insets.top` is what the system actually reserves; the constant below
+        * is the gap between that and the text, which is all it was ever meant
+        * to be.
+        */}
+      <View
+        style={[
+          styles.headerSection,
+          isSmallScreen && styles.headerSectionSmall,
+          { paddingTop: insets.top + (isSmallScreen ? 12 : 20) },
+        ]}
+      >
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Welcome!</Text>
           <Text style={styles.welcomeSubtitle}>
@@ -674,18 +692,20 @@ const styles = StyleSheet.create({
   },
   headerSection: {
     backgroundColor: Constants.appThemeColor,
-    paddingTop: 100,
+    // Overridden inline with insets.top + a gap. Kept as a fallback for a
+    // render with no safe-area provider, where insets are all zero.
+    paddingTop: 44,
     paddingBottom: 30,
     paddingHorizontal: 20,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
   },
   headerSectionSmall: {
-    paddingTop: 56,
+    paddingTop: 28,
     paddingBottom: 16,
   },
   welcomeSection: {
-    marginTop: 10,
+    marginTop: 0,
   },
   welcomeTitle: {
     color: "#ffffff",

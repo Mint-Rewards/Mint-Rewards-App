@@ -21,6 +21,16 @@ interface OtpInputProps {
    * autofill one invites the wrong value into the field.
    */
   autoComplete?: "one-time-code" | "off";
+  /**
+   * Fired when any box takes focus.
+   *
+   * Android's KeyboardAvoidingView does nothing without a `behavior`, and
+   * `padding` misbehaves there, so screens that sit low in a long form scroll
+   * themselves into view instead. The boxes are the only control on the sign-up
+   * form with no TextInput of its own for the screen to measure, so it has to
+   * be told.
+   */
+  onFocus?: () => void;
 }
 
 const OtpInput = ({
@@ -32,6 +42,7 @@ const OtpInput = ({
   autoFocus = true,
   secure = false,
   autoComplete = "one-time-code",
+  onFocus,
 }: OtpInputProps) => {
   const inputRefs = useRef<(TextInput | null)[]>([]);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -91,7 +102,10 @@ const OtpInput = ({
             value={digit}
             onChangeText={(text) => handleChangeText(text, index)}
             onKeyPress={(e) => handleKeyPress(e, index)}
-            onFocus={() => setFocusedIndex(index)}
+            onFocus={() => {
+              setFocusedIndex(index);
+              onFocus?.();
+            }}
             onBlur={() => setFocusedIndex((prev) => (prev === index ? null : prev))}
             keyboardType="number-pad"
             secureTextEntry={secure}

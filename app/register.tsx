@@ -5,7 +5,7 @@ import AppleSignInButton from "@/components/AppleSignInButton";
 import OtpInput from "@/components/OtpInput";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
   AppState,
@@ -45,9 +45,51 @@ const GoogleIcon = ({ size = 20, opacity = 1 }: { size?: number; opacity?: numbe
   </Svg>
 );
 
+/** How much of the field to leave visible above the keyboard. */
+const FIELD_SCROLL_MARGIN = 90;
+/** Long enough for the keyboard to start animating and the layout to settle. */
+const FIELD_SCROLL_DELAY_MS = 120;
+
 const RegisterScreen = () => {
   const [name, setName] = useState("");
   const insets = useSafeAreaInsets();
+
+  /*
+   * SCROLLING THE FOCUSED FIELD CLEAR OF THE KEYBOARD, which on Android
+   * nothing else does.
+   *
+   * The KeyboardAvoidingView below is given no `behavior` on Android — there
+   * `padding` fights the system's own windowSoftInputMode and `height`
+   * collapses the layout — so on Android it is inert and the lower half of
+   * this form sits under the keyboard. QA reported Confirm PIN, which is the
+   * lowest control on the phone tab.
+   *
+   * Same remedy as Edit Profile: measure where the control is and scroll it
+   * into view. Everything is optional-chained and the failure callback is a
+   * no-op, because a measurement that cannot be taken must still leave a
+   * usable form.
+   */
+  const scrollRef = useRef<ScrollView>(null);
+  const contentRef = useRef<View>(null);
+  const pinRef = useRef<View>(null);
+  const confirmPinRef = useRef<View>(null);
+
+  const scrollIntoView = (anchor: React.RefObject<View | TextInput | null>) => {
+    setTimeout(() => {
+      const target = anchor.current;
+      const content = contentRef.current;
+      if (!target || !content) return;
+      target.measureLayout(
+        content,
+        (_x, y) =>
+          scrollRef.current?.scrollTo({
+            y: Math.max(0, y - FIELD_SCROLL_MARGIN),
+            animated: true,
+          }),
+        () => {},
+      );
+    }, FIELD_SCROLL_DELAY_MS);
+  };
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [hidePassword, setHidePassword] = useState(true);
@@ -438,6 +480,7 @@ const RegisterScreen = () => {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         /*
          * flexGrow fills the viewport; the padding keeps the last
@@ -450,7 +493,25 @@ const RegisterScreen = () => {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-      <View style={styles.headerSection}>
+      {/* The container every focused control is measured against. Measuring
+          relative to the ScrollView itself is not possible — its content
+          container takes no ref — so the content carries one. */}
+      <View ref={contentRef}>
+      {/*
+        * TOP PADDING COMES FROM THE DEVICE, not a guess.
+        *
+        * This was `paddingTop: 100`, a number eyeballed to clear a notch on
+        * one handset. It is not the inset — it is a constant ADDED to whatever
+        * the device already reserves, so on anything with a smaller status
+        * area the heading sat behind a band of empty colour.
+        *
+        * `insets.top` is what the system actually reserves; the constant below
+        * is the gap between that and the text, which is all it was ever meant
+        * to be.
+        */}
+      <View
+        style={[styles.headerSection, { paddingTop: insets.top + 20 }]}
+      >
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Join Mint Rewards!</Text>
           <Text style={styles.welcomeSubtitle}>
@@ -598,7 +659,7 @@ const RegisterScreen = () => {
                 </View>
               </View>
 
-              <View style={styles.inputGroup}>
+              <View ref={pinRef} style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>PIN</Text>
                 <OtpInput
                   value={pin}
@@ -607,10 +668,11 @@ const RegisterScreen = () => {
                   autoComplete="off"
                   autoFocus={false}
                   disabled={phoneLoading || loading}
+                  onFocus={() => scrollIntoView(pinRef)}
                 />
               </View>
 
-              <View style={styles.inputGroup}>
+              <View ref={confirmPinRef} style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Confirm PIN</Text>
                 <OtpInput
                   value={confirmPin}
@@ -620,6 +682,9 @@ const RegisterScreen = () => {
                   autoFocus={false}
                   error={confirmPin.length === PIN_LENGTH && confirmPin !== pin}
                   disabled={phoneLoading || loading}
+                  /* The lowest control on this tab, and the one QA saw the
+                     keyboard cover. */
+                  onFocus={() => scrollIntoView(confirmPinRef)}
                 />
                 <Text
                   style={[
@@ -668,6 +733,73 @@ const RegisterScreen = () => {
 
           {authTab === "email" && (
           <>
+          {/*
+            * SOCIAL SIGN-UP COMES FIRST, and that is a hierarchy decision
+            * as much as a spacing one.
+            *
+            * It is ONE TAP. The form below it is four fields and a
+            * password rule. Underneath the form, the fast path was off the
+            * bottom of every handset but the largest — the slow path was
+            * hiding the quick one.
+            *
+            * The divider now reads downward into the form rather than up
+            * out of it, so the order on screen matches the order of
+            * effort.
+            */}
+          {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
+            <View style={styles.dividerContainer}>
+              <View style={styles.dividerLine} />
+              {/* Names what is below it now that it reads downward into the
+                  form, rather than a bare "or" between two equals. */}
+              <Text style={styles.dividerText}>or sign up with email</Text>
+              <View style={styles.dividerLine} />
+            </View>
+          )}
+
+          {/* Google Sign-Up Button */}
+          {googleSignInEnabled && (
+            <TouchableOpacity
+              style={[
+                styles.googleButton,
+                (loading || googleLoading) && styles.googleButtonDisabled,
+              ]}
+              onPress={handleGoogleSignUp}
+              disabled={loading || appleLoading || googleLoading}
+              activeOpacity={0.9}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#1f1f1f" size="small" />
+              ) : (
+                <View style={styles.googleButtonContent}>
+                  <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
+                  <Text
+                    style={[
+                      styles.googleButtonText,
+                      loading && styles.googleButtonTextDisabled,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Sign up with Google
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Apple Sign-Up is iOS-only */}
+          {Platform.OS === "ios" && appleSignInEnabled && (
+            <View style={styles.appleButtonContainer}>
+              <AppleSignInButton
+                onCredential={handleAppleSignUp}
+                onError={(e: unknown) => {
+                  console.warn('Apple Sign-Up error', e);
+                  Constants.showDialog('Apple Sign-Up failed. Please try again.');
+                }}
+                disabled={loading || appleLoading || googleLoading}
+                buttonType={AppleAuthenticationButtonType.SIGN_UP}
+              />
+            </View>
+          )}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Name</Text>
             <View style={styles.inputContainer}>
@@ -781,61 +913,10 @@ const RegisterScreen = () => {
             .
           </Text>
 
-          {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
-          )}
-
-          {/* Google Sign-Up Button */}
-          {googleSignInEnabled && (
-            <TouchableOpacity
-              style={[
-                styles.googleButton,
-                (loading || googleLoading) && styles.googleButtonDisabled,
-              ]}
-              onPress={handleGoogleSignUp}
-              disabled={loading || appleLoading || googleLoading}
-              activeOpacity={0.9}
-            >
-              {googleLoading ? (
-                <ActivityIndicator color="#1f1f1f" size="small" />
-              ) : (
-                <View style={styles.googleButtonContent}>
-                  <GoogleIcon size={20} opacity={loading ? 0.38 : 1} />
-                  <Text
-                    style={[
-                      styles.googleButtonText,
-                      loading && styles.googleButtonTextDisabled,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    Sign up with Google
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          )}
-
-          {/* Apple Sign-Up is iOS-only */}
-          {Platform.OS === "ios" && appleSignInEnabled && (
-            <View style={styles.appleButtonContainer}>
-              <AppleSignInButton
-                onCredential={handleAppleSignUp}
-                onError={(e: unknown) => {
-                  console.warn('Apple Sign-Up error', e);
-                  Constants.showDialog('Apple Sign-Up failed. Please try again.');
-                }}
-                disabled={loading || appleLoading || googleLoading}
-                buttonType={AppleAuthenticationButtonType.SIGN_UP}
-              />
-            </View>
-          )}
           </>
           )}
         </View>
+      </View>
       </ScrollView>
 
       <View
@@ -902,20 +983,22 @@ const styles = StyleSheet.create({
   },
   headerSection: {
     backgroundColor: Constants.appThemeColor,
-    paddingTop: 100,
-    paddingBottom: 30,
+    // Overridden inline with insets.top + a gap. Kept as a fallback for a
+    // render with no safe-area provider, where insets are all zero.
+    paddingTop: 44,
+    paddingBottom: 20,
     paddingHorizontal: 20,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
   },
   welcomeSection: {
-    marginTop: 10,
+    marginTop: 0,
   },
   welcomeTitle: {
     color: "#ffffff",
     fontSize: 28,
     fontWeight: "bold",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   welcomeSubtitle: {
     color: "#ffffff",
@@ -923,11 +1006,23 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     opacity: 0.9,
   },
+  /*
+   * SPACING ON THIS SCREEN IS A BUDGET, not a preference.
+   *
+   * The email tab stacks four fields, a button, a divider and two social
+   * buttons. At the old values that came to ~913pt of content against 721pt
+   * of usable height on an iPhone 13, so the social buttons — the ONE-TAP
+   * path — were below the fold on every handset but the largest.
+   *
+   * The trims below give back ~48pt without touching field spacing, so the
+   * form keeps its breathing room. The rest was won by moving the social
+   * buttons above the form; see the email tab.
+   */
   contentSection: {
     flex: 1,
     backgroundColor: "#ffffff",
     paddingHorizontal: 20,
-    paddingTop: 30,
+    paddingTop: 20,
   // Keeps the last field scrollable clear of the software keyboard.
     paddingBottom: 40,
   },
@@ -1000,9 +1095,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   dividerContainer: {
+    // 24 each side cost 48pt to say one word.
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 24,
+    marginVertical: 16,
   },
   dividerLine: {
     flex: 1,
