@@ -572,7 +572,9 @@ const LoginScreen = () => {
           {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
             <View style={[styles.dividerContainer, isSmallScreen && styles.dividerContainerSmall]}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              {/* The buttons below complete this sentence, which is why they read
+                  just "Google" and "Apple" rather than repeating the verb. */}
+              <Text style={styles.dividerText}>or sign in with</Text>
               <View style={styles.dividerLine} />
             </View>
           )}
@@ -617,6 +619,7 @@ const LoginScreen = () => {
           {Platform.OS === "ios" && appleSignInEnabled && (
             <View style={[styles.appleButtonContainer, styles.socialItem]}>
               <AppleSignInButton
+                compact
                 onCredential={handleAppleSignIn}
                 onError={(e) => {
                   console.warn('Apple Sign-In error', e);

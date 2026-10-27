@@ -853,7 +853,9 @@ const RegisterScreen = () => {
           {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              {/* The buttons below complete this sentence, which is why they read
+                  just "Google" and "Apple" rather than repeating the verb. */}
+              <Text style={styles.dividerText}>or signup with</Text>
               <View style={styles.dividerLine} />
             </View>
           )}
@@ -906,6 +908,7 @@ const RegisterScreen = () => {
           {Platform.OS === "ios" && appleSignInEnabled && (
             <View style={[styles.appleButtonContainer, styles.socialItem]}>
               <AppleSignInButton
+                compact
                 onCredential={handleAppleSignUp}
                 onError={(e: unknown) => {
                   console.warn('Apple Sign-Up error', e);
