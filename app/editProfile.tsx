@@ -562,7 +562,26 @@ const EditProfile = () => {
     keyboardType: "default" | "email-address" | "phone-pad" = "default",
     // Present only for the fields the gate's checklist can route to.
     inputRef?: React.RefObject<TextInput | null>,
-  ) => (
+  ) => {
+    /*
+     * A FIELD YOU SIGN IN WITH IS NOT A FIELD YOU EDIT HERE.
+     *
+     * Email has always been read-only: it comes from signing up and is the
+     * identity the account is reached by. For an account created from a mobile
+     * number the number plays exactly that role — `hasPhone` is
+     * `phone_e164 IS NOT NULL`, which is the column the login route matches
+     * on — so letting it be typed over here would quietly change what the
+     * person has to enter to get back in, with no verification that the new
+     * number is even theirs.
+     *
+     * An account that signed up with an email and merely recorded a phone
+     * number is NOT locked: that number is contact information, not a
+     * credential, and it is the only way they can correct a typo in it.
+     */
+    const isLoginIdentity =
+      field === "email" || (field === "phone" && Boolean(credentials?.hasPhone));
+
+    return (
     <View style={styles.inputContainer}>
       <Text style={styles.label}>
         {label}<Text style={styles.asterisk}> *</Text>
@@ -572,7 +591,7 @@ const EditProfile = () => {
         style={[
           styles.input,
           errors[field] && styles.inputError,
-          { backgroundColor: field === "email" ? "#e2e8f0" : "#f8f9fa" },
+          { backgroundColor: isLoginIdentity ? "#e2e8f0" : "#f8f9fa" },
         ]}
         value={identity[field]}
         onChangeText={(v) => handleUpdateField(field, v)}
@@ -580,7 +599,7 @@ const EditProfile = () => {
         placeholderTextColor="#a0aec0"
         keyboardType={keyboardType}
         autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
-        readOnly={field === "email"}
+        readOnly={isLoginIdentity}
         maxLength={field === "phone" ? 11 : undefined}
         textAlignVertical="center"
         onFocus={() => {
@@ -590,8 +609,15 @@ const EditProfile = () => {
         onBlur={markFieldBlurred}
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
+      {/* Says why it cannot be edited, so a greyed-out box is not a mystery.
+          Only for the phone: email has read as fixed since the first release
+          and needs no explaining. */}
+      {field === "phone" && isLoginIdentity && (
+        <Text style={styles.lockedHint}>You sign in with this number.</Text>
+      )}
     </View>
-  );
+    );
+  };
 
   return (
     /*
@@ -913,6 +939,7 @@ const styles = StyleSheet.create({
   headerGradient: { borderRadius: 20, padding: 15, borderWidth: 1, borderColor: "rgba(255,255,255,0.2)" },
   headerContent: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
+  lockedHint: { fontSize: 12, color: "#718096", marginTop: 6 },
   securityRow: { marginTop: 18 },
   securityTouchable: {
     flexDirection: "row",
