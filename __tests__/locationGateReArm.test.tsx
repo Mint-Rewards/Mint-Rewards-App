@@ -35,9 +35,15 @@ jest.mock("expo-router", () => ({
 }));
 
 // A user with nothing filled in: no pin, so the "finish" branch.
+//
+// `emailVerified` is true so these cases stay about the ADDRESS fields they
+// were written for. An unverified address is now an outstanding checklist row
+// in its own right, and leaving it false here would mean every assertion about
+// "the profile is complete" was really asserting something else.
 const INCOMPLETE_USER = {
   mintId: "M1",
   email: "a@b.test",
+  emailVerified: true,
   userName: "Test",
   phone: "",
   city: "",

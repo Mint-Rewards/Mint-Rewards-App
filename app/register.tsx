@@ -24,6 +24,7 @@ import Svg, { Path } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
+import useKeyboardScroll from "@/hooks/useKeyboardScroll";
 import SecurityQuestionFields, {
   type SecurityQuestion,
 } from "@/components/SecurityQuestionFields";
@@ -45,51 +46,32 @@ const GoogleIcon = ({ size = 20, opacity = 1 }: { size?: number; opacity?: numbe
   </Svg>
 );
 
-/** How much of the field to leave visible above the keyboard. */
-const FIELD_SCROLL_MARGIN = 90;
-/** Long enough for the keyboard to start animating and the layout to settle. */
-const FIELD_SCROLL_DELAY_MS = 120;
-
 const RegisterScreen = () => {
   const [name, setName] = useState("");
   const insets = useSafeAreaInsets();
 
   /*
-   * SCROLLING THE FOCUSED FIELD CLEAR OF THE KEYBOARD, which on Android
-   * nothing else does.
-   *
-   * The KeyboardAvoidingView below is given no `behavior` on Android — there
-   * `padding` fights the system's own windowSoftInputMode and `height`
-   * collapses the layout — so on Android it is inert and the lower half of
-   * this form sits under the keyboard. QA reported Confirm PIN, which is the
-   * lowest control on the phone tab.
-   *
-   * Same remedy as Edit Profile: measure where the control is and scroll it
-   * into view. Everything is optional-chained and the failure callback is a
-   * no-op, because a measurement that cannot be taken must still leave a
-   * usable form.
+   * Android's KeyboardAvoidingView is inert without a `behavior`, so the lower
+   * half of this form would sit under the keyboard. See the hook.
    */
-  const scrollRef = useRef<ScrollView>(null);
-  const contentRef = useRef<View>(null);
+  const { scrollRef, contentRef, scrollIntoView } = useKeyboardScroll();
+
   const pinRef = useRef<View>(null);
   const confirmPinRef = useRef<View>(null);
+  /*
+   * The text fields too, not only the PIN boxes. The cause is the inert
+   * KeyboardAvoidingView rather than anything specific to the boxes — QA
+   * reported Confirm PIN because it is the lowest control on that tab, not
+   * because it is special.
+   */
+  const nameRef = useRef<TextInput>(null);
+  /* The email tab declares its own name field; one ref across both would be
+     correct only by accident of a single tab being mounted at a time. */
+  const emailNameRef = useRef<TextInput>(null);
+  const mobileRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
 
-  const scrollIntoView = (anchor: React.RefObject<View | TextInput | null>) => {
-    setTimeout(() => {
-      const target = anchor.current;
-      const content = contentRef.current;
-      if (!target || !content) return;
-      target.measureLayout(
-        content,
-        (_x, y) =>
-          scrollRef.current?.scrollTo({
-            y: Math.max(0, y - FIELD_SCROLL_MARGIN),
-            animated: true,
-          }),
-        () => {},
-      );
-    }, FIELD_SCROLL_DELAY_MS);
-  };
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [hidePassword, setHidePassword] = useState(true);
@@ -636,6 +618,7 @@ const RegisterScreen = () => {
                 <Text style={styles.inputLabel}>Name</Text>
                 <View style={styles.inputContainer}>
                   <TextInput
+                    ref={nameRef}
                     style={styles.textInput}
                     value={name}
                     onChangeText={setName}
@@ -643,6 +626,7 @@ const RegisterScreen = () => {
                     autoCorrect={false}
                     placeholder="Your name"
                     placeholderTextColor="#999999"
+                    onFocus={() => scrollIntoView(nameRef)}
                   />
                 </View>
               </View>
@@ -651,6 +635,7 @@ const RegisterScreen = () => {
                 <Text style={styles.inputLabel}>Mobile number</Text>
                 <View style={styles.inputContainer}>
                   <TextInput
+                    ref={mobileRef}
                     style={styles.textInput}
                     value={phone}
                     onChangeText={setPhone}
@@ -659,6 +644,7 @@ const RegisterScreen = () => {
                     placeholder="03XX XXXXXXX"
                     placeholderTextColor="#999999"
                     maxLength={20}
+                    onFocus={() => scrollIntoView(mobileRef)}
                   />
                 </View>
               </View>
@@ -741,6 +727,7 @@ const RegisterScreen = () => {
             <Text style={styles.inputLabel}>Name</Text>
             <View style={styles.inputContainer}>
               <TextInput
+                ref={emailNameRef}
                 style={styles.textInput}
                 value={name}
                 onChangeText={setName}
@@ -748,6 +735,7 @@ const RegisterScreen = () => {
                 autoCorrect={false}
                 placeholder="Your name"
                 placeholderTextColor="#999999"
+                onFocus={() => scrollIntoView(emailNameRef)}
               />
             </View>
           </View>
@@ -756,6 +744,7 @@ const RegisterScreen = () => {
             <Text style={styles.inputLabel}>Email</Text>
             <View style={styles.inputContainer}>
               <TextInput
+                ref={emailRef}
                 style={styles.textInput}
                 value={email}
                 // Trim on entry: an address can never contain whitespace, and
@@ -766,6 +755,7 @@ const RegisterScreen = () => {
                 autoCorrect={false}
                 placeholder="Enter your email"
                 placeholderTextColor="#999999"
+                onFocus={() => scrollIntoView(emailRef)}
               />
             </View>
           </View>
@@ -774,6 +764,7 @@ const RegisterScreen = () => {
             <Text style={styles.inputLabel}>Password</Text>
             <View style={styles.inputContainer}>
               <TextInput
+                ref={passwordRef}
                 style={styles.passwordTextInput}
                 value={password}
                 maxLength={PASSWORD_MAX_LENGTH}
@@ -781,6 +772,9 @@ const RegisterScreen = () => {
                 secureTextEntry={hidePassword}
                 placeholder={`Min. ${PASSWORD_MIN_LENGTH} characters`}
                 placeholderTextColor="#999999"
+                /* The lowest field on the email tab, and the one the keyboard
+                   covers there. */
+                onFocus={() => scrollIntoView(passwordRef)}
               />
               <TouchableOpacity
                 style={styles.eyeIconButton}

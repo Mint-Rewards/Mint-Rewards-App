@@ -54,7 +54,14 @@ export type MissingField =
    * never asked, because for them it would be a non-dismissible modal over
    * something they do not need.
    */
-  | "securityQuestion";
+  | "securityQuestion"
+  /**
+   * Only outstanding for an account that HAS an email address and has not
+   * proved it. An unverified address is not a way back in — a reset link sent
+   * there reaches whoever really owns it — so proving it is part of finishing
+   * a profile, not an optional extra.
+   */
+  | "emailVerification";
 
 /** What the gate needs to know about how an account can be signed into. */
 export interface GateCredentials {
@@ -163,6 +170,18 @@ function missingFields(
     missing.push("securityQuestion");
   }
 
+  /*
+   * An address on the account that nobody has proved.
+   *
+   * Read from the user rather than `credentials`, because `emailVerified` is
+   * already on the user record the gate is given. Same fail-safe as above: an
+   * account with no email is never asked, and a `true` is required rather
+   * than an absent field being treated as proof.
+   */
+  if (!!user.email?.trim() && user.emailVerified !== true) {
+    missing.push("emailVerification");
+  }
+
   const city = user.city?.trim() || "";
   const town = user.town?.trim() || "";
 
@@ -251,20 +270,32 @@ export function resolveLocationGate(input: {
    * instead of the checklist. Both were right when the checklist only ever
    * asked for address fields.
    *
-   * The security question is not an address field. It is now part of profile
-   * completion — it pays the bonus and marks a household collectable — and a
-   * phone-only account has no reset link, so without it the owner is one
-   * forgotten PIN away from needing a human to get back in. Leaving it below
-   * those returns would mean the one group who must be asked is exactly the
-   * group never asked: anybody who finished their address first would never
-   * see the row again, and could never complete their profile.
+   * Neither the security question nor email verification is an address field.
+   * Both are now part of profile completion — they pay the bonus and mark a
+   * household collectable — and both answer the same question: can this person
+   * get back into their account? A phone-only account has no reset link, and an
+   * unverified address is worse than none, because a link sent there reaches
+   * whoever really owns it. Leaving them below those returns would mean the one
+   * group who must be asked is exactly the group never asked: anybody who
+   * finished their address first would never see the row again, and could never
+   * complete their profile.
    *
    * So it is checked FIRST, and only when it is genuinely outstanding. For
    * every other user this changes nothing — `outstanding` is false and the
    * original ordering runs untouched.
    */
-  const recovery = missingFields(user, credentials).filter(
-    (field) => field === "securityQuestion",
+  /*
+   * Both of these are about being able to get back INTO the account rather
+   * than about an address, so both have to be asked whatever the location
+   * says. Email verification joins the list for the same reason the security
+   * question did — see the note above.
+   */
+  const RECOVERY_FIELDS: MissingField[] = [
+    "securityQuestion",
+    "emailVerification",
+  ];
+  const recovery = missingFields(user, credentials).filter((field) =>
+    RECOVERY_FIELDS.includes(field),
   );
   if (recovery.length > 0) {
     return {

@@ -50,6 +50,8 @@ const ROWS: {
   focus: ProfileFocusTarget | null;
   /** Hidden entirely for accounts that can receive a reset email. */
   appliesOnlyWithoutEmail?: boolean;
+  /** The mirror: hidden for accounts that have no address to verify. */
+  appliesOnlyWithEmail?: boolean;
 }[] = [
   { key: "userName", label: "Name", covers: ["userName"], focus: "userName" },
   // Read-only on the form and set at signup: it has no gap to route to.
@@ -69,6 +71,18 @@ const ROWS: {
    * else, because a ticked "Security question" on an account that has never
    * set one would be a lie, and the count underneath would be wrong with it.
    */
+  /*
+   * Shown only to an account that HAS an email, and dropped for one that does
+   * not — a phone-only household has no address to verify, and a ticked
+   * "Email verified" row on an account with no email would be nonsense.
+   */
+  {
+    key: "emailVerification",
+    label: "Verify your email",
+    covers: ["emailVerification"],
+    focus: "emailVerification",
+    appliesOnlyWithEmail: true,
+  },
   {
     key: "securityQuestion",
     label: "Security question",
@@ -98,6 +112,11 @@ interface Props {
    * dropping it.
    */
   securityQuestionApplies?: boolean;
+  /**
+   * Whether this account has an email address at all. False hides the
+   * verification row completely — there is nothing to verify.
+   */
+  emailVerificationApplies?: boolean;
   onDismiss: () => void;
   /**
    * The live bonus, or null when there is none to promise. Null is the default
@@ -116,9 +135,12 @@ export function FinishProfileModal({
   onDismiss,
   bonus = null,
   securityQuestionApplies = false,
+  emailVerificationApplies = false,
 }: Props) {
   const rows = ROWS.filter(
-    (row) => !row.appliesOnlyWithoutEmail || securityQuestionApplies,
+    (row) =>
+      (!row.appliesOnlyWithoutEmail || securityQuestionApplies) &&
+      (!row.appliesOnlyWithEmail || emailVerificationApplies),
   ).map((row) => ({
     ...row,
     done: !row.covers.some((field) => missing.includes(field)),

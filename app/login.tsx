@@ -5,7 +5,7 @@ import AppleSignInButton from "@/components/AppleSignInButton";
 import OtpInput from "@/components/OtpInput";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
   AppState,
@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import useKeyboardScroll from "@/hooks/useKeyboardScroll";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
 import { PASSWORD_MAX_LENGTH } from "../utils/password";
 import { normalizePhone, pinShapeError } from "../utils/phoneNumber";
@@ -43,6 +44,17 @@ const LoginScreen = () => {
   const isSmallScreen = height < 700;
 
   const insets = useSafeAreaInsets();
+
+  /*
+   * Android's KeyboardAvoidingView is inert without a `behavior`, so anything
+   * low on this screen sits under the keyboard. The PIN boxes are the lowest
+   * control on the phone tab and the password on the email tab. See the hook.
+   */
+  const { scrollRef, contentRef, scrollIntoView } = useKeyboardScroll();
+  const loginPhoneRef = useRef<TextInput>(null);
+  const loginPinRef = useRef<View>(null);
+  const loginEmailRef = useRef<TextInput>(null);
+  const loginPasswordRef = useRef<TextInput>(null);
 
   const params = useLocalSearchParams<{
     phone?: string;
@@ -450,6 +462,7 @@ const LoginScreen = () => {
                 <Text style={styles.inputLabel}>Mobile number</Text>
                 <View style={styles.inputContainer}>
                   <TextInput
+                    ref={loginPhoneRef}
                     style={styles.textInput}
                     value={phone}
                     onChangeText={setPhone}
@@ -458,6 +471,7 @@ const LoginScreen = () => {
                     placeholder="03XX XXXXXXX"
                     placeholderTextColor="#999999"
                     maxLength={20}
+                    onFocus={() => scrollIntoView(loginPhoneRef)}
                   />
                 </View>
               </View>
@@ -476,6 +490,7 @@ const LoginScreen = () => {
                   autoComplete="off"
                   autoFocus={false}
                   disabled={pinLoading || loading}
+                  onFocus={() => scrollIntoView(loginPinRef)}
                 />
               </View>
 

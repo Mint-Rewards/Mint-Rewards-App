@@ -24,6 +24,11 @@
  * `securityQuestion` opens its own screen rather than editing anything inline,
  * so the form scrolls to the row and the row navigates. It is only ever
  * outstanding for an account with no email address — see locationGate.
+ *
+ * `emailVerification` does not open the form at all: it goes straight to the
+ * verification screen, because there is nothing on the profile to edit — the
+ * address is already known and read-only, and what is missing is proof that
+ * the person receives mail there.
  */
 export const PROFILE_FOCUS_TARGETS = [
   "userName",
@@ -31,6 +36,7 @@ export const PROFILE_FOCUS_TARGETS = [
   "address",
   "pin",
   "securityQuestion",
+  "emailVerification",
 ] as const;
 
 export type ProfileFocusTarget = (typeof PROFILE_FOCUS_TARGETS)[number];

@@ -607,3 +607,88 @@ describe("the security question row", () => {
     }
   });
 });
+
+/*
+ * VERIFYING THE EMAIL ADDRESS.
+ *
+ * An unverified address is not a way back into the account — a reset link
+ * sent there reaches whoever actually owns it, which is worse than having no
+ * route at all. Until now nothing checked it anywhere: signing up never
+ * required it, the app read `emailVerified` in no screen, and the server
+ * issued a full session to an unverified account. So every account that never
+ * clicked the link has been sitting unverified and unasked.
+ */
+describe("the email verification row", () => {
+  const withEmail = (over: Partial<TestUser> = {}) =>
+    pinned({
+      structuredAddress: { houseNo: "12-C" },
+      email: "ayesha@example.com",
+      ...over,
+    } as Partial<TestUser>);
+
+  it("is outstanding for an account that has not verified", () => {
+    const decision = resolve({ user: withEmail({ emailVerified: false } as Partial<TestUser>) });
+    expect(decision.show).toBe("finish");
+    if (decision.show === "finish") {
+      expect(decision.missing).toContain("emailVerification");
+    }
+  });
+
+  it("is satisfied once verified", () => {
+    const decision = resolve({ user: withEmail({ emailVerified: true } as Partial<TestUser>) });
+    if (decision.show === "finish") {
+      expect(decision.missing).not.toContain("emailVerification");
+    }
+  });
+
+  /*
+   * An absent flag must not read as proof. The field is optional on the user
+   * record, and treating "not loaded" as verified would leave exactly the
+   * accounts this exists to catch uncaught.
+   */
+  it("treats an absent flag as unverified, never as verified", () => {
+    const decision = resolve({ user: withEmail() });
+    expect(decision.show).toBe("finish");
+    if (decision.show === "finish") {
+      expect(decision.missing).toContain("emailVerification");
+    }
+  });
+
+  it("never asks an account with no email address", () => {
+    const decision = resolve({
+      user: pinned({ structuredAddress: { houseNo: "12-C" }, email: "" } as Partial<TestUser>),
+    });
+    if (decision.show === "finish") {
+      expect(decision.missing).not.toContain("emailVerification");
+    }
+  });
+
+  /*
+   * THE ORDERING, same lesson as the security question. Everything else in
+   * this gate is about an address: a confirmed location switches it off and a
+   * dropped pin routes to the confirm modal. Checked after those, the
+   * unverified accounts that already finished their address — which is most
+   * of them — would never be asked.
+   */
+  it("still asks after the location has been confirmed", () => {
+    const decision = resolve({
+      user: withEmail({ emailVerified: false, locationVersion: 99 } as Partial<TestUser>),
+    });
+    expect(decision.show).toBe("finish");
+    if (decision.show === "finish") {
+      expect(decision.missing).toContain("emailVerification");
+    }
+  });
+
+  it("still asks a user who has dropped a map pin", () => {
+    const decision = resolve({ user: withEmail({ emailVerified: false } as Partial<TestUser>) });
+    expect(decision.show).toBe("finish");
+  });
+
+  it("goes back to the usual behaviour once verified", () => {
+    // The check must not leak: with nothing outstanding the original ordering
+    // runs untouched, so a pinned user gets the confirm modal again.
+    const decision = resolve({ user: withEmail({ emailVerified: true } as Partial<TestUser>) });
+    expect(decision.show).toBe("confirm");
+  });
+});
