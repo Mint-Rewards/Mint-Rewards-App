@@ -386,6 +386,7 @@ const LoginScreen = () => {
     >
       {/* Green Header Section */}
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         /*
          * flexGrow fills the viewport; the padding keeps the last
@@ -398,6 +399,19 @@ const LoginScreen = () => {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
+      {/*
+        * The container every focused control is measured against — the
+        * ScrollView's own content container takes no ref, so the content
+        * carries one, as on sign-up.
+        *
+        * WITHOUT THIS THE SCROLLING NEVER HAPPENED. `scrollIntoView` returns
+        * early when either ref is empty, and both were: this screen took the
+        * hook, called it on focus, and attached neither ref. Every call was a
+        * no-op, and because the helper is deliberately silent about a
+        * measurement it cannot take, it failed invisibly — which is why
+        * sign-up was fixed and sign-in only looked like it had been.
+        */}
+      <View ref={contentRef}>
       {/*
         * TOP PADDING COMES FROM THE DEVICE, not a guess.
         *
@@ -476,7 +490,10 @@ const LoginScreen = () => {
                 </View>
               </View>
 
-              <View style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}>
+              <View
+                ref={loginPinRef}
+                style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}
+              >
                 <Text style={styles.inputLabel}>PIN</Text>
                 {/*
                   * Boxed and masked. `autoComplete="off"` matters: the default
@@ -522,6 +539,7 @@ const LoginScreen = () => {
             <Text style={styles.inputLabel}>Email</Text>
             <View style={styles.inputContainer}>
               <TextInput
+                ref={loginEmailRef}
                 style={styles.textInput}
                 value={email}
                 // Trim on entry: an address can never contain whitespace, and
@@ -532,6 +550,7 @@ const LoginScreen = () => {
                 autoCorrect={false}
                 placeholder="Enter your email"
                 placeholderTextColor="#999999"
+                onFocus={() => scrollIntoView(loginEmailRef)}
               />
             </View>
           </View>
@@ -541,6 +560,7 @@ const LoginScreen = () => {
             <Text style={styles.inputLabel}>Password</Text>
             <View style={styles.inputContainer}>
               <TextInput
+                ref={loginPasswordRef}
                 style={styles.passwordTextInput}
                 value={password}
                 maxLength={PASSWORD_MAX_LENGTH}
@@ -548,6 +568,7 @@ const LoginScreen = () => {
                 secureTextEntry={hidePassword}
                 placeholder="Enter your password"
                 placeholderTextColor="#999999"
+                onFocus={() => scrollIntoView(loginPasswordRef)}
               />
               <TouchableOpacity
                 style={styles.eyeIconButton}
@@ -648,6 +669,7 @@ const LoginScreen = () => {
           </>
           )}
         </View>
+      </View>
       </ScrollView>
 
       {/* Bottom Register Link */}

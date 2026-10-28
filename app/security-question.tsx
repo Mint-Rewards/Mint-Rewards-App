@@ -15,8 +15,9 @@
 import { useAppStore } from "@/store/store";
 import { Ionicons } from "@expo/vector-icons";
 import OtpInput from "@/components/OtpInput";
+import useKeyboardScroll from "@/hooks/useKeyboardScroll";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -47,6 +48,16 @@ const SecurityQuestion = () => {
   const [alreadySet, setAlreadySet] = useState(false);
   const [answer, setAnswer] = useState("");
   const [currentPin, setCurrentPin] = useState("");
+
+  /*
+   * The answer field sits below a list of radio options, so on a short handset
+   * it is already near the fold before the keyboard arrives — and Android's
+   * KeyboardAvoidingView is inert here, as everywhere in this app, because it
+   * is given no `behavior`. QA had it covered completely.
+   */
+  const { scrollRef, contentRef, scrollIntoView } = useKeyboardScroll();
+  const answerRef = useRef<View>(null);
+  const pinRef = useRef<View>(null);
 
   /*
    * An account with no email can only be recovered through this question, so
@@ -152,9 +163,13 @@ const SecurityQuestion = () => {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
+      {/* The container the focused control is measured against; the content
+          container itself takes no ref. */}
+      <View ref={contentRef}>
         <TouchableOpacity
           style={styles.back}
           onPress={() => router.back()}
@@ -194,7 +209,7 @@ const SecurityQuestion = () => {
         })}
 
         <Text style={[styles.label, styles.labelSpaced]}>Your answer</Text>
-        <View style={styles.inputContainer}>
+        <View ref={answerRef} style={styles.inputContainer}>
           <TextInput
             style={styles.input}
             value={answer}
@@ -204,6 +219,7 @@ const SecurityQuestion = () => {
             placeholder="Something you will not forget"
             placeholderTextColor="#999999"
             maxLength={100}
+            onFocus={() => scrollIntoView(answerRef)}
           />
         </View>
         <Text style={styles.hint}>
@@ -216,14 +232,17 @@ const SecurityQuestion = () => {
             <Text style={[styles.label, styles.labelSpaced]}>
               Confirm with your PIN
             </Text>
-            <OtpInput
-              value={currentPin}
-              onChange={setCurrentPin}
-              secure
-              autoComplete="off"
-              autoFocus={false}
-              disabled={saving}
-            />
+            <View ref={pinRef}>
+              <OtpInput
+                value={currentPin}
+                onChange={setCurrentPin}
+                secure
+                autoComplete="off"
+                autoFocus={false}
+                disabled={saving}
+                onFocus={() => scrollIntoView(pinRef)}
+              />
+            </View>
             <Text style={styles.hint}>
               You already have a question set, so changing it needs your current
               PIN.
@@ -244,6 +263,7 @@ const SecurityQuestion = () => {
             </Text>
           )}
         </TouchableOpacity>
+      </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );

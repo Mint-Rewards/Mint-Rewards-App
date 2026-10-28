@@ -11,7 +11,7 @@
  */
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -23,6 +23,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import useKeyboardScroll from "@/hooks/useKeyboardScroll";
 import { Constants, API_BASE_URL } from "../utils/constants";
 import { normalizePhone } from "../utils/phoneNumber";
 
@@ -39,6 +40,19 @@ const ContactSupport = () => {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+
+  /*
+   * Android's KeyboardAvoidingView is given no `behavior` here, as everywhere
+   * in this app, so it is inert there and anything low on the form sits under
+   * the keyboard. QA had the pickup address and the message box covered — and
+   * this screen is the last resort of somebody already locked out, so a field
+   * they cannot see is the worst place for one.
+   */
+  const { scrollRef, contentRef, scrollIntoView } = useKeyboardScroll();
+  const phoneRef = useRef<View>(null);
+  const nameRef = useRef<View>(null);
+  const addressRef = useRef<View>(null);
+  const messageRef = useRef<View>(null);
 
   const submitPressed = async () => {
     const parsed = normalizePhone(phone);
@@ -109,7 +123,14 @@ const ContactSupport = () => {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
+      {/* The container the focused field is measured against; the content
+          container itself takes no ref. */}
+      <View ref={contentRef}>
         <TouchableOpacity
           style={styles.back}
           onPress={() => router.back()}
@@ -125,7 +146,7 @@ const ContactSupport = () => {
         </Text>
 
         <Text style={styles.label}>Mobile number</Text>
-        <View style={styles.inputContainer}>
+        <View ref={phoneRef} style={styles.inputContainer}>
           <TextInput
             style={styles.input}
             value={phone}
@@ -135,11 +156,12 @@ const ContactSupport = () => {
             placeholder="03XX XXXXXXX"
             placeholderTextColor="#999999"
             maxLength={20}
+            onFocus={() => scrollIntoView(phoneRef)}
           />
         </View>
 
         <Text style={[styles.label, styles.labelSpaced]}>Name on the account</Text>
-        <View style={styles.inputContainer}>
+        <View ref={nameRef} style={styles.inputContainer}>
           <TextInput
             style={styles.input}
             value={name}
@@ -148,11 +170,12 @@ const ContactSupport = () => {
             placeholder="Your name"
             placeholderTextColor="#999999"
             maxLength={200}
+            onFocus={() => scrollIntoView(nameRef)}
           />
         </View>
 
         <Text style={[styles.label, styles.labelSpaced]}>Pickup address</Text>
-        <View style={styles.inputContainer}>
+        <View ref={addressRef} style={styles.inputContainer}>
           <TextInput
             style={styles.input}
             value={address}
@@ -160,13 +183,17 @@ const ContactSupport = () => {
             placeholder="The address we collect from"
             placeholderTextColor="#999999"
             maxLength={200}
+            onFocus={() => scrollIntoView(addressRef)}
           />
         </View>
 
         <Text style={[styles.label, styles.labelSpaced]}>
           Anything else (optional)
         </Text>
-        <View style={[styles.inputContainer, styles.multilineContainer]}>
+        <View
+          ref={messageRef}
+          style={[styles.inputContainer, styles.multilineContainer]}
+        >
           <TextInput
             style={[styles.input, styles.multiline]}
             value={message}
@@ -175,6 +202,7 @@ const ContactSupport = () => {
             placeholderTextColor="#999999"
             multiline
             maxLength={MAX_MESSAGE}
+            onFocus={() => scrollIntoView(messageRef)}
           />
         </View>
 
@@ -185,6 +213,7 @@ const ContactSupport = () => {
             <Text style={styles.buttonText}>Send request</Text>
           )}
         </TouchableOpacity>
+      </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
