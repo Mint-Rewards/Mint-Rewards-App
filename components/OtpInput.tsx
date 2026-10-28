@@ -135,10 +135,21 @@ const OtpInput = ({
       {/*
        * Last in the tree, so it sits above the boxes and takes the taps.
        *
-       * Transparent rather than `opacity: 0`: an invisible-by-opacity input has
-       * a history of not raising the keyboard on some Android versions, and
-       * there is nothing to gain by risking it. Nothing shows through — text,
-       * caret and selection are all transparent.
+       * HIDDEN TWO WAYS, and the first version was hidden only one.
+       *
+       * It shipped with `color: "transparent"` alone, on the reasoning that an
+       * invisible-by-opacity input has a history of not raising the keyboard on
+       * some Android versions. That risk was folklore; the one I took instead
+       * was real. On Android 16 the field drew its text anyway — QA saw a full
+       * PIN in plain text across the middle of the row, on top of the masked
+       * dots, which is worse than the paste bug the rewrite was for
+       * (z8x1tu46mg, and z8x1tu46me and z8x1tu46bf are the same cause).
+       *
+       * `opacity: 0` is the one that actually holds: it is the view's alpha, so
+       * there is no text to draw whatever the platform does with a colour.
+       * Alpha does not affect hit testing or focus, so the taps and the
+       * keyboard are unchanged. The transparent colour stays as a second
+       * mechanism rather than the only one.
        */}
       <TextInput
         ref={inputRef}
@@ -233,6 +244,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // The one that holds: alpha, so nothing is drawn whatever the platform
+    // makes of a transparent text colour. Both are kept deliberately — see
+    // the comment at the field.
+    opacity: 0,
     color: "transparent",
     backgroundColor: "transparent",
     // Keeps the invisible text from being laid out taller than the row on

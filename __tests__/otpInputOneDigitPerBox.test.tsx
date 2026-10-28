@@ -168,4 +168,25 @@ describe("OtpInput — one digit per box", () => {
     const tree = render();
     expect(tree.root.findAllByType(TextInput)).toHaveLength(1);
   });
+
+  /*
+   * THE FIELD ITSELF MUST NOT BE VISIBLE, and this is the one thing about it
+   * that a test can hold.
+   *
+   * It first shipped hidden by `color: "transparent"` alone, and Android 16
+   * drew the text anyway — a full PIN in plain sight across the middle of the
+   * row, over the masked dots. `opacity: 0` is the view's alpha, so there is
+   * nothing to draw whatever the platform makes of a colour. Rendering is
+   * native and cannot be asserted here; that the property is still set can.
+   */
+  it("keeps the real field invisible by alpha, not only by text colour", () => {
+    const tree = render();
+    const style = Object.assign(
+      {},
+      ...[field(tree).props.style].flat().filter(Boolean),
+    );
+
+    expect(style.opacity).toBe(0);
+    expect(style.color).toBe("transparent");
+  });
 });
