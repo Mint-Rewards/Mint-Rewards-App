@@ -54,8 +54,23 @@ const ROWS: {
   appliesOnlyWithEmail?: boolean;
 }[] = [
   { key: "userName", label: "Name", covers: ["userName"], focus: "userName" },
-  // Read-only on the form and set at signup: it has no gap to route to.
-  { key: "email", label: "Email", covers: [], focus: null },
+  /*
+   * Read-only on the form and set at signup, so it has no gap to route to —
+   * and `covers: []` means it can never be outstanding, which is to say it
+   * always draws as done.
+   *
+   * That is only true of an account that HAS an email. On a phone-only
+   * household it ticked "Email" for an address that does not exist, and
+   * counted it towards "x of y complete" — the very lie the two rows below
+   * are filtered out to avoid.
+   */
+  {
+    key: "email",
+    label: "Email",
+    covers: [],
+    focus: null,
+    appliesOnlyWithEmail: true,
+  },
   { key: "phone", label: "Phone Number", covers: ["phone"], focus: "phone" },
   {
     key: "address",

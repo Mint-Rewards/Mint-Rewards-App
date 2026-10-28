@@ -24,6 +24,7 @@ import { getSubAreasForTown, isCanonicalTown } from "@/utils/pakistan_areas";
 import { missingSentence } from "@/utils/locationEvaluation";
 import { buildPrefill, reverseGeocode } from "@/utils/locationPrefill";
 import { needsLocationUpdate } from "@/utils/profile";
+import { identityErrors } from "@/utils/identityValidation";
 import { parseProfileFocus } from "@/utils/profileFocus";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -40,7 +41,7 @@ import {
   View,
 } from "react-native";
 import { useAppStore, UserProfile } from "../store/store";
-import { isPhone, sanitizePhone } from "../utils/phone";
+import { sanitizePhone } from "../utils/phone";
 
 /** The fields this screen still owns. Everything below the phone number belongs
  *  to `useLocationForm` / `LocationFields`. */
@@ -354,16 +355,37 @@ const EditProfile = () => {
     }, FIELD_FOCUS_SCROLL_MS);
   };
 
+  /*
+   * Which identity fields this screen cannot change — `renderInput` carries
+   * the reasoning for each.
+   *
+   * Hoisted out of the render because VALIDATION HAS TO AGREE WITH IT, and it
+   * did not. `email` was required unconditionally while being read-only for
+   * everybody, which cost nothing for as long as every account was created
+   * from an email address. Phone signup produced accounts with none, and Edit
+   * Profile then could not be saved at all: "Email is required" under a box
+   * nobody can type in, so profile completion — and with it the bonus and
+   * being collectable — was unreachable for exactly the households the
+   * feature was built for.
+   *
+   * The server was never going to take it either: `update-profile` leaves
+   * `email` out of both of its allowlists, so the field could not have been
+   * saved even if it had been typed.
+   */
+  const isFixedIdentity = (field: keyof IdentityFields) =>
+    field === "email" || (field === "phone" && Boolean(credentials?.hasPhone));
+
   // Identity is this screen's; everything about the place is `locationSave`'s,
   // so the confirm-address modal cannot end up enforcing a different rule.
   const validateForm = () => {
-    const newErrors: { [key: string]: string } = {};
-    if (!identity.userName.trim())  newErrors.userName = "Username is required";
-    if (!identity.email.trim())     newErrors.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(identity.email)) newErrors.email = "Please enter a valid email";
-    if (!identity.phone.trim())     newErrors.phone = "Phone number is required";
-    else if (!isPhone(identity.phone))
-      newErrors.phone = "Please enter a valid phone number in the format 03XXXXXXXXX";
+    // A read-only field is never validated — see `identityErrors`, which is
+    // where that rule lives so it can be tested without this screen.
+    const newErrors: { [key: string]: string } = {
+      ...identityErrors(identity, {
+        emailFixed: isFixedIdentity("email"),
+        phoneFixed: isFixedIdentity("phone"),
+      }),
+    };
 
     const location = validateLocationValues(form.values, {
       // Required only where there is canonical data to choose from. Free-text
@@ -578,13 +600,17 @@ const EditProfile = () => {
      * number is NOT locked: that number is contact information, not a
      * credential, and it is the only way they can correct a typo in it.
      */
-    const isLoginIdentity =
-      field === "email" || (field === "phone" && Boolean(credentials?.hasPhone));
+    const isLoginIdentity = isFixedIdentity(field);
 
     return (
     <View style={styles.inputContainer}>
       <Text style={styles.label}>
-        {label}<Text style={styles.asterisk}> *</Text>
+        {label}
+        {/* No asterisk on a box nobody can type in. "Required" beside a
+            greyed-out field is the pairing QA reported as a dead end, and it
+            was telling the truth about the rule and the wrong thing about
+            what to do next. */}
+        {!isLoginIdentity && <Text style={styles.asterisk}> *</Text>}
       </Text>
       <TextInput
         ref={inputRef}
