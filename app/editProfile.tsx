@@ -24,6 +24,7 @@ import { getSubAreasForTown, isCanonicalTown } from "@/utils/pakistan_areas";
 import { missingSentence } from "@/utils/locationEvaluation";
 import { buildPrefill, reverseGeocode } from "@/utils/locationPrefill";
 import { needsLocationUpdate } from "@/utils/profile";
+import { identityErrors } from "@/utils/identityValidation";
 import { parseProfileFocus } from "@/utils/profileFocus";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -40,7 +41,7 @@ import {
   View,
 } from "react-native";
 import { useAppStore, UserProfile } from "../store/store";
-import { isPhone, sanitizePhone } from "../utils/phone";
+import { sanitizePhone } from "../utils/phone";
 
 /** The fields this screen still owns. Everything below the phone number belongs
  *  to `useLocationForm` / `LocationFields`. */
@@ -74,6 +75,7 @@ const EditProfile = () => {
     isProfileLoading,
     profileError,
     setProfileError,
+    credentials,
   } = useAppStore();
 
   const [identity, setIdentity] = useState<IdentityFields>({
@@ -151,6 +153,7 @@ const EditProfile = () => {
   const phoneRef = useRef<TextInput>(null);
   const addressRef = useRef<View>(null);
   const pinRef = useRef<View>(null);
+  const securityQuestionRef = useRef<View>(null);
 
   /**
    * Brings a target into view, and puts the cursor in it where there is one.
@@ -178,6 +181,7 @@ const EditProfile = () => {
       phone: phoneRef,
       address: addressRef,
       pin: pinRef,
+      securityQuestion: securityQuestionRef,
     };
     // One frame's delay so the anchors have been laid out and can be measured.
     const timer = setTimeout(() => {
@@ -351,16 +355,37 @@ const EditProfile = () => {
     }, FIELD_FOCUS_SCROLL_MS);
   };
 
+  /*
+   * Which identity fields this screen cannot change — `renderInput` carries
+   * the reasoning for each.
+   *
+   * Hoisted out of the render because VALIDATION HAS TO AGREE WITH IT, and it
+   * did not. `email` was required unconditionally while being read-only for
+   * everybody, which cost nothing for as long as every account was created
+   * from an email address. Phone signup produced accounts with none, and Edit
+   * Profile then could not be saved at all: "Email is required" under a box
+   * nobody can type in, so profile completion — and with it the bonus and
+   * being collectable — was unreachable for exactly the households the
+   * feature was built for.
+   *
+   * The server was never going to take it either: `update-profile` leaves
+   * `email` out of both of its allowlists, so the field could not have been
+   * saved even if it had been typed.
+   */
+  const isFixedIdentity = (field: keyof IdentityFields) =>
+    field === "email" || (field === "phone" && Boolean(credentials?.hasPhone));
+
   // Identity is this screen's; everything about the place is `locationSave`'s,
   // so the confirm-address modal cannot end up enforcing a different rule.
   const validateForm = () => {
-    const newErrors: { [key: string]: string } = {};
-    if (!identity.userName.trim())  newErrors.userName = "Username is required";
-    if (!identity.email.trim())     newErrors.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(identity.email)) newErrors.email = "Please enter a valid email";
-    if (!identity.phone.trim())     newErrors.phone = "Phone number is required";
-    else if (!isPhone(identity.phone))
-      newErrors.phone = "Please enter a valid phone number in the format 03XXXXXXXXX";
+    // A read-only field is never validated — see `identityErrors`, which is
+    // where that rule lives so it can be tested without this screen.
+    const newErrors: { [key: string]: string } = {
+      ...identityErrors(identity, {
+        emailFixed: isFixedIdentity("email"),
+        phoneFixed: isFixedIdentity("phone"),
+      }),
+    };
 
     const location = validateLocationValues(form.values, {
       // Required only where there is canonical data to choose from. Free-text
@@ -559,17 +584,40 @@ const EditProfile = () => {
     keyboardType: "default" | "email-address" | "phone-pad" = "default",
     // Present only for the fields the gate's checklist can route to.
     inputRef?: React.RefObject<TextInput | null>,
-  ) => (
+  ) => {
+    /*
+     * A FIELD YOU SIGN IN WITH IS NOT A FIELD YOU EDIT HERE.
+     *
+     * Email has always been read-only: it comes from signing up and is the
+     * identity the account is reached by. For an account created from a mobile
+     * number the number plays exactly that role — `hasPhone` is
+     * `phone_e164 IS NOT NULL`, which is the column the login route matches
+     * on — so letting it be typed over here would quietly change what the
+     * person has to enter to get back in, with no verification that the new
+     * number is even theirs.
+     *
+     * An account that signed up with an email and merely recorded a phone
+     * number is NOT locked: that number is contact information, not a
+     * credential, and it is the only way they can correct a typo in it.
+     */
+    const isLoginIdentity = isFixedIdentity(field);
+
+    return (
     <View style={styles.inputContainer}>
       <Text style={styles.label}>
-        {label}<Text style={styles.asterisk}> *</Text>
+        {label}
+        {/* No asterisk on a box nobody can type in. "Required" beside a
+            greyed-out field is the pairing QA reported as a dead end, and it
+            was telling the truth about the rule and the wrong thing about
+            what to do next. */}
+        {!isLoginIdentity && <Text style={styles.asterisk}> *</Text>}
       </Text>
       <TextInput
         ref={inputRef}
         style={[
           styles.input,
           errors[field] && styles.inputError,
-          { backgroundColor: field === "email" ? "#e2e8f0" : "#f8f9fa" },
+          { backgroundColor: isLoginIdentity ? "#e2e8f0" : "#f8f9fa" },
         ]}
         value={identity[field]}
         onChangeText={(v) => handleUpdateField(field, v)}
@@ -577,7 +625,7 @@ const EditProfile = () => {
         placeholderTextColor="#a0aec0"
         keyboardType={keyboardType}
         autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
-        readOnly={field === "email"}
+        readOnly={isLoginIdentity}
         maxLength={field === "phone" ? 11 : undefined}
         textAlignVertical="center"
         onFocus={() => {
@@ -587,8 +635,15 @@ const EditProfile = () => {
         onBlur={markFieldBlurred}
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
+      {/* Says why it cannot be edited, so a greyed-out box is not a mystery.
+          Only for the phone: email has read as fixed since the first release
+          and needs no explaining. */}
+      {field === "phone" && isLoginIdentity && (
+        <Text style={styles.lockedHint}>You sign in with this number.</Text>
+      )}
     </View>
-  );
+    );
+  };
 
   return (
     /*
@@ -705,6 +760,55 @@ const EditProfile = () => {
                 }}
                 onFieldBlur={markFieldBlurred}
               />
+            </View>
+
+            {/*
+              * Security question — moved here from the profile menu, because
+              * this is the screen a person opens when told to finish their
+              * profile, and for a phone-only household it is as much a part of
+              * the profile as the address.
+              *
+              * It navigates rather than editing inline: choosing a question and
+              * answering it is its own flow, with its own validation, and
+              * folding it into this form would mean two save buttons meaning
+              * different things.
+              *
+              * The warning tint is shown only to accounts with no email. They
+              * have no reset link, so this question and a support ticket are
+              * the whole recovery story. A neutral row would not say that.
+              */}
+            <View ref={securityQuestionRef} style={styles.securityRow}>
+              <TouchableOpacity
+                style={styles.securityTouchable}
+                onPress={() => router.push("/security-question")}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  credentials?.hasSecurityQuestion
+                    ? "Security question, already set. Opens the security question screen."
+                    : "Security question, not set. Opens the security question screen."
+                }
+              >
+                <View style={styles.securityText}>
+                  <Text style={styles.label}>Security Question</Text>
+                  <Text
+                    style={
+                      credentials && !credentials.hasEmail
+                        ? styles.securitySubtitleWarning
+                        : styles.securitySubtitle
+                    }
+                  >
+                    {credentials && !credentials.hasEmail
+                      ? credentials.hasSecurityQuestion
+                        ? "Your only way to recover your PIN"
+                        : "Not set — your only way to recover your PIN"
+                      : credentials?.hasSecurityQuestion
+                        ? "Set"
+                        : "Not set"}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#999999" />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -861,6 +965,22 @@ const styles = StyleSheet.create({
   headerGradient: { borderRadius: 20, padding: 15, borderWidth: 1, borderColor: "rgba(255,255,255,0.2)" },
   headerContent: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
+  lockedHint: { fontSize: 12, color: "#718096", marginTop: 6 },
+  securityRow: { marginTop: 18 },
+  securityTouchable: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E8E8E8",
+  },
+  securityText: { flex: 1 },
+  securitySubtitle: { fontSize: 13, color: "#777777", marginTop: 2 },
+  securitySubtitleWarning: { fontSize: 13, color: "#C2410C", marginTop: 2 },
   headerTitle: { fontSize: 20, fontWeight: "bold", color: "#ffffff" },
   placeholder: { width: 40 },
 });

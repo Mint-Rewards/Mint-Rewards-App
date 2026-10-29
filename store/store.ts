@@ -145,6 +145,12 @@ export interface User {
   referrals?: string[];
   firstTimeLogin?: boolean;
   emailVerified?: boolean;
+  /**
+   * Whether a security question is set. A boolean the server derives in SQL —
+   * the answer hash never leaves the database. Used alongside `emailVerified`
+   * to decide whether this account can be recovered at all.
+   */
+  hasSecurityQuestion?: boolean;
   pickupHistory?: any[];
   token?: string;
 }
@@ -212,6 +218,12 @@ export interface Brand {
   status?: "PENDING" | "APPROVED" | "REJECTED";
   role?: string;
   emailVerified?: boolean;
+  /**
+   * Whether a security question is set. A boolean the server derives in SQL —
+   * the answer hash never leaves the database. Used alongside `emailVerified`
+   * to decide whether this account can be recovered at all.
+   */
+  hasSecurityQuestion?: boolean;
 }
 
 export interface BrandTheme {
@@ -273,6 +285,21 @@ export interface Deal {
 interface UserSlice {
   user: User | null;
   token: string | null;
+  /**
+   * What this account can sign in with, straight from my-profile. Booleans
+   * only — the server computes them in SQL, so no credential is carried.
+   *
+   * Null until a profile has been fetched. Screens reading it must treat null
+   * as "not known yet" rather than "no", or a slow first load shows the wrong
+   * options to somebody who has them.
+   */
+  credentials: {
+    hasPassword: boolean;
+    hasPin: boolean;
+    hasPhone: boolean;
+    hasEmail: boolean;
+    hasSecurityQuestion: boolean;
+  } | null;
   isLoading: boolean;
   error: string | null;
   /**
@@ -308,6 +335,17 @@ interface UserSlice {
     email: string,
     password: string,
   ) => Promise<{ Status: string; ErrorMessage?: string }>;
+  /**
+   * Phone + PIN. A separate action from `signIn` because it posts different
+   * credentials to a different endpoint, and its response carries two extra
+   * fields the email path has no notion of.
+   */
+  signInWithPin: (
+    phoneE164: string,
+    pin: string,
+  ) => Promise<
+    OtpResult & { firstLogin?: boolean; hasSecurityQuestion?: boolean }
+  >;
   signUp: (
     email: string,
     password: string,
@@ -498,6 +536,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // ========================================================================
   user: null,
   token: null,
+  credentials: null,
   isLoading: false,
   error: null,
   locationPromptShown: false,
@@ -572,6 +611,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         set({
           user: data.user,
+          // Additive on the server, so a response without it leaves the
+          // previous value rather than clobbering it with null.
+          credentials: data.credentials ?? get().credentials,
           token: token,
           isLoading: false,
           error: null,
@@ -650,6 +692,66 @@ export const useAppStore = create<AppStore>((set, get) => ({
           : "Network error. Please check your connection and try again.";
       set({ error: errorMessage, isLoading: false });
       await logError("signIn exception", { error });
+      return { Status: "Error", ErrorMessage: errorMessage };
+    }
+  },
+
+  signInWithPin: async (phoneE164, pin) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetchWithTimeout(`${API_URL}/api/users/phone-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phoneE164, pin }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && data.success) {
+        const user: User = userFromAuth(data.user, { token: data.token });
+        set({ user, isLoading: false, error: null, token: data.token });
+
+        await SecureStore.setItemAsync("userToken", data.token);
+        /*
+         * No userEmail written. A phone account genuinely has none, and
+         * storing "" would be indistinguishable from an email the app failed
+         * to read — anything downstream reading it back cannot tell those
+         * apart. Absent is the honest state.
+         */
+        if (data.user?.userName) {
+          await SecureStore.setItemAsync("userName", data.user.userName);
+        }
+        await SecureStore.setItemAsync(
+          "userPoints",
+          String(data.user?.points || 0),
+        );
+
+        await logAuthEvent("LOGIN", data.user?._id ?? "", { method: "phone" });
+
+        return {
+          Status: "Success",
+          ...data,
+          firstLogin: Boolean(data.firstLogin),
+          hasSecurityQuestion: Boolean(data.hasSecurityQuestion),
+        };
+      }
+
+      const errorMessage =
+        data.error || "Incorrect mobile number or PIN.";
+      set({ error: errorMessage, isLoading: false });
+      await logEvent("API_ERROR", {
+        level: "warn",
+        extra: { event: "PHONE_LOGIN_FAILED", reason: data.code || errorMessage },
+      });
+      // `code` is passed through so the screen can tell a locked account
+      // (PIN_LOCKED, which carries retryAfterSeconds) from a wrong PIN.
+      return { Status: "Error", ErrorMessage: errorMessage, ...data };
+    } catch (error: any) {
+      const errorMessage =
+        error?.name === "AbortError"
+          ? "Request timed out. Please check your connection and try again."
+          : "Network error. Please check your connection and try again.";
+      set({ error: errorMessage, isLoading: false });
+      await logError("signInWithPin exception", { error });
       return { Status: "Error", ErrorMessage: errorMessage };
     }
   },
@@ -835,6 +937,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({
       user: null,
       token: null,
+      credentials: null,
       error: null,
       scheduledCollection: null,
       locationPromptShown: false,
@@ -877,24 +980,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.success) {
-        // Keep the header value verbatim ("Bearer <jwt>"), the same shape signIn
-        // stores — the API requires the Bearer scheme and rejects a bare token.
-        const sessionToken = String(data.token || "");
-        set({ token: sessionToken });
-
-        await SecureStore.setItemAsync("userToken", sessionToken);
+        /*
+         * VERIFYING NO LONGER SIGNS YOU IN.
+         *
+         * This used to store the token the endpoint returns and send the user
+         * straight to the home tabs, so email verification was the step that
+         * established the session. Sign-up now ends at the login screen on
+         * BOTH tabs, so the token is deliberately dropped here.
+         *
+         * Dropping it rather than storing-then-navigating matters: app/
+         * _layout.tsx restores a session from `userToken` on boot, so a stored
+         * token plus a login screen is an incoherent state — signed in by one
+         * measure and not by the other.
+         *
+         * The address is still remembered, because it is what the login screen
+         * should offer back to somebody who has just confirmed it.
+         */
         await SecureStore.setItemAsync("userEmail", email);
-        await get().getProfile();
 
-        const verifiedUser = get().user;
-        if (verifiedUser?.userName) {
-          await SecureStore.setItemAsync("userName", verifiedUser.userName);
-        }
-        await SecureStore.setItemAsync("userPoints", String(verifiedUser?.points || 0));
-
-        await logAuthEvent("EMAIL_VERIFIED", verifiedUser?._id ?? "", { email });
+        await logAuthEvent("EMAIL_VERIFIED", "", { email });
         set({ isLoading: false, error: null });
-        return { Status: "Success", Message: data.message, token: sessionToken };
+        return { Status: "Success", Message: data.message };
       }
 
       await logEvent("OTP_VERIFY", {

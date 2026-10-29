@@ -25,7 +25,7 @@ import {
 } from "react-native";
 
 const ProfileScreen = () => {
-  const { signOut, deleteAccount, user, getProfile } = useAppStore();
+  const { signOut, deleteAccount, user, getProfile, credentials } = useAppStore();
 
   // The same data the screen loads on mount, fetched again on a pull. Deals
   // were fetched here only to count them in a stat that no longer exists; the
@@ -161,6 +161,51 @@ const ProfileScreen = () => {
 
               <Ionicons name="chevron-forward" size={20} color="#999999" />
             </TouchableOpacity>
+
+            {/*
+              * Change or set a PIN.
+              *
+              * Shown only to accounts that can actually USE one — a PIN signs
+              * you in with a mobile number, so an account with no number has
+              * nowhere to type it. `credentials` is null until the first
+              * profile fetch returns, and null means NOT KNOWN YET rather than
+              * no; showing the row on a guess would offer it to people it
+              * cannot help.
+              *
+              * The label distinguishes setting a first PIN from changing one,
+              * and the screen is told which so it does not have to guess
+              * whether to ask for a current PIN.
+              */}
+            {credentials?.hasPhone && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() =>
+                  router.push({
+                    pathname: "/change-pin",
+                    params: { hasPin: credentials.hasPin ? "1" : "0" },
+                  })
+                }
+                activeOpacity={0.7}
+              >
+                <View style={styles.menuContent}>
+                  <Text style={styles.menuTitle}>
+                    {credentials.hasPin ? "Change PIN" : "Set a PIN"}
+                  </Text>
+                  {!credentials.hasPin && (
+                    <Text style={styles.menuSubtitle}>
+                      Sign in with your mobile number
+                    </Text>
+                  )}
+                </View>
+
+                <Ionicons name="chevron-forward" size={20} color="#999999" />
+              </TouchableOpacity>
+            )}
+
+            {/* Security question moved into Edit Profile — it is part of
+                finishing a profile, and for a phone-only household it counts
+                toward the completion bonus, so it belongs on the form the
+                checklist sends people to rather than in a separate menu. */}
 
             <TouchableOpacity
               style={styles.menuItem}
@@ -302,6 +347,11 @@ const ProfileScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  menuSubtitleWarning: {
+    fontSize: 12,
+    color: "#b8761f",
+    marginTop: 3,
+  },
   container: {
     flex: 1,
     backgroundColor: "#ffffff",

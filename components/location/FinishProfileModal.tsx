@@ -48,10 +48,29 @@ const ROWS: {
    * that can never be outstanding, so they are never tappable.
    */
   focus: ProfileFocusTarget | null;
+  /** Hidden entirely for accounts that can receive a reset email. */
+  appliesOnlyWithoutEmail?: boolean;
+  /** The mirror: hidden for accounts that have no address to verify. */
+  appliesOnlyWithEmail?: boolean;
 }[] = [
   { key: "userName", label: "Name", covers: ["userName"], focus: "userName" },
-  // Read-only on the form and set at signup: it has no gap to route to.
-  { key: "email", label: "Email", covers: [], focus: null },
+  /*
+   * Read-only on the form and set at signup, so it has no gap to route to —
+   * and `covers: []` means it can never be outstanding, which is to say it
+   * always draws as done.
+   *
+   * That is only true of an account that HAS an email. On a phone-only
+   * household it ticked "Email" for an address that does not exist, and
+   * counted it towards "x of y complete" — the very lie the two rows below
+   * are filtered out to avoid.
+   */
+  {
+    key: "email",
+    label: "Email",
+    covers: [],
+    focus: null,
+    appliesOnlyWithEmail: true,
+  },
   { key: "phone", label: "Phone Number", covers: ["phone"], focus: "phone" },
   {
     key: "address",
@@ -60,6 +79,32 @@ const ROWS: {
     focus: "address",
   },
   { key: "pin", label: "Map pin", covers: ["pin"], focus: "pin" },
+  /*
+   * Only shown to accounts that need it — see `securityQuestionApplies`.
+   *
+   * It is filtered out rather than rendered as already-done for everybody
+   * else, because a ticked "Security question" on an account that has never
+   * set one would be a lie, and the count underneath would be wrong with it.
+   */
+  /*
+   * Shown only to an account that HAS an email, and dropped for one that does
+   * not — a phone-only household has no address to verify, and a ticked
+   * "Email verified" row on an account with no email would be nonsense.
+   */
+  {
+    key: "emailVerification",
+    label: "Verify your email",
+    covers: ["emailVerification"],
+    focus: "emailVerification",
+    appliesOnlyWithEmail: true,
+  },
+  {
+    key: "securityQuestion",
+    label: "Security question",
+    covers: ["securityQuestion"],
+    focus: "securityQuestion",
+    appliesOnlyWithoutEmail: true,
+  },
 ];
 
 interface Props {
@@ -73,6 +118,20 @@ interface Props {
    * gap the user pointed at so the form can open on it.
    */
   onSelectRow: (focus: ProfileFocusTarget) => void;
+  /**
+   * Whether this account has no email address, and so depends on a security
+   * question to get back in. False hides that row completely.
+   *
+   * Defaults to false: an account whose credentials have not loaded shows the
+   * checklist it has always shown, rather than briefly growing a row and then
+   * dropping it.
+   */
+  securityQuestionApplies?: boolean;
+  /**
+   * Whether this account has an email address at all. False hides the
+   * verification row completely — there is nothing to verify.
+   */
+  emailVerificationApplies?: boolean;
   onDismiss: () => void;
   /**
    * The live bonus, or null when there is none to promise. Null is the default
@@ -90,8 +149,14 @@ export function FinishProfileModal({
   onSelectRow,
   onDismiss,
   bonus = null,
+  securityQuestionApplies = false,
+  emailVerificationApplies = false,
 }: Props) {
-  const rows = ROWS.map((row) => ({
+  const rows = ROWS.filter(
+    (row) =>
+      (!row.appliesOnlyWithoutEmail || securityQuestionApplies) &&
+      (!row.appliesOnlyWithEmail || emailVerificationApplies),
+  ).map((row) => ({
     ...row,
     done: !row.covers.some((field) => missing.includes(field)),
   }));

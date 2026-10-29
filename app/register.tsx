@@ -2,9 +2,10 @@ import { useAppStore } from "@/store/store";
 import { userFromAuth } from "@/utils/userFromAuth";
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import AppleSignInButton from "@/components/AppleSignInButton";
+import OtpInput from "@/components/OtpInput";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
   AppState,
@@ -23,6 +24,11 @@ import Svg, { Path } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
+import useKeyboardScroll from "@/hooks/useKeyboardScroll";
+import SecurityQuestionFields, {
+  type SecurityQuestion,
+} from "@/components/SecurityQuestionFields";
+import { normalizePhone, pinShapeError, PIN_LENGTH } from "../utils/phoneNumber";
 import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
@@ -43,6 +49,29 @@ const GoogleIcon = ({ size = 20, opacity = 1 }: { size?: number; opacity?: numbe
 const RegisterScreen = () => {
   const [name, setName] = useState("");
   const insets = useSafeAreaInsets();
+
+  /*
+   * Android's KeyboardAvoidingView is inert without a `behavior`, so the lower
+   * half of this form would sit under the keyboard. See the hook.
+   */
+  const { scrollRef, contentRef, scrollIntoView } = useKeyboardScroll();
+
+  const pinRef = useRef<View>(null);
+  const confirmPinRef = useRef<View>(null);
+  /*
+   * The text fields too, not only the PIN boxes. The cause is the inert
+   * KeyboardAvoidingView rather than anything specific to the boxes — QA
+   * reported Confirm PIN because it is the lowest control on that tab, not
+   * because it is special.
+   */
+  const nameRef = useRef<TextInput>(null);
+  /* The email tab declares its own name field; one ref across both would be
+     correct only by accident of a single tab being mounted at a time. */
+  const emailNameRef = useRef<TextInput>(null);
+  const mobileRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [hidePassword, setHidePassword] = useState(true);
@@ -71,11 +100,49 @@ const RegisterScreen = () => {
   const [appleLoading, setAppleLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
+  /*
+   * Phone is the default tab. Most new users have a number and no email, and
+   * the tab somebody lands on is the one most of them will use.
+   *
+   * `name` is shared across both tabs on purpose: switching tabs to compare
+   * them should not throw away something already typed.
+   */
+  const [authTab, setAuthTab] = useState<"phone" | "email">("phone");
+  const [phone, setPhone] = useState("");
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [phoneLoading, setPhoneLoading] = useState(false);
+
+  /*
+   * SIGNING UP WITH A NUMBER IS TWO STEPS, and the second one is not optional.
+   *
+   * A phone-number account has no email address, so if its owner forgets the
+   * PIN there is no reset link to send — the security question is the only
+   * recovery route that does not need a human on the other end. Asking for it
+   * before the account is created means an account never exists that its owner
+   * cannot get back into.
+   *
+   * It is collected here rather than after signing in because there is no
+   * session yet by design: this endpoint returns no token, and the new account
+   * proves itself at the login screen with the PIN it just chose. Everything
+   * goes to the server in ONE request, which writes account, PIN and question
+   * in a single transaction.
+   */
+  const [phoneStep, setPhoneStep] = useState<"details" | "question">("details");
+  const [questions, setQuestions] = useState<SecurityQuestion[]>([]);
+  const [questionsError, setQuestionsError] = useState(false);
+  const [questionId, setQuestionId] = useState<string | null>(null);
+  const [answer, setAnswer] = useState("");
+
   const { signUp } = useAppStore();
   const posthog = usePostHog();
   // Default to enabled (!== false) so buttons don't flicker/hide while flags are still loading.
   const googleSignInEnabled = useFeatureFlag("google-signin-enabled") !== false;
   const appleSignInEnabled = useFeatureFlag("apple-signin-enabled") !== false;
+
+  /** Both buttons share a row, so each gets half the width and a short label. */
+  const bothSocialsShown =
+    googleSignInEnabled && Platform.OS === "ios" && appleSignInEnabled;
 
   const handleGoogleSignUp = async () => {
     setGoogleLoading(true);
@@ -233,6 +300,128 @@ const RegisterScreen = () => {
     }
   };
 
+  /**
+   * The question list, fetched rather than carried.
+   *
+   * The ids are stored against the account and matched on recovery, so a copy
+   * in the client would disagree with the server the first time either
+   * changed. This endpoint serves the prompts to anyone — there is no session
+   * at this point in signing up — and a selection only to a caller that proved
+   * who it is.
+   *
+   * A failure is recoverable rather than fatal: the step shows a retry, and
+   * the account has not been created, so nothing is in a half state.
+   */
+  const loadQuestions = async () => {
+    setQuestionsError(false);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/security-question`);
+      const data = await res.json().catch(() => ({}));
+      const list = Array.isArray(data?.questions) ? data.questions : [];
+      if (!res.ok || list.length === 0) {
+        setQuestionsError(true);
+        return;
+      }
+      setQuestions(list);
+    } catch {
+      setQuestionsError(true);
+    }
+  };
+
+  const handlePhoneSignUp = async () => {
+    if (name.trim() === "") {
+      Constants.showDialog("Please enter your name");
+      return;
+    }
+
+    const parsed = normalizePhone(phone);
+    if (!parsed.ok) {
+      Constants.showDialog(parsed.message);
+      return;
+    }
+
+    /*
+     * Shape only. The server also refuses sequences, repeats, dates and a
+     * denylist of common PINs, and returns a message worth showing — checking
+     * those here would mean two copies of a list that will change.
+     */
+    const shape = pinShapeError(pin);
+    if (shape) {
+      Constants.showDialog(shape);
+      return;
+    }
+
+    if (pin !== confirmPin) {
+      Constants.showDialog("The PINs do not match.");
+      return;
+    }
+
+    /*
+     * Step one ends here. Nothing has been sent yet — the account is created
+     * by the single request at the end of step two, so backing out now leaves
+     * no trace.
+     */
+    if (phoneStep === "details") {
+      setPhoneStep("question");
+      void loadQuestions();
+      return;
+    }
+
+    if (!questionId) {
+      Constants.showDialog("Choose a security question.");
+      return;
+    }
+    if (answer.trim().length < 2) {
+      Constants.showDialog("Enter an answer you will remember.");
+      return;
+    }
+
+    setPhoneLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/phone-signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userName: name.trim(),
+          phone: parsed.e164,
+          pin,
+          confirmPin,
+          // Written in the same transaction as the account and the PIN.
+          questionId,
+          answer: answer.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 201 && data.success) {
+        posthog.capture("user_signed_up", { method: "phone" });
+        /*
+         * No session is established here, and that is the whole point: the
+         * endpoint returns no token, and the new account signs in with the PIN
+         * it just chose. The number is carried across so they do not retype it.
+         */
+        router.replace({
+          pathname: "/login",
+          params: { phone: parsed.national, justSignedUp: "1" },
+        });
+        return;
+      }
+
+      if (res.status === 429) {
+        Constants.showDialog(
+          data.error || "Too many attempts. Please try again later.",
+        );
+        return;
+      }
+
+      Constants.showDialog(data.error || "Registration failed");
+    } catch {
+      Constants.showDialog("An error occurred. Please try again.");
+    } finally {
+      setPhoneLoading(false);
+    }
+  };
+
   const handleSignUp = async () => {
     if (name.trim() === "") {
       Constants.showDialog("Please enter your name");
@@ -277,6 +466,7 @@ const RegisterScreen = () => {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         /*
          * flexGrow fills the viewport; the padding keeps the last
@@ -289,7 +479,25 @@ const RegisterScreen = () => {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-      <View style={styles.headerSection}>
+      {/* The container every focused control is measured against. Measuring
+          relative to the ScrollView itself is not possible — its content
+          container takes no ref — so the content carries one. */}
+      <View ref={contentRef}>
+      {/*
+        * TOP PADDING COMES FROM THE DEVICE, not a guess.
+        *
+        * This was `paddingTop: 100`, a number eyeballed to clear a notch on
+        * one handset. It is not the inset — it is a constant ADDED to whatever
+        * the device already reserves, so on anything with a smaller status
+        * area the heading sat behind a band of empty colour.
+        *
+        * `insets.top` is what the system actually reserves; the constant below
+        * is the gap between that and the text, which is all it was ever meant
+        * to be.
+        */}
+      <View
+        style={[styles.headerSection, { paddingTop: insets.top + 20 }]}
+      >
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Join Mint Rewards!</Text>
           <Text style={styles.welcomeSubtitle}>
@@ -299,10 +507,227 @@ const RegisterScreen = () => {
       </View>
 
       <View style={styles.contentSection}>
+          {/*
+            * Two ways to make an account, and they are not the same account.
+            *
+            * A phone sign-up has NO EMAIL ADDRESS — the column is nullable and
+            * the credential check is satisfied by the number. That means the
+            * usual "email me a reset link" route does not exist for it, and
+            * the security question set during profile completion is the only
+            * way back in short of contacting support. The copy under the PIN
+            * field says so, because the moment to learn it is now and not when
+            * locked out.
+            */}
+          <View style={styles.authTabs}>
+            <TouchableOpacity
+              style={[
+                styles.authTab,
+                authTab === "phone" && styles.authTabActive,
+              ]}
+              onPress={() => setAuthTab("phone")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: authTab === "phone" }}
+            >
+              <Text
+                style={[
+                  styles.authTabText,
+                  authTab === "phone" && styles.authTabTextActive,
+                ]}
+              >
+                Phone
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.authTab,
+                authTab === "email" && styles.authTabActive,
+              ]}
+              onPress={() => setAuthTab("email")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: authTab === "email" }}
+            >
+              <Text
+                style={[
+                  styles.authTabText,
+                  authTab === "email" && styles.authTabTextActive,
+                ]}
+              >
+                Email
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/*
+            * Step two: the security question, shown in place of the details.
+            *
+            * Nothing has been sent yet. "Back" returns to the form with every
+            * field still filled in, because none of this is submitted until
+            * the one request at the end.
+            */}
+          {authTab === "phone" && phoneStep === "question" && (
+            <View style={styles.questionStep}>
+              <Text style={styles.questionStepTitle}>
+                One last thing
+              </Text>
+              <Text style={styles.questionStepBody}>
+                Your account has no email address, so if you ever forget your
+                PIN this is how we confirm it is you. Without it you would have
+                to contact support.
+              </Text>
+
+              {questionsError ? (
+                <>
+                  <Text style={styles.questionStepBody}>
+                    The questions could not be loaded.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => void loadQuestions()}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.questionStepRetry}>Try again</Text>
+                  </TouchableOpacity>
+                </>
+              ) : questions.length === 0 ? (
+                <ActivityIndicator color={Constants.appThemeColor} />
+              ) : (
+                <SecurityQuestionFields
+                  questions={questions}
+                  selectedId={questionId}
+                  onSelect={setQuestionId}
+                  answer={answer}
+                  onChangeAnswer={setAnswer}
+                  disabled={phoneLoading}
+                />
+              )}
+
+              <TouchableOpacity
+                onPress={() => setPhoneStep("details")}
+                disabled={phoneLoading}
+                accessibilityRole="button"
+              >
+                <Text style={styles.questionStepBack}>
+                  Back to your details
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {authTab === "phone" && phoneStep === "details" && (
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Name</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    ref={nameRef}
+                    style={styles.textInput}
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    placeholder="Your name"
+                    placeholderTextColor="#999999"
+                    onFocus={() => scrollIntoView(nameRef)}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Mobile number</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    ref={mobileRef}
+                    style={styles.textInput}
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                    autoCorrect={false}
+                    placeholder="03XX XXXXXXX"
+                    placeholderTextColor="#999999"
+                    maxLength={20}
+                    onFocus={() => scrollIntoView(mobileRef)}
+                  />
+                </View>
+              </View>
+
+              <View ref={pinRef} style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>PIN</Text>
+                <OtpInput
+                  value={pin}
+                  onChange={setPin}
+                  secure
+                  autoComplete="off"
+                  autoFocus={false}
+                  disabled={phoneLoading || loading}
+                  onFocus={() => scrollIntoView(pinRef)}
+                />
+              </View>
+
+              <View ref={confirmPinRef} style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Confirm PIN</Text>
+                <OtpInput
+                  value={confirmPin}
+                  onChange={setConfirmPin}
+                  secure
+                  autoComplete="off"
+                  autoFocus={false}
+                  error={confirmPin.length === PIN_LENGTH && confirmPin !== pin}
+                  disabled={phoneLoading || loading}
+                  /* The lowest control on this tab, and the one QA saw the
+                     keyboard cover. */
+                  onFocus={() => scrollIntoView(confirmPinRef)}
+                />
+                <Text
+                  style={[
+                    styles.passwordHint,
+                    confirmPin.length > 0 &&
+                      confirmPin !== pin &&
+                      styles.passwordHintError,
+                  ]}
+                  accessibilityLiveRegion="polite"
+                >
+                  {confirmPin.length > 0 && confirmPin !== pin
+                    ? "The PINs do not match."
+                    : "You will sign in with your number and this PIN. Keep it somewhere safe — without an email address we cannot send you a reset link."}
+                </Text>
+              </View>
+
+            </>
+          )}
+
+          {/*
+            * One button for both steps, outside them, so step two is not left
+            * without a way forward.
+            *
+            * The label tells the truth about what pressing it does. On step one
+            * NOTHING is created — the account, the PIN and the security
+            * question all go in a single request at the end of step two — and a
+            * button saying "Create Account" there would be a promise the screen
+            * does not keep.
+            */}
+          {authTab === "phone" && (
+            <TouchableOpacity
+              style={styles.signUpButton}
+              onPress={handlePhoneSignUp}
+              disabled={phoneLoading || loading}
+              accessibilityRole="button"
+            >
+              {phoneLoading ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Text style={styles.signUpButtonText}>
+                  {phoneStep === "details" ? "Continue" : "Create Account"}
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {authTab === "email" && (
+          <>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Name</Text>
             <View style={styles.inputContainer}>
               <TextInput
+                ref={emailNameRef}
                 style={styles.textInput}
                 value={name}
                 onChangeText={setName}
@@ -310,6 +735,7 @@ const RegisterScreen = () => {
                 autoCorrect={false}
                 placeholder="Your name"
                 placeholderTextColor="#999999"
+                onFocus={() => scrollIntoView(emailNameRef)}
               />
             </View>
           </View>
@@ -318,6 +744,7 @@ const RegisterScreen = () => {
             <Text style={styles.inputLabel}>Email</Text>
             <View style={styles.inputContainer}>
               <TextInput
+                ref={emailRef}
                 style={styles.textInput}
                 value={email}
                 // Trim on entry: an address can never contain whitespace, and
@@ -328,6 +755,7 @@ const RegisterScreen = () => {
                 autoCorrect={false}
                 placeholder="Enter your email"
                 placeholderTextColor="#999999"
+                onFocus={() => scrollIntoView(emailRef)}
               />
             </View>
           </View>
@@ -336,6 +764,7 @@ const RegisterScreen = () => {
             <Text style={styles.inputLabel}>Password</Text>
             <View style={styles.inputContainer}>
               <TextInput
+                ref={passwordRef}
                 style={styles.passwordTextInput}
                 value={password}
                 maxLength={PASSWORD_MAX_LENGTH}
@@ -343,6 +772,9 @@ const RegisterScreen = () => {
                 secureTextEntry={hidePassword}
                 placeholder={`Min. ${PASSWORD_MIN_LENGTH} characters`}
                 placeholderTextColor="#999999"
+                /* The lowest field on the email tab, and the one the keyboard
+                   covers there. */
+                onFocus={() => scrollIntoView(passwordRef)}
               />
               <TouchableOpacity
                 style={styles.eyeIconButton}
@@ -415,16 +847,32 @@ const RegisterScreen = () => {
           {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              {/* The buttons below complete this sentence, which is why they read
+                  just "Google" and "Apple" rather than repeating the verb. */}
+              <Text style={styles.dividerText}>or signup with</Text>
               <View style={styles.dividerLine} />
             </View>
           )}
 
           {/* Google Sign-Up Button */}
+          {/*
+            * SIDE BY SIDE, not stacked.
+            *
+            * Two full-width buttons cost 124pt at the bottom of a form that
+            * was already taller than the screen. Next to each other they cost
+            * 62pt, and the pair reads as one choice — "or sign in another
+            * way" — rather than two separate offers.
+            *
+            * The row collapses gracefully: on Android, where Apple is absent,
+            * the single remaining button takes the full width through
+            * `flex: 1` and keeps its longer label.
+            */}
+          <View style={styles.socialRow}>
           {googleSignInEnabled && (
             <TouchableOpacity
               style={[
                 styles.googleButton,
+                styles.socialItem,
                 (loading || googleLoading) && styles.googleButtonDisabled,
               ]}
               onPress={handleGoogleSignUp}
@@ -443,7 +891,7 @@ const RegisterScreen = () => {
                     ]}
                     numberOfLines={1}
                   >
-                    Sign up with Google
+                    {bothSocialsShown ? "Google" : "Sign up with Google"}
                   </Text>
                 </View>
               )}
@@ -452,8 +900,9 @@ const RegisterScreen = () => {
 
           {/* Apple Sign-Up is iOS-only */}
           {Platform.OS === "ios" && appleSignInEnabled && (
-            <View style={styles.appleButtonContainer}>
+            <View style={[styles.appleButtonContainer, styles.socialItem]}>
               <AppleSignInButton
+                compact
                 onCredential={handleAppleSignUp}
                 onError={(e: unknown) => {
                   console.warn('Apple Sign-Up error', e);
@@ -464,7 +913,11 @@ const RegisterScreen = () => {
               />
             </View>
           )}
+          </View>
+          </>
+          )}
         </View>
+      </View>
       </ScrollView>
 
       <View
@@ -498,22 +951,55 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#ffffff",
   },
+  authTabs: {
+    flexDirection: "row",
+    backgroundColor: "#f2f4f5",
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 20,
+  },
+  authTab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  authTabActive: {
+    backgroundColor: "#ffffff",
+    // Enough lift to read as the selected tab without competing with the
+    // Create Account button below it.
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  authTabText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#7a8287",
+  },
+  authTabTextActive: {
+    color: Constants.appThemeColor,
+  },
   headerSection: {
     backgroundColor: Constants.appThemeColor,
-    paddingTop: 100,
-    paddingBottom: 30,
+    // Overridden inline with insets.top + a gap. Kept as a fallback for a
+    // render with no safe-area provider, where insets are all zero.
+    paddingTop: 44,
+    paddingBottom: 20,
     paddingHorizontal: 20,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
   },
   welcomeSection: {
-    marginTop: 10,
+    marginTop: 0,
   },
   welcomeTitle: {
     color: "#ffffff",
     fontSize: 28,
     fontWeight: "bold",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   welcomeSubtitle: {
     color: "#ffffff",
@@ -521,11 +1007,23 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     opacity: 0.9,
   },
+  /*
+   * SPACING ON THIS SCREEN IS A BUDGET, not a preference.
+   *
+   * The email tab stacks four fields, a button, a divider and two social
+   * buttons. At the old values that came to ~913pt of content against 721pt
+   * of usable height on an iPhone 13, so the social buttons — the ONE-TAP
+   * path — were below the fold on every handset but the largest.
+   *
+   * The trims below give back ~48pt without touching field spacing, so the
+   * form keeps its breathing room. The rest was won by moving the social
+   * buttons above the form; see the email tab.
+   */
   contentSection: {
     flex: 1,
     backgroundColor: "#ffffff",
     paddingHorizontal: 20,
-    paddingTop: 30,
+    paddingTop: 20,
   // Keeps the last field scrollable clear of the software keyboard.
     paddingBottom: 40,
   },
@@ -598,9 +1096,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   dividerContainer: {
+    // 24 each side cost 48pt to say one word.
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 24,
+    marginVertical: 16,
   },
   dividerLine: {
     flex: 1,
@@ -612,6 +1111,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#999999",
   },
+  socialRow: { flexDirection: "row", gap: 10, alignItems: "stretch" },
+  socialItem: { flex: 1 },
   appleButtonContainer: {
     width: "100%",
     maxWidth: 400,
@@ -652,17 +1153,55 @@ const styles = StyleSheet.create({
     opacity: 0.38,
   },
   bottomSection: {
+    /*
+     * Symmetrical breathing room.
+     *
+     * This had paddingBottom: 30 and nothing on top, while the row inside it
+     * adds another marginBottom: 20 — so the text sat flush against the
+     * scrolling content above it and 50px clear of the screen edge below.
+     * It read as stuck to the Apple button.
+     *
+     * The background is not decoration either: this bar is a sibling of the
+     * ScrollView, so without it the last control scrolling past shows through
+     * and the two appear to overlap.
+     */
+    paddingTop: 18,
     paddingBottom: 30,
     alignItems: "center",
+    backgroundColor: "#ffffff",
   },
   loginContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
   },
   loginText: {
     fontSize: 16,
     color: "#666666",
+  },
+  questionStep: { marginBottom: 4 },
+  questionStepTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1f1f1f",
+    marginBottom: 8,
+  },
+  questionStepBody: {
+    fontSize: 14,
+    color: "#5b6368",
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  questionStepRetry: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Constants.appThemeColor,
+    marginBottom: 18,
+  },
+  questionStepBack: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Constants.appThemeColor,
+    marginTop: 18,
   },
   loginLinkText: {
     fontSize: 16,

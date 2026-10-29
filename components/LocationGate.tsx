@@ -72,7 +72,8 @@ function currentBuild(): number | null {
 }
 
 export default function LocationGate() {
-  const { user, token, updateProfile, setLocationEvaluation } = useAppStore();
+  const { user, token, credentials, updateProfile, setLocationEvaluation } =
+    useAppStore();
   const pathname = usePathname();
 
   const [config, setConfig] = useState<LocationGateConfig | null>(null);
@@ -235,6 +236,7 @@ export default function LocationGate() {
     dismissals,
     platform: currentPlatform(),
     build: currentBuild(),
+    credentials,
   });
 
   if (decision.show === "none") return null;
@@ -276,7 +278,27 @@ export default function LocationGate() {
         missing={decision.missing}
         dismissible={decision.dismissible}
         onContinue={() => goToProfile()}
-        onSelectRow={(focus) => goToProfile(focus)}
+        onSelectRow={(focus) => {
+          /*
+           * Every other row opens Edit Profile at a field. This one has no
+           * field to open — the address is already on the account and
+           * read-only — so it goes to the screen that can actually finish the
+           * job.
+           */
+          if (focus === "emailVerification") {
+            setDismissedOnPath(pathname);
+            router.push({
+              pathname: "/verify-email",
+              params: { email: user?.email ?? "" },
+            });
+            return;
+          }
+          goToProfile(focus);
+        }}
+        securityQuestionApplies={Boolean(
+          credentials && credentials.hasPhone && !credentials.hasEmail,
+        )}
+        emailVerificationApplies={Boolean(user?.email?.trim())}
         onDismiss={dismiss}
         bonus={bonus}
       />

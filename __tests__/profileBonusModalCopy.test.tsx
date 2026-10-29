@@ -136,7 +136,14 @@ describe("live bonus", () => {
     const withBonus = render({ points: 100, expiresAt: Date.now() + HOUR });
     const without = render(null);
 
-    for (const line of ["Finish your profile", "2 of 5 complete", "Map pin"]) {
+    /*
+     * "1 of 4", not "1 of 5": this fixture passes no `emailVerificationApplies`,
+     * so it renders an account with NO EMAIL — and the Email row is no longer
+     * drawn for one. It used to be, always ticked, counting an address that did
+     * not exist towards the total. The count moving is that fix, not a
+     * regression in this one.
+     */
+    for (const line of ["Finish your profile", "1 of 4 complete", "Map pin"]) {
       expect(withBonus).toContain(line);
       expect(without).toContain(line);
     }

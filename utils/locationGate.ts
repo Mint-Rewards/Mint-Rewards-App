@@ -44,7 +44,31 @@ export type MissingField =
   | "town"
   | "subArea"
   | "houseNo"
-  | "pin";
+  | "pin"
+  /**
+   * Only ever outstanding for an account with NO EMAIL ADDRESS.
+   *
+   * For those households the security question is not a nicety — with no
+   * address to send a reset link to, it and a support ticket are the entire
+   * way back into the account. An account that can receive a reset email is
+   * never asked, because for them it would be a non-dismissible modal over
+   * something they do not need.
+   */
+  | "securityQuestion"
+  /**
+   * Only outstanding for an account that HAS an email address and has not
+   * proved it. An unverified address is not a way back in — a reset link sent
+   * there reaches whoever really owns it — so proving it is part of finishing
+   * a profile, not an optional extra.
+   */
+  | "emailVerification";
+
+/** What the gate needs to know about how an account can be signed into. */
+export interface GateCredentials {
+  hasEmail: boolean;
+  hasPhone: boolean;
+  hasSecurityQuestion: boolean;
+}
 
 export type GateDecision =
   | { show: "none"; reason: string }
@@ -121,8 +145,42 @@ function hasPin(user: User): boolean {
  * checklist needs to name each unsatisfied row, and it additionally demands
  * `province`, which this gate never asks a user for.
  */
-function missingFields(user: User): MissingField[] {
+function missingFields(
+  user: User,
+  credentials: GateCredentials | null,
+): MissingField[] {
   const missing: MissingField[] = [];
+
+  /*
+   * FAILS CLOSED ON THE ROW, OPEN ON THE USER.
+   *
+   * `credentials` is null until /api/users/my-profile has answered, and under
+   * a hard gate an outstanding row cannot be dismissed. Treating "not loaded
+   * yet" as "missing" would hold a user in a modal over a question we do not
+   * yet know they need — including email users, who never need it. So an
+   * unknown state adds nothing, and the row appears on the next render once
+   * the answer is in.
+   */
+  if (
+    credentials &&
+    credentials.hasPhone &&
+    !credentials.hasEmail &&
+    !credentials.hasSecurityQuestion
+  ) {
+    missing.push("securityQuestion");
+  }
+
+  /*
+   * An address on the account that nobody has proved.
+   *
+   * Read from the user rather than `credentials`, because `emailVerified` is
+   * already on the user record the gate is given. Same fail-safe as above: an
+   * account with no email is never asked, and a `true` is required rather
+   * than an absent field being treated as proof.
+   */
+  if (!!user.email?.trim() && user.emailVerified !== true) {
+    missing.push("emailVerification");
+  }
 
   const city = user.city?.trim() || "";
   const town = user.town?.trim() || "";
@@ -155,8 +213,15 @@ export function resolveLocationGate(input: {
   dismissals: number;
   platform: "ios" | "android" | "web";
   build: number | null;
+  /**
+   * How this account signs in. Optional, and null while it is still loading —
+   * see missingFields for why an unknown state must not become an outstanding
+   * row.
+   */
+  credentials?: GateCredentials | null;
 }): GateDecision {
   const { user, config, dismissals, platform, build } = input;
+  const credentials = input.credentials ?? null;
 
   if (!user) return { show: "none", reason: "no user" };
 
@@ -191,21 +256,81 @@ export function resolveLocationGate(input: {
     return { show: "none", reason: "city not activated" };
   }
 
-  const locationVersion =
-    (user as UserWithLocationVersion).locationVersion ?? 0;
-  if (locationVersion >= LOCATION_COMPLETION_VERSION) {
-    return { show: "none", reason: "already confirmed" };
-  }
-
   // "hard" is never dismissible whatever the count says — that is what makes it
   // hard. See the `GateDecision` comment: this offers a skip, it does not
   // decide whether the modal appears.
   const dismissible =
     effectiveMode === "soft" && dismissals < config.maxDismissals;
 
+  /*
+   * THE SECURITY QUESTION OUTLIVES THE LOCATION GATE.
+   *
+   * Everything below this point is about an address: a confirmed location
+   * switches the gate off, and a dropped pin routes to the confirm modal
+   * instead of the checklist. Both were right when the checklist only ever
+   * asked for address fields.
+   *
+   * Neither the security question nor email verification is an address field.
+   * Both are now part of profile completion — they pay the bonus and mark a
+   * household collectable — and both answer the same question: can this person
+   * get back into their account? A phone-only account has no reset link, and an
+   * unverified address is worse than none, because a link sent there reaches
+   * whoever really owns it. Leaving them below those returns would mean the one
+   * group who must be asked is exactly the group never asked: anybody who
+   * finished their address first would never see the row again, and could never
+   * complete their profile.
+   *
+   * So it is checked FIRST, and only when it is genuinely outstanding. For
+   * every other user this changes nothing — `outstanding` is false and the
+   * original ordering runs untouched.
+   */
+  /*
+   * Both of these are about being able to get back INTO the account rather
+   * than about an address, so both have to be asked whatever the location
+   * says. Email verification joins the list for the same reason the security
+   * question did — see the note above.
+   */
+  const RECOVERY_FIELDS: MissingField[] = [
+    "securityQuestion",
+    "emailVerification",
+  ];
+  const outstanding = missingFields(user, credentials);
+  const recovery = outstanding.filter((field) =>
+    RECOVERY_FIELDS.includes(field),
+  );
+  if (recovery.length > 0) {
+    /*
+     * THIS MODAL ALWAYS OFFERS A WAY OUT, whatever the dismissal count says.
+     *
+     * Every other row is something a person can always finish: type a name,
+     * pick a city, drop a pin, answer a question. Verifying an email is the
+     * only one that depends on a third party — if the mail provider's quota is
+     * spent, the step CANNOT be completed. Letting the count turn the modal
+     * non-dismissible would trap somebody in it over an outage that is not
+     * theirs, with no way into the app at all. Under a "hard" mode it would
+     * trap them from the first launch.
+     *
+     * The pressure to finish lives elsewhere and is the better lever: brands
+     * and deals stay locked until the account can be recovered — see
+     * isProfileComplete. Nag, but never trap.
+     */
+    const onlyRecoveryLeft = outstanding.length === recovery.length;
+    return {
+      show: "finish",
+      dismissible: onlyRecoveryLeft ? true : dismissible,
+      missing: outstanding,
+    };
+  }
+
+  const locationVersion =
+    (user as UserWithLocationVersion).locationVersion ?? 0;
+  if (locationVersion >= LOCATION_COMPLETION_VERSION) {
+    return { show: "none", reason: "already confirmed" };
+  }
+
   // A pin sends the user to the confirm modal even with other gaps: they fill
   // the house number inline there rather than being sent round the whole form.
   if (hasPin(user)) return { show: "confirm", dismissible };
 
-  return { show: "finish", dismissible, missing: missingFields(user) };
+  return { show: "finish", dismissible, missing: missingFields(user, credentials) };
 }

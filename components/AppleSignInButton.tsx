@@ -5,6 +5,8 @@ interface Props {
   onError: (error: unknown) => void;
   disabled?: boolean;
   buttonType?: AppleAuthenticationButtonType;
+  /** iOS only — see AppleSignInButton.ios.tsx. Ignored elsewhere. */
+  compact?: boolean;
 }
 
 export default function AppleSignInButton(_props: Props) {

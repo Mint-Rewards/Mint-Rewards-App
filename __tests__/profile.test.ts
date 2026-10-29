@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@jest/globals";
-import { isProfileComplete, needsLocationUpdate } from "@/utils/profile";
+import { isProfileComplete, needsLocationUpdate,
+  canBeRecovered,
+} from "@/utils/profile";
 import type { User } from "@/store/store";
 
 const base = (over: Partial<User>): User =>
@@ -14,6 +16,12 @@ const base = (over: Partial<User>): User =>
 // present" case alongside the address-optional tests added below.
 const completeBase = (over: Partial<User>): User =>
   ({
+    // Recoverable, because isProfileComplete now also asks whether the owner
+    // could get back into the account. These cases are about the LOCATION
+    // rules; leaving this out would make every "true" case below fail for a
+    // reason none of them is testing.
+    email: "ayesha@example.com",
+    emailVerified: true,
     phone: "03001234567",
     province: "Islamabad Capital Territory",
     city: "Islamabad",
@@ -235,5 +243,61 @@ describe("isProfileComplete", () => {
 
   it("is false for a null user", () => {
     expect(isProfileComplete(null)).toBe(false);
+  });
+});
+
+/*
+ * RECOVERABILITY IS PART OF A FINISHED PROFILE.
+ *
+ * It gates brands and deals, not only the completion bonus. An account whose
+ * owner cannot prove it is theirs is not finished however much of the address
+ * is filled in — and until now an unverified address counted for nothing
+ * anywhere, so these accounts had full access.
+ */
+describe("canBeRecovered", () => {
+  // A location-complete user, so these cases are only about recoverability.
+  const located = (over: Partial<User>) =>
+    completeBase({ town: "", townOther: "Some Village", ...over });
+
+  it("accepts a verified email address", () => {
+    expect(canBeRecovered(located({}))).toBe(true);
+    expect(isProfileComplete(located({}))).toBe(true);
+  });
+
+  it("refuses an unverified one, and that closes the deals", () => {
+    const u = located({ emailVerified: false });
+    expect(canBeRecovered(u)).toBe(false);
+    expect(isProfileComplete(u)).toBe(false);
+  });
+
+  /*
+   * An absent flag is not proof. These fields are optional on the record, and
+   * reading "not loaded" as verified would unlock exactly the accounts this
+   * exists to catch.
+   */
+  it("treats an absent flag as unverified", () => {
+    const u = located({ emailVerified: undefined });
+    expect(canBeRecovered(u)).toBe(false);
+  });
+
+  it("accepts a security question where there is no address", () => {
+    const u = located({ email: "", emailVerified: false, hasSecurityQuestion: true });
+    expect(canBeRecovered(u)).toBe(true);
+    expect(isProfileComplete(u)).toBe(true);
+  });
+
+  it("refuses a phone-only account with neither", () => {
+    const u = located({ email: "", emailVerified: false, hasSecurityQuestion: false });
+    expect(canBeRecovered(u)).toBe(false);
+  });
+
+  it("lets a security question stand in for an unverified address", () => {
+    const u = located({ emailVerified: false, hasSecurityQuestion: true });
+    expect(canBeRecovered(u)).toBe(true);
+  });
+
+  it("is false for no user at all", () => {
+    expect(canBeRecovered(null)).toBe(false);
+    expect(canBeRecovered(undefined)).toBe(false);
   });
 });

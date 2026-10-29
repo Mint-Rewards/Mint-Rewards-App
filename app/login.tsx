@@ -2,9 +2,10 @@ import { useAppStore } from "@/store/store";
 import { userFromAuth } from '@/utils/userFromAuth';
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import AppleSignInButton from "@/components/AppleSignInButton";
+import OtpInput from "@/components/OtpInput";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
 import { usePostHog, useFeatureFlag } from "posthog-react-native";
 import {
   AppState,
@@ -21,8 +22,10 @@ import {
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import useKeyboardScroll from "@/hooks/useKeyboardScroll";
 import { Constants, Utils, API_BASE_URL } from "../utils/constants";
 import { PASSWORD_MAX_LENGTH } from "../utils/password";
+import { normalizePhone, pinShapeError } from "../utils/phoneNumber";
 import { alertOnce } from "@/utils/alert";
 import * as SecureStore from 'expo-secure-store';
 import type { AppleAuthenticationCredential } from 'expo-apple-authentication';
@@ -41,7 +44,27 @@ const LoginScreen = () => {
   const isSmallScreen = height < 700;
 
   const insets = useSafeAreaInsets();
-  const [email, setEmail] = useState("");
+
+  /*
+   * Android's KeyboardAvoidingView is inert without a `behavior`, so anything
+   * low on this screen sits under the keyboard. The PIN boxes are the lowest
+   * control on the phone tab and the password on the email tab. See the hook.
+   */
+  const { scrollRef, contentRef, scrollIntoView } = useKeyboardScroll();
+  const loginPhoneRef = useRef<TextInput>(null);
+  const loginPinRef = useRef<View>(null);
+  const loginEmailRef = useRef<TextInput>(null);
+  const loginPasswordRef = useRef<TextInput>(null);
+
+  const params = useLocalSearchParams<{
+    phone?: string;
+    email?: string;
+    justSignedUp?: string;
+  }>();
+
+  const [email, setEmail] = useState(
+    typeof params.email === "string" ? params.email : "",
+  );
   const [password, setPassword] = useState("");
   const [hidePassword, setHidePassword] = useState(true);
 
@@ -69,11 +92,98 @@ const LoginScreen = () => {
   const [appleLoading, setAppleLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const { signIn } = useAppStore();
+  const { signIn, signInWithPin } = useAppStore();
+
+  /*
+   * Phone is the default tab, matching the sign-up screen. Somebody arriving
+   * from a phone sign-up is also sent here with their number already filled
+   * in, so the only thing left to type is the PIN they just chose.
+   */
+  /*
+   * Phone by default, but whichever tab they ARRIVED from wins. Somebody sent
+   * here by email verification must not land on a phone form holding an email
+   * address — the screen would be asking for a credential they did not just
+   * create.
+   */
+  const [authTab, setAuthTab] = useState<"phone" | "email">(
+    typeof params.email === "string" && params.email ? "email" : "phone",
+  );
+  const [phone, setPhone] = useState(
+    typeof params.phone === "string" ? params.phone : "",
+  );
+  const [pin, setPin] = useState("");
+  const [pinLoading, setPinLoading] = useState(false);
+
+  const phoneSignInPressed = async () => {
+    const parsed = normalizePhone(phone);
+    if (!parsed.ok) {
+      Constants.showDialog(parsed.message);
+      return;
+    }
+
+    /*
+     * Shape only, and NOT the full rule. `validatePin` on the server refuses
+     * sequences, dates and common PINs — but those apply to CHOOSING a PIN,
+     * not to typing an existing one. Enforcing them here would lock somebody
+     * out of their own account if the rules ever tightened after they set it.
+     */
+    const shape = pinShapeError(pin);
+    if (shape) {
+      Constants.showDialog(shape);
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      const result = await signInWithPin(parsed.e164, pin);
+      if (result.Status === "Success") {
+        const storeUser = useAppStore.getState().user;
+        if (storeUser?._id) {
+          posthog.identify(storeUser._id, {
+            $set: {
+              userName: storeUser.userName ?? null,
+              mintId: storeUser.mintId ?? null,
+              city: storeUser.city ?? null,
+            },
+            $set_once: { first_login_date: new Date().toISOString() },
+          });
+        }
+        posthog.capture("user_logged_in", { method: "phone" });
+        router.replace("/(tabs)/home");
+        return;
+      }
+
+      /*
+       * A locked account is a different situation from a wrong PIN and has to
+       * read as one: the server says how long is left, and somebody who does
+       * not know that will keep trying and keep failing.
+       */
+      const code = (result as { code?: string }).code;
+      if (code === "PIN_LOCKED") {
+        Constants.showDialog(
+          result.ErrorMessage || "Too many incorrect attempts. Try again later.",
+        );
+        return;
+      }
+
+      Constants.showDialog(result.ErrorMessage || "Incorrect mobile number or PIN.");
+    } catch (error) {
+      posthog.captureException(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      Constants.showDialog("An error occurred. Please try again.");
+    } finally {
+      setPinLoading(false);
+    }
+  };
   const posthog = usePostHog();
   // Default to enabled (!== false) so buttons don't flicker/hide while flags are still loading.
   const googleSignInEnabled = useFeatureFlag("google-signin-enabled") !== false;
   const appleSignInEnabled = useFeatureFlag("apple-signin-enabled") !== false;
+
+  /** Both buttons share a row, so each gets half the width and a short label. */
+  const bothSocialsShown =
+    googleSignInEnabled && Platform.OS === "ios" && appleSignInEnabled;
 
   /*
    * Someone who has proved they own an address we have never seen.
@@ -276,6 +386,7 @@ const LoginScreen = () => {
     >
       {/* Green Header Section */}
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         /*
          * flexGrow fills the viewport; the padding keeps the last
@@ -288,7 +399,38 @@ const LoginScreen = () => {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-      <View style={[styles.headerSection, isSmallScreen && styles.headerSectionSmall]}>
+      {/*
+        * The container every focused control is measured against — the
+        * ScrollView's own content container takes no ref, so the content
+        * carries one, as on sign-up.
+        *
+        * WITHOUT THIS THE SCROLLING NEVER HAPPENED. `scrollIntoView` returns
+        * early when either ref is empty, and both were: this screen took the
+        * hook, called it on focus, and attached neither ref. Every call was a
+        * no-op, and because the helper is deliberately silent about a
+        * measurement it cannot take, it failed invisibly — which is why
+        * sign-up was fixed and sign-in only looked like it had been.
+        */}
+      <View ref={contentRef}>
+      {/*
+        * TOP PADDING COMES FROM THE DEVICE, not a guess.
+        *
+        * This was `paddingTop: 100`, a number eyeballed to clear a notch on
+        * one handset. It is not the inset — it is a constant ADDED to whatever
+        * the device already reserves, so on anything with a smaller status
+        * area the heading sat behind a band of empty colour.
+        *
+        * `insets.top` is what the system actually reserves; the constant below
+        * is the gap between that and the text, which is all it was ever meant
+        * to be.
+        */}
+      <View
+        style={[
+          styles.headerSection,
+          isSmallScreen && styles.headerSectionSmall,
+          { paddingTop: insets.top + (isSmallScreen ? 12 : 20) },
+        ]}
+      >
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Welcome!</Text>
           <Text style={styles.welcomeSubtitle}>
@@ -299,11 +441,105 @@ const LoginScreen = () => {
 
       {/* White Content Section */}
       <View style={[styles.contentSection, isSmallScreen && styles.contentSectionSmall]}>
+          <View style={styles.authTabs}>
+            <TouchableOpacity
+              style={[styles.authTab, authTab === "phone" && styles.authTabActive]}
+              onPress={() => setAuthTab("phone")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: authTab === "phone" }}
+            >
+              <Text style={[styles.authTabText, authTab === "phone" && styles.authTabTextActive]}>
+                Phone
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.authTab, authTab === "email" && styles.authTabActive]}
+              onPress={() => setAuthTab("email")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: authTab === "email" }}
+            >
+              <Text style={[styles.authTabText, authTab === "email" && styles.authTabTextActive]}>
+                Email
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {authTab === "phone" && (
+            <>
+              {params.justSignedUp === "1" && (
+                <Text style={styles.justSignedUpNote} accessibilityLiveRegion="polite">
+                  Your account is ready. Sign in with the PIN you just chose.
+                </Text>
+              )}
+
+              <View style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}>
+                <Text style={styles.inputLabel}>Mobile number</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    ref={loginPhoneRef}
+                    style={styles.textInput}
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                    autoCorrect={false}
+                    placeholder="03XX XXXXXXX"
+                    placeholderTextColor="#999999"
+                    maxLength={20}
+                    onFocus={() => scrollIntoView(loginPhoneRef)}
+                  />
+                </View>
+              </View>
+
+              <View
+                ref={loginPinRef}
+                style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}
+              >
+                <Text style={styles.inputLabel}>PIN</Text>
+                {/*
+                  * Boxed and masked. `autoComplete="off"` matters: the default
+                  * offers iOS's Messages autofill, which is right for an
+                  * emailed code and wrong for a PIN that never arrives by SMS.
+                  */}
+                <OtpInput
+                  value={pin}
+                  onChange={setPin}
+                  secure
+                  autoComplete="off"
+                  autoFocus={false}
+                  disabled={pinLoading || loading}
+                  onFocus={() => scrollIntoView(loginPinRef)}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.forgotPasswordContainer, isSmallScreen && styles.forgotPasswordContainerSmall]}
+                onPress={() => router.push("/forgot-pin")}
+              >
+                <Text style={styles.forgotPasswordText}>Forgot PIN?</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.loginButton}
+                onPress={phoneSignInPressed}
+                disabled={pinLoading || loading}
+              >
+                {pinLoading ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.loginButtonText}>Login</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+
+          {authTab === "email" && (
+          <>
           {/* Email Input */}
           <View style={[styles.inputGroup, isSmallScreen && styles.inputGroupSmall]}>
             <Text style={styles.inputLabel}>Email</Text>
             <View style={styles.inputContainer}>
               <TextInput
+                ref={loginEmailRef}
                 style={styles.textInput}
                 value={email}
                 // Trim on entry: an address can never contain whitespace, and
@@ -314,6 +550,7 @@ const LoginScreen = () => {
                 autoCorrect={false}
                 placeholder="Enter your email"
                 placeholderTextColor="#999999"
+                onFocus={() => scrollIntoView(loginEmailRef)}
               />
             </View>
           </View>
@@ -323,6 +560,7 @@ const LoginScreen = () => {
             <Text style={styles.inputLabel}>Password</Text>
             <View style={styles.inputContainer}>
               <TextInput
+                ref={loginPasswordRef}
                 style={styles.passwordTextInput}
                 value={password}
                 maxLength={PASSWORD_MAX_LENGTH}
@@ -330,6 +568,7 @@ const LoginScreen = () => {
                 secureTextEntry={hidePassword}
                 placeholder="Enter your password"
                 placeholderTextColor="#999999"
+                onFocus={() => scrollIntoView(loginPasswordRef)}
               />
               <TouchableOpacity
                 style={styles.eyeIconButton}
@@ -369,16 +608,24 @@ const LoginScreen = () => {
           {(googleSignInEnabled || (Platform.OS === "ios" && appleSignInEnabled)) && (
             <View style={[styles.dividerContainer, isSmallScreen && styles.dividerContainerSmall]}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              {/* The buttons below complete this sentence, which is why they read
+                  just "Google" and "Apple" rather than repeating the verb. */}
+              <Text style={styles.dividerText}>or sign in with</Text>
               <View style={styles.dividerLine} />
             </View>
           )}
 
           {/* Google Sign-In Button */}
+          {/* Side by side, not stacked — see the equivalent note on the sign-up
+              screen. Two full-width buttons cost 124pt at the bottom of a form
+              that is already taller than the screen; a row costs 62pt. The row
+              collapses to full width on Android, where Apple is absent. */}
+          <View style={styles.socialRow}>
           {googleSignInEnabled && (
             <TouchableOpacity
               style={[
                 styles.googleButton,
+                styles.socialItem,
                 (loading || googleLoading) && styles.googleButtonDisabled,
               ]}
               onPress={handleGoogleSignIn}
@@ -397,7 +644,7 @@ const LoginScreen = () => {
                     ]}
                     numberOfLines={1}
                   >
-                    Sign in with Google
+                    {bothSocialsShown ? "Google" : "Sign in with Google"}
                   </Text>
                 </View>
               )}
@@ -406,8 +653,9 @@ const LoginScreen = () => {
 
           {/* Apple Sign-In is iOS-only */}
           {Platform.OS === "ios" && appleSignInEnabled && (
-            <View style={styles.appleButtonContainer}>
+            <View style={[styles.appleButtonContainer, styles.socialItem]}>
               <AppleSignInButton
+                compact
                 onCredential={handleAppleSignIn}
                 onError={(e) => {
                   console.warn('Apple Sign-In error', e);
@@ -417,7 +665,11 @@ const LoginScreen = () => {
               />
             </View>
           )}
+          </View>
+          </>
+          )}
         </View>
+      </View>
       </ScrollView>
 
       {/* Bottom Register Link */}
@@ -450,24 +702,61 @@ const LoginScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  authTabs: {
+    flexDirection: "row",
+    backgroundColor: "#f2f4f5",
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 20,
+  },
+  authTab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  authTabActive: {
+    backgroundColor: "#ffffff",
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  authTabText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#7a8287",
+  },
+  authTabTextActive: {
+    color: Constants.appThemeColor,
+  },
+  justSignedUpNote: {
+    fontSize: 14,
+    color: Constants.appThemeColor,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
   container: {
     flex: 1,
     backgroundColor: "#ffffff",
   },
   headerSection: {
     backgroundColor: Constants.appThemeColor,
-    paddingTop: 100,
+    // Overridden inline with insets.top + a gap. Kept as a fallback for a
+    // render with no safe-area provider, where insets are all zero.
+    paddingTop: 44,
     paddingBottom: 30,
     paddingHorizontal: 20,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
   },
   headerSectionSmall: {
-    paddingTop: 56,
+    paddingTop: 28,
     paddingBottom: 16,
   },
   welcomeSection: {
-    marginTop: 10,
+    marginTop: 0,
   },
   welcomeTitle: {
     color: "#ffffff",
@@ -574,6 +863,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#999999",
   },
+  socialRow: { flexDirection: "row", gap: 10, alignItems: "stretch" },
+  socialItem: { flex: 1 },
   appleButtonContainer: {
     width: "100%",
     maxWidth: 400,
@@ -614,13 +905,26 @@ const styles = StyleSheet.create({
     opacity: 0.38,
   },
   bottomSection: {
+    /*
+     * Symmetrical breathing room.
+     *
+     * This had paddingBottom: 30 and nothing on top, while the row inside it
+     * adds another marginBottom: 20 — so the text sat flush against the
+     * scrolling content above it and 50px clear of the screen edge below.
+     * It read as stuck to the Apple button.
+     *
+     * The background is not decoration either: this bar is a sibling of the
+     * ScrollView, so without it the last control scrolling past shows through
+     * and the two appear to overlap.
+     */
+    paddingTop: 18,
     paddingBottom: 30,
     alignItems: "center",
+    backgroundColor: "#ffffff",
   },
   registerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
   },
   registerText: {
     fontSize: 16,
